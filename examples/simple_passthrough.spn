@@ -1,0 +1,5 @@
+; Minimal stereo FV-1 passthrough used for bring-up.
+RDAX ADCL, 1.0
+WRAX DACL, 0.0
+RDAX ADCR, 1.0
+WRAX DACR, 0.0

@@ -1,0 +1,7 @@
+/build/
+/cmake-build-*/
+*.wav
+*.bin
+*.hex
+__pycache__/
+*.pyc
