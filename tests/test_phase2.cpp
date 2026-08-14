@@ -157,6 +157,15 @@ void test_file_loop_source() {
     check(source.file_sample_rate()==22050, "file-loop source sample rate");
     check(source.prepare(48000,256), "file-loop prepare at different host rate");
     check(source.set_loop_region(100,900), "file-loop region");
+    check(source.duration_seconds() > 0.04, "file-loop duration metadata");
+    check(source.loop_begin_seconds() > 0.0, "file-loop begin metadata");
+    check(source.loop_end_seconds() > source.loop_begin_seconds(), "file-loop end metadata");
+    source.set_loop_crossfade_ms(12.5);
+    check(std::abs(source.loop_crossfade_ms() - 12.5) < 1.0e-9, "file-loop crossfade metadata");
+    source.set_loop_crossfade_ms(999.0);
+    check(std::abs(source.loop_crossfade_ms() - 500.0) < 1.0e-9, "file-loop crossfade clamps to safe maximum");
+    source.set_loop_crossfade_ms(12.5);
+    check(source.seek_seconds(0.02), "file-loop seek request");
     source.set_looping(true);
     source.play();
     std::vector<fv1::StereoFrame> out(4000);
@@ -164,6 +173,13 @@ void test_file_loop_source() {
     double energy=0.0;
     for (const auto& f:out) energy += std::abs(f.left)+std::abs(f.right);
     check(source.state()==fv1::TransportState::Playing, "loop source stays playing after wraps");
+    check(source.position_seconds() >= source.loop_begin_seconds(), "file-loop position telemetry is readable");
+    source.pause();
+    check(source.state()==fv1::TransportState::Paused, "file-loop pause control");
+    source.play();
+    check(source.state()==fv1::TransportState::Playing, "file-loop resume control");
+    source.stop();
+    check(source.state()==fv1::TransportState::Stopped, "file-loop stop control");
     check(energy>1.0, "loop source produces audio");
     std::error_code ec; fs::remove(path,ec);
 }
@@ -182,6 +198,29 @@ void test_analyzer_silence_suppression() {
     check(s.sequence>0,"silent analyzer produced snapshot");
     check(s.rms_left==0.0f && s.rms_right==0.0f,"silent analyzer RMS is zero");
     check(s.dominant_frequency_hz==0.0f,"silent analyzer suppresses meaningless dominant frequency");
+}
+
+void test_analyzer_frequency_interpolation() {
+    fv1::TestSignalConfig cfg;
+    cfg.kind=fv1::TestSignalKind::Sine;
+    cfg.frequency_hz=440.0;
+    cfg.amplitude=0.5;
+    fv1::TestSignalSource source(cfg);
+    check(source.prepare(48000,1024), "440 Hz source prepare");
+    std::vector<fv1::StereoFrame> block(1024);
+    fv1::AnalyzerWorker analyzer;
+    check(analyzer.prepare(48000,1024,8192), "440 Hz analyzer prepare");
+    analyzer.start();
+    for (int i=0;i<10;++i) {
+        source.render(nullptr,block.data(),block.size());
+        analyzer.push(block.data(),block.size());
+    }
+    for (int i=0;i<100 && analyzer.latest().sequence==0;++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    analyzer.stop();
+    const auto s=analyzer.latest();
+    check(std::abs(s.dominant_frequency_hz-440.0f)<8.0f,
+          "quadratic FFT interpolation reports a 440 Hz lab tone accurately");
 }
 
 void test_generator_and_analyzer() {
@@ -208,7 +247,7 @@ void test_generator_and_analyzer() {
     check(s.rms_left>0.2f && s.rms_left<0.5f,"analyzer RMS sensible");
     check(s.peak_left>0.45f,"analyzer peak sensible");
     check(s.correlation>0.99f,"stereo correlation sensible");
-    check(std::abs(s.dominant_frequency_hz-1000.0f)<60.0f,"FFT dominant frequency near 1kHz");
+    check(std::abs(s.dominant_frequency_hz-1000.0f)<20.0f,"interpolated FFT dominant frequency near 1kHz");
     check(!s.spectrum_db.empty(),"analyzer spectrum populated");
 }
 } // namespace
@@ -219,6 +258,7 @@ int main() {
     test_extensible_wav_source();
     test_file_loop_source();
     test_generator_and_analyzer();
+    test_analyzer_frequency_interpolation();
     test_analyzer_silence_suppression();
     if (failures) {
         std::cerr << failures << " Phase-2 test(s) failed\n";

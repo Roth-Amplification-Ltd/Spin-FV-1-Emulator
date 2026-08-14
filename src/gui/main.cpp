@@ -11,7 +11,7 @@ int main(int argc, char** argv) {
     QCoreApplication::setOrganizationName(QStringLiteral("Roth Amplification Ltd"));
     QCoreApplication::setOrganizationDomain(QStringLiteral("roth-amplification.com"));
     QCoreApplication::setApplicationName(QStringLiteral("Spin FV-1 Emulator"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.3.0"));
+    QCoreApplication::setApplicationVersion(QStringLiteral("0.4.0"));
 
     QSettings settings;
     fv1::gui::ThemeManager::apply(app,

@@ -24,6 +24,8 @@ public:
     AudioSource* source{};
     Runtime* runtime{};
     AnalyzerWorker* analyzer{};
+    AnalyzerWorker* raw_analyzer{};
+    std::atomic<AudioRecorder*> recorder{nullptr};
     std::vector<StereoFrame> source_buffer;
     std::atomic<std::uint64_t> callbacks{0};
     std::atomic<std::uint64_t> source_frames{0};
@@ -45,6 +47,8 @@ public:
         source = nullptr;
         runtime = nullptr;
         analyzer = nullptr;
+        raw_analyzer = nullptr;
+        recorder.store(nullptr, std::memory_order_release);
         source_buffer.clear();
     }
 
@@ -73,6 +77,9 @@ public:
 
         const auto begin = std::chrono::steady_clock::now();
         self->source->render(in, self->source_buffer.data(), process_frames);
+        if (self->raw_analyzer) self->raw_analyzer->push(self->source_buffer.data(), process_frames);
+        if (auto* recorder = self->recorder.load(std::memory_order_acquire))
+            recorder->push_raw(self->source_buffer.data(), process_frames);
         if (self->dsp_enabled.load(std::memory_order_relaxed)) {
             const bool ok = self->runtime->process_block(self->source_buffer.data(), out, process_frames);
             if (!ok) std::fill_n(out, process_frames, StereoFrame{});
@@ -83,6 +90,8 @@ public:
             std::fill(out + static_cast<std::ptrdiff_t>(process_frames),
                       out + static_cast<std::ptrdiff_t>(frames), StereoFrame{});
         if (self->analyzer) self->analyzer->push(out, process_frames);
+        if (auto* recorder = self->recorder.load(std::memory_order_acquire))
+            recorder->push_processed(out, process_frames);
         const auto end = std::chrono::steady_clock::now();
 
         const double elapsed = std::chrono::duration<double>(end - begin).count();
@@ -101,6 +110,7 @@ public:
 class AudioHost::Impl {
 public:
     std::atomic<bool> dsp_enabled{true};
+    std::atomic<AudioRecorder*> recorder{nullptr};
 };
 #endif
 
@@ -150,6 +160,15 @@ bool AudioHost::open(const AudioHostConfig& config,
                      AudioSource& source,
                      Runtime& runtime,
                      AnalyzerWorker* analyzer,
+                     std::string* error) {
+    return open(config, source, runtime, analyzer, nullptr, error);
+}
+
+bool AudioHost::open(const AudioHostConfig& config,
+                     AudioSource& source,
+                     Runtime& runtime,
+                     AnalyzerWorker* analyzer,
+                     AnalyzerWorker* raw_analyzer,
                      std::string* error) {
 #if defined(FV1_HAVE_MINIAUDIO)
     impl_->close();
@@ -203,6 +222,7 @@ bool AudioHost::open(const AudioHostConfig& config,
     impl_->source = &source;
     impl_->runtime = &runtime;
     impl_->analyzer = analyzer;
+    impl_->raw_analyzer = raw_analyzer;
     impl_->source_buffer.assign(std::max<std::size_t>(config.period_frames * 4u,
                                                      runtime.config().max_host_block_frames), {});
     if (!source.prepare(config.host_sample_rate, runtime.config().max_host_block_frames)) {
@@ -225,7 +245,7 @@ bool AudioHost::open(const AudioHostConfig& config,
     impl_->dsp_enabled.store(true, std::memory_order_relaxed);
     return true;
 #else
-    (void)config; (void)source; (void)runtime; (void)analyzer;
+    (void)config; (void)source; (void)runtime; (void)analyzer; (void)raw_analyzer;
     if (error) *error = "this build does not include miniaudio; run ./bootstrap-dev.sh and rebuild";
     return false;
 #endif
@@ -299,6 +319,14 @@ void AudioHost::set_dsp_enabled(bool enabled) noexcept {
 
 bool AudioHost::dsp_enabled() const noexcept {
     return impl_->dsp_enabled.load(std::memory_order_acquire);
+}
+
+void AudioHost::set_recorder(AudioRecorder* recorder) noexcept {
+    impl_->recorder.store(recorder, std::memory_order_release);
+}
+
+AudioRecorder* AudioHost::recorder() const noexcept {
+    return impl_->recorder.load(std::memory_order_acquire);
 }
 
 } // namespace fv1

@@ -1,4 +1,4 @@
-name: Linux Phase 2 CI
+name: Linux CI
 
 on:
   push:
@@ -12,14 +12,19 @@ jobs:
       - name: Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build cmake python3 pkg-config libspeexdsp-dev libminiaudio-dev
+          sudo apt-get install -y \
+            ninja-build cmake python3 pkg-config \
+            libspeexdsp-dev libminiaudio-dev \
+            qt6-base-dev qt6-base-dev-tools
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
       - name: Build
         run: cmake --build build --parallel 2
       - name: Test
         run: ctest --test-dir build --output-on-failure
-      - name: Confirm Phase 2 backends
+      - name: Confirm production Linux backends and GUI
         run: |
           grep -q "FV1_HAVE_SPEEXDSP" build/build.ninja
           grep -q "FV1_HAVE_MINIAUDIO" build/build.ninja
+          test -x build/fv1-lab
+          QT_QPA_PLATFORM=offscreen ./build/fv1-lab --smoke

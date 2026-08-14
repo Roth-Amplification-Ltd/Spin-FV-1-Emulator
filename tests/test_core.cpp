@@ -167,6 +167,21 @@ void test_debugger() {
     fv1_destroy(e);
 }
 
+void test_delay_inspection_api() {
+    auto p = program({enc_ldax(FV1_REG_ADCL), enc_wra(0, 0.0)});
+    auto* e = engine_with(p, FV1_DELAY_FULL_24);
+    int32_t value = 123;
+    check(fv1_read_delay_word(e, 0, &value) == FV1_OK, "delay inspection initial read");
+    check(value == 0, "delay RAM initializes to zero");
+    float l = 0, r = 0;
+    check(fv1_process_sample(e, 0.25f, 0.0f, &l, &r) == FV1_OK, "delay inspection write sample");
+    check(fv1_read_delay_word(e, 0, &value) == FV1_OK, "delay inspection read written word");
+    check(value != 0, "delay inspection exposes written Q1.23 data");
+    check(fv1_read_delay_word(e, FV1_DELAY_WORDS, &value) == FV1_ERROR_INVALID_ARGUMENT,
+          "delay inspection rejects out-of-range address");
+    fv1_destroy(e);
+}
+
 void test_resource_report() {
     auto p = program({
         enc_ldax(FV1_REG_POT0),
@@ -196,6 +211,7 @@ int main() {
     test_run_skip();
     test_unconditional_jump();
     test_debugger();
+    test_delay_inspection_api();
     test_resource_report();
     std::cout << "fv1-core Phase-1 tests: PASS\n";
     return 0;

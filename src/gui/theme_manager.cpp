@@ -153,6 +153,10 @@ void ThemeManager::apply(QApplication& app, const QString& theme_name, const QSt
     app.setProperty("fv1ThemeGridMajor", t.grid_major);
     app.setProperty("fv1ThemeGridMinor", t.grid_minor);
     app.setProperty("fv1ThemeMuted", t.muted);
+    app.setProperty("fv1ThemeWarning", t.warning);
+    // Secondary/raw trace color stays semantic across every theme instead of
+    // hard-coding a color in the oscilloscope/spectrum widgets.
+    app.setProperty("fv1ThemeRawTrace", mix(t.text, t.panel, 0.28));
 }
 
 } // namespace fv1::gui

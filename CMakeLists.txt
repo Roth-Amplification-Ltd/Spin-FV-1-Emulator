@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(SpinFV1Emulator VERSION 0.3.1 LANGUAGES C CXX)
+project(SpinFV1Emulator VERSION 0.4.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,7 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(FV1_BUILD_TESTS "Build emulator tests" ON)
 option(FV1_ENABLE_WARNINGS "Enable strict compiler warnings" ON)
 option(FV1_ENABLE_LIVE_AUDIO "Build Linux realtime audio host when miniaudio is available" ON)
-option(FV1_BUILD_GUI "Build the Phase 3 Qt desktop application" ON)
+option(FV1_BUILD_GUI "Build the Qt FV-1 emulator/testbench application" ON)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 find_package(Threads REQUIRED)
@@ -60,6 +60,17 @@ else()
 endif()
 fv1_strict_warnings(fv1-runtime)
 
+# -----------------------------------------------------------------------------
+# Reusable offline instruction debugger / chip inspector
+# -----------------------------------------------------------------------------
+add_library(fv1-debugger STATIC src/debug/debugger.cpp)
+add_library(FV1::debugger ALIAS fv1-debugger)
+target_include_directories(fv1-debugger PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+target_link_libraries(fv1-debugger PUBLIC FV1::core)
+fv1_strict_warnings(fv1-debugger)
+
 add_library(fv1-analysis STATIC src/analysis/analysis.cpp)
 add_library(FV1::analysis ALIAS fv1-analysis)
 target_include_directories(fv1-analysis PUBLIC
@@ -70,6 +81,7 @@ fv1_strict_warnings(fv1-analysis)
 
 add_library(fv1-audio STATIC
     src/audio/audio_host.cpp
+    src/audio/audio_recorder.cpp
     src/audio/miniaudio_impl.c)
 add_library(FV1::audio ALIAS fv1-audio)
 target_include_directories(fv1-audio PUBLIC
@@ -109,7 +121,7 @@ target_compile_definitions(fv1-live PRIVATE
 fv1_strict_warnings(fv1-live)
 
 # -----------------------------------------------------------------------------
-# Phase 3: Qt engineering GUI (Linux/Windows frontend)
+# Phase 4: Qt FV-1 emulator/testbench (Linux/Windows frontend)
 # -----------------------------------------------------------------------------
 if(FV1_BUILD_GUI)
     find_package(Qt6 COMPONENTS Widgets QUIET)
@@ -120,10 +132,10 @@ if(FV1_BUILD_GUI)
             src/gui/theme_manager.cpp
             src/gui/instrument_plot.cpp)
         target_link_libraries(fv1-lab PRIVATE
-            Qt6::Widgets FV1::audio FV1::analysis FV1::runtime FV1::core)
+            Qt6::Widgets FV1::audio FV1::analysis FV1::runtime FV1::debugger FV1::core)
         target_include_directories(fv1-lab PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
         fv1_strict_warnings(fv1-lab)
-        message(STATUS "Phase 3 GUI: Qt ${Qt6_VERSION} enabled")
+        message(STATUS "Phase 4 testbench GUI: Qt ${Qt6_VERSION} enabled")
     else()
         message(WARNING "Qt 6 Widgets not found: fv1-lab GUI will not be built. Run bootstrap-dev.sh on Linux to install qt6-base-dev.")
     endif()
@@ -146,6 +158,14 @@ if(FV1_BUILD_TESTS)
     add_executable(fv1-audio-host-tests tests/test_audio_host_api.cpp)
     target_link_libraries(fv1-audio-host-tests PRIVATE FV1::audio)
     add_test(NAME fv1-audio-host-tests COMMAND fv1-audio-host-tests)
+
+    add_executable(fv1-debugger-tests tests/test_debugger.cpp)
+    target_link_libraries(fv1-debugger-tests PRIVATE FV1::debugger)
+    add_test(NAME fv1-debugger-tests COMMAND fv1-debugger-tests)
+
+    add_executable(fv1-recorder-tests tests/test_audio_recorder.cpp)
+    target_link_libraries(fv1-recorder-tests PRIVATE FV1::audio)
+    add_test(NAME fv1-recorder-tests COMMAND fv1-recorder-tests)
 
     add_test(NAME compile-steal-this-bank
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_compile_examples.py
@@ -181,7 +201,7 @@ endif()
 # -----------------------------------------------------------------------------
 # Installation
 # -----------------------------------------------------------------------------
-set(FV1_INSTALL_TARGETS fv1-core fv1-runtime fv1-analysis fv1-audio fv1-cli fv1-live)
+set(FV1_INSTALL_TARGETS fv1-core fv1-runtime fv1-analysis fv1-debugger fv1-audio fv1-cli fv1-live)
 if(TARGET fv1-lab)
     list(APPEND FV1_INSTALL_TARGETS fv1-lab)
 endif()

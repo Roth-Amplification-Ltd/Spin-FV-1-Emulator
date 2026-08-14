@@ -159,8 +159,24 @@ public:
             next.dominant_frequency_hz = 0.0f;
         } else {
             next.dominant_level_db = dominant_db;
+            // Quadratic interpolation around the strongest FFT bin gives the
+            // instrument panel a useful frequency readout without requiring a
+            // gigantic FFT merely to avoid coarse bin labels (for example, a
+            // 440 Hz lab tone should read approximately 440 Hz, not 421.9 or
+            // 468.8 Hz at common FFT sizes).
+            double refined_bin = static_cast<double>(dominant_bin);
+            if (dominant_bin > 0 && dominant_bin + 1 < bins) {
+                const double ym1 = next.spectrum_db[dominant_bin - 1];
+                const double y0  = next.spectrum_db[dominant_bin];
+                const double yp1 = next.spectrum_db[dominant_bin + 1];
+                const double denom_q = ym1 - 2.0 * y0 + yp1;
+                if (std::abs(denom_q) > 1.0e-12) {
+                    const double delta = std::clamp(0.5 * (ym1 - yp1) / denom_q, -0.5, 0.5);
+                    refined_bin += delta;
+                }
+            }
             next.dominant_frequency_hz = static_cast<float>(
-                static_cast<double>(dominant_bin) * sample_rate / static_cast<double>(fft_size));
+                refined_bin * sample_rate / static_cast<double>(fft_size));
         }
 
         std::lock_guard lock(snapshot_mutex);

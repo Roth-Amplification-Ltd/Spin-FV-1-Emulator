@@ -87,3 +87,47 @@ The UI bypass control is implemented at the `AudioHost` callback boundary rather
 This keeps the audio device and source transport alive, makes processed/raw A/B switching realtime-safe, and ensures the oscilloscope can display the exact raw source presented to the emulator. The bypass flag is atomic; toggling it from the Qt thread requires no callback-thread lock or allocation.
 
 Audio preferences remain a frontend concern. Qt stores user selections through `QSettings` and passes concrete playback/capture/rate/buffer/FV-1-clock/SRC-quality values into the platform-neutral runtime/audio APIs when a session starts.
+
+## Phase-4 reusable testbench services
+
+Phase 4 keeps the frontend/application boundary intact. Two additional services are intentionally
+usable without Qt:
+
+```text
+                    fv1-core
+                    /      \
+                   v        v
+          fv1-debugger     fv1-runtime
+                               |
+                    +----------+-----------+
+                    v                      v
+               fv1-analysis             fv1-audio
+                                            |
+                                      AudioRecorder
+
+Qt fv1-lab consumes these libraries; it does not own their DSP/debug/audio policy.
+```
+
+### `fv1-debugger`
+
+`fv1-debugger` owns a private core instance for offline instruction/sample stepping. The Qt chip
+inspector is one consumer. A future dedicated FV-1 IDE can consume the same library for source-level
+features without moving editor responsibilities into this emulator application.
+
+### Raw and processed analyzer taps
+
+`AudioHost` exposes the source signal to a raw analyzer before the FV-1 clock bridge, while the
+processed analyzer receives host-rate output after the virtual chip. Both queues are lock-free and
+may be visualized simultaneously. Turning DSP bypass on/off is independent of retaining the raw tap.
+
+### Realtime recording
+
+`AudioRecorder` is attached to `AudioHost` through a non-owning atomic pointer. The callback may push
+raw and/or processed `StereoFrame` values into fixed-capacity SPSC rings but performs no filesystem
+I/O. A background thread writes stereo IEEE-float WAV files and finalizes their RIFF headers on stop.
+
+### File-loop transport
+
+File playback position, transport state, looping and seek controls use atomics or pre-existing
+prepared storage so play/pause/seek/loop changes do not require audio-device reconstruction. Optional
+loop-boundary crossfade is rendered inside `FileLoopSource` before the shared FV-1 runtime path.

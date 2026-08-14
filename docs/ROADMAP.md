@@ -1,98 +1,118 @@
 # Spin FV-1 Emulator Roadmap
 
-## Project constraint
+## Product definition
 
-Development is **Linux-first**. Do not spend Phase 1–3 engineering time maintaining Windows or macOS application ports. Keep platform boundaries clean so those ports can be added after the emulator/runtime has matured.
+**Spin FV-1 Emulator is first and foremost a standalone FV-1 emulator and electronic testbench.**
+It should feel like a useful virtual DSP instrument: load a program, feed it a live interface,
+repeatable audio loop, or generated stimulus, and inspect what the virtual chip is doing.
 
-The target application GUI is the wide engineering-dashboard concept established for the project: program/parameter controls at left, scopes/analyzers and delay/resource views in the center, and a large vertically stacked Console + Step Debugger side panel. The future GUI must support Dark, Light and additional configurable color themes rather than hard-coded colors.
+Some IDE-like conveniences are welcome when they directly improve emulation or debugging (for
+example instruction stepping, register inspection, disassembly, or convenient `.spn` loading), but
+this application is **not intended to become the future full FV-1 IDE**. The dedicated IDE will be
+a separate application that reuses the platform-neutral libraries developed here.
+
+Development remains **Linux-first** while the core/runtime APIs mature. Keep platform boundaries
+clean so Windows and a native macOS frontend can be added later without changing the chip model.
+
+The approved GUI identity is the existing wide engineering dashboard: program/source/parameter
+controls at left; scope, spectrum, spectrogram, delay/resource/status instrumentation in the center;
+and a large vertically stacked Console + virtual-chip Inspector on the right. Refine this layout
+rather than replacing it.
 
 ## Phase 1 — Emulator foundation — COMPLETE
 
-Deliverables:
-
 - zero-GUI `libfv1-core`;
-- C API + C++ wrapper;
+- C API + C++ convenience wrapper;
 - FV-1 instruction decoder/interpreter;
 - fixed-point state, delay RAM and LFOs;
-- assembler/program loader;
-- instruction debugger primitives;
+- SpinASM-compatible assembler/program loader;
+- instruction-debug primitives and snapshots;
 - resource analyzer;
-- deterministic `fv1-cli`;
-- offline WAV rendering at the virtual rate;
-- Linux CMake/CTest CI and regression vectors.
+- deterministic `fv1-cli` and offline WAV rendering;
+- Linux CMake/CTest regression suite.
 
-Exit test: all unit tests pass, all eight project example effects compile, execute and render finite non-silent audio on Linux.
+Exit test: all unit tests pass and all eight project example effects compile, execute and render
+finite non-silent audio on Linux.
 
 ## Phase 2 — Realtime audio, file loops and analysis — ACCEPTED / CAPTURE TEST DEFERRED
 
-Add the reusable runtime around `libfv1-core`:
+- `fv1-runtime` host-rate ↔ virtual-FV-1 clock bridge;
+- SpeexDSP production SRC with fractional virtual-clock support;
+- miniaudio Linux device backend;
+- interchangeable Live Input, File Loop and Test Generator sources;
+- WAV import and repeatable looping;
+- background analysis worker, scope data, FFT, meters and correlation;
+- lock-free realtime telemetry;
+- `fv1-live` headless realtime host.
 
-- miniaudio Linux device backend initially;
-- host audio-interface capture/playback;
-- an `AudioSource` abstraction with Live Input, File Loop and Test Generator implementations;
-- WAV import in the initial Linux runtime; broader formats remain an extension point;
-- loop entire file or a selected region;
-- seamless loop-region wrapping; optional crossfade controls follow with the GUI;
-- explicit virtual FV-1 clock independent of host interface rate;
-- SpeexDSP host↔FV-1 SRC, with a deterministic linear build fallback;
-- lock-free SPSC audio/telemetry queues;
-- background spectrum/measurement engine behind a swappable FFT backend;
-- scope data, meters, correlation and runtime/xrun statistics.
+Generator/file-loop playback, production SpeexDSP clock bridging, analyzer telemetry and real
+miniaudio playback were accepted on Cortana. External capture/duplex-interface validation remains
+a documented deferred acceptance test until suitable hardware is available.
 
-Exit status: automated clock/source/analyzer tests pass; production SpeexDSP/miniaudio playback and looped-file processing are accepted on Cortana. Guitar/line capture through an external duplex interface remains a documented deferred acceptance test until hardware is available.
+## Phase 3 — Qt standalone testbench — COMPLETE
 
-## Phase 3 — Linux Qt application — CURRENT
-
-Build the full Linux desktop application on the stable Phase-1/2 libraries:
-
-- Qt 6 dockable interface matching the latest approved mockup;
-- source selector: LIVE / FILE LOOP / TEST;
-- transport and loop-region controls;
-- POT0/1/2 and global controls;
-- oscilloscope, spectrum and spectrogram;
-- Delay RAM Viewer;
-- Virtual DSP Resource Usage panel;
-- large readable Console and Step Debugger stacked in a resizable side panel;
-- register/memory inspector;
+- Qt 6 dashboard matching the approved layout;
+- LIVE / FILE LOOP / TEST source selection;
+- POT0/1/2 and virtual-clock controls;
+- oscilloscope, spectrum, spectrogram and levels;
+- Delay RAM, Resource Usage and DSP Status panels;
+- large Console / Inspector side panel;
 - Dark, Light, Midnight, Amber CRT, Green Phosphor, Slate and High Contrast themes;
-- independent accent-color selection;
-- semantic theme palette rather than hard-coded widget colors;
-- DAW-style audio preferences dialog;
-- realtime DSP/FX bypass with explicit raw-signal scope/analyzer monitoring;
-- right-click context menus for high-value local engineering actions.
+- independent accent selection;
+- DAW-style Audio Settings dialog;
+- persistent `QSettings` preferences;
+- realtime **DSP/FX ON — PROCESSED / DSP/FX BYPASS — RAW** monitoring;
+- task-local right-click context menus.
 
-## Phase 4 — Integrated FV-1 development environment
+The Phase-3/3.1 build is accepted on Cortana and documented with screenshots and a screencast.
 
-Add:
+## Phase 4 — Emulator / testbench completion — CURRENT
 
-- SpinASM editor and syntax highlighting;
-- compile diagnostics mapped to source lines;
-- live recompile/reload;
-- source breakpoints;
-- instruction and sample stepping;
-- register watches;
-- delay-memory inspection;
-- eight-slot bank management/export;
-- reproducible project/test-session files;
-- compare-two-runs tools.
+Preserve the current GUI and deepen the instrument/testbench workflow:
+
+- simultaneous raw-input and processed-output analyzer overlays;
+- proper scope controls: time zoom, vertical gain, trigger source/level/slope/mode, freeze and single-shot;
+- improved spectrum controls: log/linear axis, dB range, peak hold and better dominant-frequency interpolation;
+- spectrogram history and dynamic-range controls;
+- polished WAV-loop transport: play, pause, stop, seek, loop region and configurable boundary crossfade;
+- expanded test-generator settings for sine, sweep, noise and impulse stimuli;
+- realtime-safe recording of raw, processed, or both streams to WAV;
+- plot image copy/save and CSV export;
+- reusable `fv1-debugger` library plus a deliberately **offline** virtual-chip inspector in the GUI;
+- register and Delay RAM inspection without racing the realtime engine;
+- expanded static resource reporting and dynamic testbench status;
+- permanent `© 2026 Roth Amplification LTD` footer;
+- keep useful right-click context menus as first-class engineering shortcuts.
+
+IDE-like scope is intentionally limited here. There is no project/source tree, refactoring system,
+multi-file editor workflow, or full IDE project management in this phase.
+
+## Future dedicated FV-1 IDE — SEPARATE APPLICATION
+
+A future IDE may consume:
+
+- `fv1-core`;
+- `fv1-runtime`;
+- `fv1-analysis`;
+- `fv1-audio`;
+- `fv1-debugger`;
+- the SpinASM compiler/loader boundary.
+
+That future application can provide source editors, source-mapped breakpoints, project management,
+EEPROM-bank authoring and deeper code-centric workflows without turning this emulator/testbench
+into the IDE itself.
 
 ## Phase 5 — Hardware validation and later platforms
 
-First validate the virtual chip against real FV-1 hardware using synchronized interface capture and deterministic stimuli. Quantify differences in impulse/frequency response, modulation, delay timing, POT behavior and instruction edge cases.
+Validate the virtual chip against physical FV-1 hardware using identical deterministic stimuli and
+synchronized interface capture. Quantify waveform residual, frequency/phase response, delay timing,
+modulation timing, POT behavior and instruction edge cases.
 
-Only after the shared APIs are mature:
+After the shared APIs are mature:
 
-- Windows application port;
+- Windows desktop frontend;
 - native macOS shell using SwiftUI + Metal/MetalKit + CoreAudio/AVAudioEngine;
-- both reuse the same platform-neutral emulator/runtime/analysis libraries.
+- both reuse the same platform-neutral libraries.
 
-DAW/VST/AU/CLAP plugins are **not part of this standalone application project**. If desired later, they should be separate consumers of the core library.
-
-## Current status — Phase 3 operational on Cortana
-
-Phase 2 is accepted on Linux for generator/file-loop playback, production SpeexDSP clock bridging, analyzer telemetry and real miniaudio playback. External capture/duplex interface validation is deferred until hardware is available.
-
-Phase 3 is operational on Cortana with Qt 6.4.2: the approved dashboard launches, programs load and analyze, test-generator and file-loop sessions run through the Phase-2 runtime, plots consume live analyzer data, themes switch, and the offscreen GUI smoke test passes. The current refinement adds DAW-style Audio Settings, DSP/FX bypass/raw monitoring, and task-local context menus.
-
-The next larger Phase-3 increment is the dedicated offline debugger session, richer delay/register visualization, loop-region editing, and source/compiler diagnostics.
-
+DAW/VST/AU/CLAP plugins are **not part of this standalone application project**. If desired later,
+they should be separate consumers of the emulator libraries.

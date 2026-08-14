@@ -706,6 +706,15 @@ void fv1_get_snapshot(const fv1_engine* e, fv1_snapshot* s) {
     s->debug_sample_active = e->debug_sample_active ? 1 : 0;
 }
 
+fv1_result fv1_read_delay_word(const fv1_engine* e, uint32_t address, int32_t* value) {
+    if (!e || !value || address >= FV1_DELAY_WORDS) return FV1_ERROR_INVALID_ARGUMENT;
+    if (e->config.delay_model == FV1_DELAY_FULL_24)
+        *value = sat24(e->delay24[address]);
+    else
+        *value = sat24(static_cast<int32_t>(e->delay16[address]) << 8);
+    return FV1_OK;
+}
+
 fv1_result fv1_analyze_program(const fv1_engine* e, fv1_resource_report* r) {
     if (!e || !r) return FV1_ERROR_INVALID_ARGUMENT;
     if (!e->program_loaded) return FV1_ERROR_BAD_STATE;

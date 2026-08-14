@@ -136,6 +136,13 @@ fv1_result fv1_debug_step_instruction(fv1_engine* engine, fv1_trace* trace);
 fv1_result fv1_debug_finish_sample(fv1_engine* engine, float* out_l, float* out_r);
 
 void fv1_get_snapshot(const fv1_engine* engine, fv1_snapshot* snapshot);
+
+/* Read one physical delay-RAM word by absolute 0..32767 address.  The value
+   is returned in the same signed Q1.23 representation used by the datapath,
+   after applying the configured delay-memory precision model.  This is a
+   read-only inspection API intended for debugger/testbench visualizations. */
+fv1_result fv1_read_delay_word(const fv1_engine* engine, uint32_t address, int32_t* value);
+
 fv1_result fv1_analyze_program(const fv1_engine* engine, fv1_resource_report* report);
 
 const char* fv1_opcode_name(uint8_t opcode);

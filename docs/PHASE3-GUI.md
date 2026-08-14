@@ -51,7 +51,7 @@ The first increment provides:
 - large console, debugger and memory/register panels
 - offscreen GUI construction smoke test in CTest
 
-Instruction-level debugger stepping remains intentionally offline-only while realtime audio is active. The next increment will add a dedicated offline debug session, live compiler diagnostics, loop-region editing, and more detailed delay/register visualization without introducing races into the audio thread.
+Instruction-level debugger stepping remains intentionally offline-only while realtime audio is active. Phase 4 builds on this accepted GUI with testbench instrumentation, loop transport, raw/processed comparison, recording/export, and a reusable offline chip-inspector library. Full source-editor/IDE workflows remain a separate future application; see `PHASE4-TESTBENCH.md`.
 
 ## Audio preferences
 

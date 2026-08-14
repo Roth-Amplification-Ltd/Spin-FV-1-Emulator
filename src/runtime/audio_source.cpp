@@ -1,6 +1,7 @@
 #include <fv1/audio_source.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -167,11 +168,19 @@ class FileLoopSource::Impl {
 public:
     DecodedWav wav;
     double host_rate{48000.0};
-    double position{};
-    std::uint64_t loop_begin{};
-    std::uint64_t loop_end{};
-    bool do_loop{true};
-    TransportState transport{TransportState::Stopped};
+
+    // The audio callback owns render_position. GUI/control threads communicate
+    // through atomics so transport controls never race the realtime renderer.
+    double render_position{};
+    std::atomic<double> reported_position{0.0};
+    std::atomic<std::uint64_t> loop_begin{0};
+    std::atomic<std::uint64_t> loop_end{0};
+    std::atomic<bool> do_loop{true};
+    std::atomic<TransportState> transport{TransportState::Stopped};
+    std::atomic<bool> reset_requested{false};
+    std::atomic<bool> seek_requested{false};
+    std::atomic<double> requested_position{0.0};
+    std::atomic<double> loop_crossfade_ms{0.0};
 };
 
 FileLoopSource::FileLoopSource() : impl_(std::make_unique<Impl>()) {}
@@ -185,10 +194,13 @@ bool FileLoopSource::load(const std::filesystem::path& path, std::string* error)
         return false;
     }
     impl_->wav = std::move(decoded);
-    impl_->loop_begin = 0;
-    impl_->loop_end = impl_->wav.frames.size();
-    impl_->position = 0.0;
-    impl_->transport = TransportState::Stopped;
+    impl_->loop_begin.store(0, std::memory_order_relaxed);
+    impl_->loop_end.store(impl_->wav.frames.size(), std::memory_order_relaxed);
+    impl_->render_position = 0.0;
+    impl_->reported_position.store(0.0, std::memory_order_relaxed);
+    impl_->transport.store(TransportState::Stopped, std::memory_order_release);
+    impl_->reset_requested.store(false, std::memory_order_relaxed);
+    impl_->seek_requested.store(false, std::memory_order_relaxed);
     return true;
 }
 
@@ -196,73 +208,156 @@ bool FileLoopSource::prepare(double host_sample_rate, std::size_t) {
     if (!(host_sample_rate > 1000.0) || impl_->wav.frames.empty() || impl_->wav.sample_rate == 0)
         return false;
     impl_->host_rate = host_sample_rate;
+    reset();
     return true;
 }
 
 void FileLoopSource::reset() noexcept {
-    impl_->position = static_cast<double>(impl_->loop_begin);
+    impl_->reset_requested.store(true, std::memory_order_release);
 }
-void FileLoopSource::play() noexcept { if (!impl_->wav.frames.empty()) impl_->transport = TransportState::Playing; }
-void FileLoopSource::pause() noexcept { if (impl_->transport == TransportState::Playing) impl_->transport = TransportState::Paused; }
-void FileLoopSource::stop() noexcept { impl_->transport = TransportState::Stopped; reset(); }
-void FileLoopSource::set_looping(bool enabled) noexcept { impl_->do_loop = enabled; }
-bool FileLoopSource::looping() const noexcept { return impl_->do_loop; }
-TransportState FileLoopSource::state() const noexcept { return impl_->transport; }
+void FileLoopSource::play() noexcept {
+    if (!impl_->wav.frames.empty()) impl_->transport.store(TransportState::Playing, std::memory_order_release);
+}
+void FileLoopSource::pause() noexcept {
+    if (impl_->transport.load(std::memory_order_acquire) == TransportState::Playing)
+        impl_->transport.store(TransportState::Paused, std::memory_order_release);
+}
+void FileLoopSource::stop() noexcept {
+    impl_->transport.store(TransportState::Stopped, std::memory_order_release);
+    impl_->reset_requested.store(true, std::memory_order_release);
+}
+void FileLoopSource::set_looping(bool enabled) noexcept { impl_->do_loop.store(enabled, std::memory_order_release); }
+bool FileLoopSource::looping() const noexcept { return impl_->do_loop.load(std::memory_order_acquire); }
+TransportState FileLoopSource::state() const noexcept { return impl_->transport.load(std::memory_order_acquire); }
 
 bool FileLoopSource::set_loop_region(std::uint64_t begin, std::uint64_t end) noexcept {
     const std::uint64_t total = impl_->wav.frames.size();
     if (end == 0) end = total;
     if (begin >= end || end > total) return false;
-    impl_->loop_begin = begin;
-    impl_->loop_end = end;
-    if (impl_->position < static_cast<double>(begin) || impl_->position >= static_cast<double>(end))
-        impl_->position = static_cast<double>(begin);
+    impl_->loop_begin.store(begin, std::memory_order_release);
+    impl_->loop_end.store(end, std::memory_order_release);
+    const double current = impl_->reported_position.load(std::memory_order_acquire);
+    if (current < static_cast<double>(begin) || current >= static_cast<double>(end)) {
+        impl_->requested_position.store(static_cast<double>(begin), std::memory_order_relaxed);
+        impl_->seek_requested.store(true, std::memory_order_release);
+    }
     return true;
 }
 
 std::uint64_t FileLoopSource::total_frames() const noexcept { return impl_->wav.frames.size(); }
 std::uint32_t FileLoopSource::file_sample_rate() const noexcept { return impl_->wav.sample_rate; }
+double FileLoopSource::duration_seconds() const noexcept {
+    return impl_->wav.sample_rate == 0 ? 0.0 :
+        static_cast<double>(impl_->wav.frames.size()) / static_cast<double>(impl_->wav.sample_rate);
+}
 double FileLoopSource::position_seconds() const noexcept {
-    return impl_->wav.sample_rate == 0 ? 0.0 : impl_->position / static_cast<double>(impl_->wav.sample_rate);
+    return impl_->wav.sample_rate == 0 ? 0.0 :
+        impl_->reported_position.load(std::memory_order_acquire) / static_cast<double>(impl_->wav.sample_rate);
+}
+bool FileLoopSource::seek_seconds(double seconds) noexcept {
+    if (impl_->wav.sample_rate == 0 || impl_->wav.frames.empty() || !std::isfinite(seconds)) return false;
+    const double requested = seconds * static_cast<double>(impl_->wav.sample_rate);
+    const double maximum = static_cast<double>(impl_->wav.frames.size() - 1u);
+    impl_->requested_position.store(std::clamp(requested, 0.0, maximum), std::memory_order_relaxed);
+    impl_->seek_requested.store(true, std::memory_order_release);
+    return true;
+}
+double FileLoopSource::loop_begin_seconds() const noexcept {
+    return impl_->wav.sample_rate == 0 ? 0.0 :
+        static_cast<double>(impl_->loop_begin.load(std::memory_order_acquire)) / static_cast<double>(impl_->wav.sample_rate);
+}
+double FileLoopSource::loop_end_seconds() const noexcept {
+    return impl_->wav.sample_rate == 0 ? 0.0 :
+        static_cast<double>(impl_->loop_end.load(std::memory_order_acquire)) / static_cast<double>(impl_->wav.sample_rate);
+}
+
+void FileLoopSource::set_loop_crossfade_ms(double milliseconds) noexcept {
+    if (!std::isfinite(milliseconds)) milliseconds = 0.0;
+    impl_->loop_crossfade_ms.store(std::clamp(milliseconds, 0.0, 500.0), std::memory_order_release);
+}
+
+double FileLoopSource::loop_crossfade_ms() const noexcept {
+    return impl_->loop_crossfade_ms.load(std::memory_order_acquire);
 }
 
 void FileLoopSource::render(const StereoFrame*, StereoFrame* destination,
                             std::size_t frames) noexcept {
     if (!destination) return;
-    if (impl_->transport != TransportState::Playing || impl_->wav.frames.empty()) {
+
+    if (impl_->reset_requested.exchange(false, std::memory_order_acq_rel)) {
+        impl_->render_position = static_cast<double>(impl_->loop_begin.load(std::memory_order_acquire));
+    }
+    if (impl_->seek_requested.exchange(false, std::memory_order_acq_rel)) {
+        impl_->render_position = impl_->requested_position.load(std::memory_order_relaxed);
+    }
+
+    const auto transport = impl_->transport.load(std::memory_order_acquire);
+    if (transport != TransportState::Playing || impl_->wav.frames.empty()) {
         std::fill_n(destination, frames, StereoFrame{});
+        impl_->reported_position.store(impl_->render_position, std::memory_order_release);
         return;
     }
 
     const double step = static_cast<double>(impl_->wav.sample_rate) / impl_->host_rate;
-    const double begin = static_cast<double>(impl_->loop_begin);
-    const double end = static_cast<double>(impl_->loop_end);
+    const std::uint64_t begin_frame = impl_->loop_begin.load(std::memory_order_acquire);
+    const std::uint64_t end_frame = impl_->loop_end.load(std::memory_order_acquire);
+    const double begin = static_cast<double>(begin_frame);
+    const double end = static_cast<double>(end_frame);
     const double span = end - begin;
+    const bool looping_now = impl_->do_loop.load(std::memory_order_acquire);
 
-    for (std::size_t out = 0; out < frames; ++out) {
-        if (impl_->position >= end) {
-            if (!impl_->do_loop) {
-                impl_->transport = TransportState::Stopped;
-                std::fill(destination + static_cast<std::ptrdiff_t>(out),
-                          destination + static_cast<std::ptrdiff_t>(frames), StereoFrame{});
-                return;
-            }
-            impl_->position = begin + std::fmod(impl_->position - begin, span);
-        }
+    if (!(span > 0.0)) {
+        std::fill_n(destination, frames, StereoFrame{});
+        return;
+    }
 
-        const auto i0 = static_cast<std::uint64_t>(std::floor(impl_->position));
-        const double frac = impl_->position - static_cast<double>(i0);
+    if (impl_->render_position < begin || impl_->render_position >= end)
+        impl_->render_position = begin;
+
+    const auto sample_at = [&](double position) noexcept {
+        if (position < begin) position = begin;
+        if (position >= end) position = looping_now ? begin + std::fmod(position - begin, span) : end - 1.0;
+        const auto i0 = static_cast<std::uint64_t>(std::floor(position));
+        const double frac = position - static_cast<double>(i0);
         std::uint64_t i1 = i0 + 1;
-        if (i1 >= impl_->loop_end) i1 = impl_->do_loop ? impl_->loop_begin : i0;
-
+        if (i1 >= end_frame) i1 = looping_now ? begin_frame : i0;
         const StereoFrame a = impl_->wav.frames[static_cast<std::size_t>(i0)];
         const StereoFrame b = impl_->wav.frames[static_cast<std::size_t>(i1)];
-        destination[out] = {
+        return StereoFrame{
             static_cast<float>(a.left + (b.left - a.left) * frac),
-            static_cast<float>(a.right + (b.right - a.right) * frac)
-        };
-        impl_->position += step;
+            static_cast<float>(a.right + (b.right - a.right) * frac)};
+    };
+
+    const double requested_xfade_ms = impl_->loop_crossfade_ms.load(std::memory_order_acquire);
+    const double xfade_frames = looping_now
+        ? std::min(span * 0.5, requested_xfade_ms * static_cast<double>(impl_->wav.sample_rate) / 1000.0)
+        : 0.0;
+
+    for (std::size_t out = 0; out < frames; ++out) {
+        if (impl_->render_position >= end) {
+            if (!looping_now) {
+                impl_->transport.store(TransportState::Stopped, std::memory_order_release);
+                std::fill(destination + static_cast<std::ptrdiff_t>(out),
+                          destination + static_cast<std::ptrdiff_t>(frames), StereoFrame{});
+                impl_->render_position = begin;
+                impl_->reported_position.store(impl_->render_position, std::memory_order_release);
+                return;
+            }
+            impl_->render_position = begin + std::fmod(impl_->render_position - begin, span);
+        }
+
+        StereoFrame value = sample_at(impl_->render_position);
+        if (xfade_frames > 0.5 && impl_->render_position >= end - xfade_frames) {
+            const double alpha = std::clamp((impl_->render_position - (end - xfade_frames)) / xfade_frames, 0.0, 1.0);
+            const double head_position = begin + (impl_->render_position - (end - xfade_frames));
+            const StereoFrame head = sample_at(head_position);
+            value.left = static_cast<float>(value.left * (1.0 - alpha) + head.left * alpha);
+            value.right = static_cast<float>(value.right * (1.0 - alpha) + head.right * alpha);
+        }
+        destination[out] = value;
+        impl_->render_position += step;
     }
+    impl_->reported_position.store(impl_->render_position, std::memory_order_release);
 }
 
 TestSignalSource::TestSignalSource(TestSignalConfig config) : config_(config), rng_(config.noise_seed) {}

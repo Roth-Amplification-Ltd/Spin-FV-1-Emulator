@@ -2,6 +2,7 @@
 
 #include <fv1/analysis.hpp>
 #include <fv1/audio_source.hpp>
+#include <fv1/audio_recorder.hpp>
 #include <fv1/runtime.hpp>
 
 #include <atomic>
@@ -57,6 +58,17 @@ public:
               Runtime& runtime,
               AnalyzerWorker* analyzer,
               std::string* error = nullptr);
+
+    /* Extended testbench form: output_analyzer receives the post-DSP/output
+       stream while raw_input_analyzer receives the source before the FV-1.
+       Either analyzer may be null. The legacy overload above remains the
+       normal embedding API and simply omits the raw tap. */
+    bool open(const AudioHostConfig& config,
+              AudioSource& source,
+              Runtime& runtime,
+              AnalyzerWorker* output_analyzer,
+              AnalyzerWorker* raw_input_analyzer,
+              std::string* error);
     bool start(std::string* error = nullptr);
     void stop() noexcept;
     void close() noexcept;
@@ -70,6 +82,12 @@ public:
        to monitor the raw signal without tearing down the audio device. */
     void set_dsp_enabled(bool enabled) noexcept;
     bool dsp_enabled() const noexcept;
+
+    /* Attach/detach a realtime-safe recorder without reopening the device.
+       The recorder object must outlive its attachment. Passing nullptr detaches
+       it immediately; all actual disk I/O remains on the recorder worker. */
+    void set_recorder(AudioRecorder* recorder) noexcept;
+    AudioRecorder* recorder() const noexcept;
 
 private:
     class Impl;

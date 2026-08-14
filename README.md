@@ -1,8 +1,10 @@
 # Spin FV-1 Emulator
 
-Linux-first, open-source development tools for emulating and debugging the Spin Semiconductor FV-1 DSP.
+Linux-first, open-source tools for emulating, measuring and inspecting the Spin Semiconductor FV-1 DSP.
 
-**Current milestone: Phase 3 — Linux Qt FV-1 Lab application.**
+**Current milestone: Phase 4 — standalone FV-1 emulator/testbench completion.**
+
+The product is intentionally a polished virtual FV-1 and DSP lab instrument, not a full source-code IDE. Lightweight development/debug conveniences are welcome when they directly support emulation, while the underlying libraries remain reusable by a future dedicated IDE and other applications.
 
 The project is intentionally layered so the virtual FV-1 is not tied to a GUI toolkit, audio-device framework, or operating system. Linux is the only supported/tested host during the initial implementation. Windows and macOS front ends come later, after the core/runtime APIs are stable.
 
@@ -60,9 +62,10 @@ Requirements:
 - Python 3 (SpinASM assembler bridge)
 - `libspeexdsp-dev` for production realtime SRC
 - `libminiaudio-dev` for Linux device I/O
+- Qt 6 Widgets development packages (`qt6-base-dev`, `qt6-base-dev-tools`) for `fv1-lab`
 
 ```bash
-sudo apt install build-essential cmake ninja-build python3 pkg-config libspeexdsp-dev libminiaudio-dev
+sudo apt install build-essential cmake ninja-build python3 pkg-config libspeexdsp-dev libminiaudio-dev qt6-base-dev qt6-base-dev-tools
 
 git clone https://github.com/Roth-Amplification-Ltd/Spin-FV-1-Emulator.git
 cd Spin-FV-1-Emulator
@@ -160,7 +163,7 @@ See `docs/PHASE2-LINUX-TEST-PLAN.md` for the full Cortana bring-up sequence.
 - SKP count
 - opcode histogram
 
-These values are intended to feed the **Virtual DSP Resource Usage** panel in the future GUI.
+These values feed the **Virtual DSP Resource Usage** panel in the Qt testbench.
 
 ## Debugger API
 
@@ -198,6 +201,30 @@ Phase 2 makes the same virtual-FV-1 processing path accept three interchangeable
 The future GUI can therefore reuse these same runtime objects to repeatedly loop a guitar/drum/etc. recording while an effect is edited and debugged, or process a live instrument through the audio interface.
 
 See [`docs/ROADMAP.md`](docs/ROADMAP.md) and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+
+## Phase 4 emulator/testbench
+
+Phase 4 preserves the accepted Phase-3 dashboard and makes it a deeper virtual instrument rather than replacing it with an IDE.
+
+Highlights include:
+
+- simultaneous **raw input + processed FV-1** scope/spectrum overlays;
+- oscilloscope time zoom, vertical gain, Auto/Normal/Single trigger, source/slope/level controls, freeze and single-shot re-arm;
+- spectrum log/linear frequency modes, dB-range controls, peak hold and interpolated dominant-frequency reporting;
+- configurable spectrogram history;
+- WAV loop play/pause/stop/seek, loop-region selection and loop-boundary crossfade;
+- expanded sine/sweep/noise/impulse generator settings;
+- realtime-safe raw/processed WAV recording through a background writer;
+- plot copy/save and CSV export;
+- reusable GUI-independent `fv1-debugger` plus the right-side **offline virtual-chip inspector**;
+- REG0–31 and Delay RAM inspection;
+- the existing resource/status panels expanded for testbench use;
+- permanent `© 2026 Roth Amplification LTD` footer.
+
+The offline inspector owns a private FV-1 engine, so instruction/sample stepping never races the realtime audio callback. It is intentionally a chip-inspection feature rather than a full source editor/project environment.
+
+See [`docs/PHASE4-TESTBENCH.md`](docs/PHASE4-TESTBENCH.md) and [`docs/PHASE4-LINUX-TEST-PLAN.md`](docs/PHASE4-LINUX-TEST-PLAN.md).
 
 ## License
 

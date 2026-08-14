@@ -61,7 +61,13 @@ public:
     bool set_loop_region(std::uint64_t begin_frame, std::uint64_t end_frame) noexcept;
     std::uint64_t total_frames() const noexcept;
     std::uint32_t file_sample_rate() const noexcept;
+    double duration_seconds() const noexcept;
     double position_seconds() const noexcept;
+    bool seek_seconds(double seconds) noexcept;
+    double loop_begin_seconds() const noexcept;
+    double loop_end_seconds() const noexcept;
+    void set_loop_crossfade_ms(double milliseconds) noexcept;
+    double loop_crossfade_ms() const noexcept;
 
 private:
     class Impl;
