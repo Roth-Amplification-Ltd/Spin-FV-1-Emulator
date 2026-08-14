@@ -2,7 +2,7 @@
 
 Linux-first, open-source development tools for emulating and debugging the Spin Semiconductor FV-1 DSP.
 
-**Current milestone: Phase 2 — Linux realtime runtime/audio bring-up.**
+**Current milestone: Phase 3 — Linux Qt FV-1 Lab application.**
 
 The project is intentionally layered so the virtual FV-1 is not tied to a GUI toolkit, audio-device framework, or operating system. Linux is the only supported/tested host during the initial implementation. Windows and macOS front ends come later, after the core/runtime APIs are stable.
 
@@ -48,7 +48,7 @@ Implemented in the current Linux bring-up:
 - automated 48 kHz host -> 32.768 kHz virtual FV-1 clock-domain regression
 - fractional virtual-clock preservation for crystal-derived rates such as 46.6084 kHz
 
-The audio-device backend is Linux-first. Its source/runtime paths are regression-tested headlessly; final Phase-2 acceptance requires the real miniaudio/SpeexDSP build and an actual audio-interface run on Cortana. Windows and native macOS application work remains intentionally deferred until the Linux runtime and GUI APIs are stable.
+The audio-device backend is Linux-first. Generator and file-loop playback, production SpeexDSP clock bridging, analyzer telemetry, and real miniaudio playback have been accepted on Cortana. External capture/duplex-interface validation remains explicitly deferred until suitable hardware is available. Windows and native macOS application work remains intentionally deferred until the Linux runtime and GUI APIs are stable.
 
 ## Build on Linux
 
@@ -217,10 +217,25 @@ It verifies/installs the Linux build environment, configures the project, builds
 
 ## Phase 3 desktop frontend
 
-The repository now includes the initial Qt 6 `fv1-lab` desktop frontend. On supported apt-based Linux hosts, `./bootstrap-dev.sh` installs Qt 6 development packages along with the Phase-2 audio dependencies. After building, launch it with:
+The repository includes the Qt 6 `fv1-lab` desktop frontend. On supported apt-based Linux hosts, `./bootstrap-dev.sh` installs Qt 6 development packages along with the Phase-2 audio dependencies. After building, launch it with:
 
 ```bash
 ./build/fv1-lab
 ```
 
-The initial frontend follows the approved FV-1 Lab layout and includes Dark, Light, Midnight, Amber CRT, Green Phosphor, Slate and High Contrast themes with independent accent selection. Its Start/Stop controls run the existing Phase-2 audio/runtime engine for test-generator, looped-WAV, or live-input sources, while Phase-2 DSP/audio libraries remain Qt-free.
+![FV-1 Lab running Pitch Maw on Cortana](docs/media/phase3-cortana-running.png)
+
+[▶ Phase 3 Cortana runtime screencast (WebM)](docs/media/phase3-cortana-demo.webm)
+
+The frontend follows the approved FV-1 Lab engineering layout and includes Dark, Light, Midnight, Amber CRT, Green Phosphor, Slate and High Contrast themes with independent accent selection. Start/Stop runs the existing Phase-2 audio/runtime engine for test-generator, looped-WAV, or live-input sources, while the DSP/audio libraries remain Qt-free.
+
+Current GUI refinements include:
+
+- a DAW-style **Audio → Audio Settings…** dialog for playback/capture device, host sample rate, period/buffer size, virtual FV-1 clock and SRC quality;
+- persistent audio preferences via `QSettings`;
+- a clearly labeled realtime **DSP/FX ON — PROCESSED / DSP/FX BYPASS — RAW** control;
+- bypass monitoring that sends the raw selected source directly to output and the scope/analyzers without tearing down the audio device;
+- useful right-click menus on analyzer plots, audio controls, program selection and the console;
+- static resource analysis and live runtime telemetry in the approved dashboard layout.
+
+See [`docs/PHASE3-GUI.md`](docs/PHASE3-GUI.md) and [`docs/PHASE3-ACCEPTANCE.md`](docs/PHASE3-ACCEPTANCE.md).

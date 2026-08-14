@@ -16,6 +16,17 @@ InstrumentPlot::InstrumentPlot(PlotKind kind, QWidget* parent) : QWidget(parent)
 
 QSize InstrumentPlot::minimumSizeHint() const { return {480, 260}; }
 
+void InstrumentPlot::set_signal_label(const QString& label) {
+    signal_label_ = label;
+    update();
+}
+
+void InstrumentPlot::clear_display() {
+    snapshot_ = {};
+    spectrogram_history_.clear();
+    update();
+}
+
 void InstrumentPlot::set_snapshot(const fv1::AnalysisSnapshot& snapshot) {
     snapshot_ = snapshot;
     if (kind_ == PlotKind::Spectrogram && !snapshot.spectrum_db.empty()) {
@@ -85,7 +96,7 @@ void InstrumentPlot::paintEvent(QPaintEvent*) {
                 const std::size_t bin = y * spectrum.size() / rows;
                 const double energy = std::clamp((static_cast<double>(spectrum[bin]) + 100.0) / 100.0, 0.0, 1.0);
                 QColor c = accent;
-                c.setAlphaF(0.03 + energy * 0.82);
+                c.setAlphaF(static_cast<float>(0.03 + energy * 0.82));
                 const double row_h = r.height() / static_cast<double>(rows);
                 p.fillRect(QRectF(r.left() + static_cast<double>(x) * column_w,
                                   r.bottom() - static_cast<double>(y + 1) * row_h,
@@ -113,6 +124,7 @@ void InstrumentPlot::paintEvent(QPaintEvent*) {
     else if (kind_ == PlotKind::Spectrum) title = QStringLiteral("FFT SPECTRUM");
     else if (kind_ == PlotKind::Spectrogram) title = QStringLiteral("SPECTROGRAM HISTORY");
     else title = QStringLiteral("OUTPUT LEVELS");
+    title += QStringLiteral("    [%1]").arg(signal_label_);
     if (snapshot_.sequence != 0 && kind_ == PlotKind::Spectrum) {
         title += QStringLiteral("    dominant %1 Hz").arg(snapshot_.dominant_frequency_hz, 0, 'f', 1);
     }

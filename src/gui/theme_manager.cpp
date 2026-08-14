@@ -11,10 +11,10 @@ namespace {
 QColor mix(const QColor& a, const QColor& b, double t) {
     t = std::clamp(t, 0.0, 1.0);
     return QColor::fromRgbF(
-        a.redF()   * (1.0 - t) + b.redF()   * t,
-        a.greenF() * (1.0 - t) + b.greenF() * t,
-        a.blueF()  * (1.0 - t) + b.blueF()  * t,
-        1.0);
+        static_cast<float>(a.redF()   * (1.0 - t) + b.redF()   * t),
+        static_cast<float>(a.greenF() * (1.0 - t) + b.greenF() * t),
+        static_cast<float>(a.blueF()  * (1.0 - t) + b.blueF()  * t),
+        1.0f);
 }
 
 ThemeSpec dark_base(const QString& name, const QColor& window, const QColor& panel,

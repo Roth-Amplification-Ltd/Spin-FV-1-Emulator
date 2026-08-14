@@ -12,6 +12,8 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QCoreApplication>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
@@ -23,13 +25,16 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMenu>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSettings>
 #include <QSlider>
+#include <QSpinBox>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -133,6 +138,8 @@ public:
                double fv1_rate,
                int playback_device,
                int capture_device,
+               int resampler_quality,
+               bool dsp_enabled,
                float pot0, float pot1, float pot2,
                QString& error) {
         stop();
@@ -168,7 +175,7 @@ public:
         rc.host_sample_rate = host_rate;
         rc.fv1_sample_rate = fv1_rate;
         rc.max_host_block_frames = std::max<std::size_t>(4096u, static_cast<std::size_t>(period_frames) * 4u);
-        rc.resampler_quality = 7;
+        rc.resampler_quality = std::clamp(resampler_quality, 0, 10);
         if (!runtime_.prepare(rc)) { error = QStringLiteral("FV-1 runtime prepare failed."); stop(); return false; }
         if (!runtime_.load_program_bytes(reinterpret_cast<const std::uint8_t*>(program.constData()), static_cast<std::size_t>(program.size()))) {
             error = QStringLiteral("FV-1 program load failed."); stop(); return false;
@@ -188,6 +195,7 @@ public:
         if (!host_.open(hc, *source_, runtime_, &analyzer_, &host_error)) {
             error = QString::fromStdString(host_error); stop(); return false;
         }
+        host_.set_dsp_enabled(dsp_enabled);
         if (!host_.start(&host_error)) {
             error = QString::fromStdString(host_error); stop(); return false;
         }
@@ -210,6 +218,8 @@ public:
     fv1::RuntimeStats runtime_stats() const noexcept { return runtime_.stats(); }
     std::uint64_t analyzer_drops() const noexcept { return analyzer_.dropped_frames(); }
     bool using_speex() const noexcept { return runtime_.using_speexdsp(); }
+    void set_dsp_enabled(bool enabled) noexcept { host_.set_dsp_enabled(enabled); }
+    bool dsp_enabled() const noexcept { return host_.dsp_enabled(); }
 
 private:
     fv1::Runtime runtime_;
@@ -229,6 +239,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), session_(std::mak
     QSettings settings;
     theme_name_ = settings.value(QStringLiteral("ui/theme"), QStringLiteral("Dark")).toString();
     accent_name_ = settings.value(QStringLiteral("ui/accent"), QStringLiteral("Cyan")).toString();
+    resampler_quality_ = settings.value(QStringLiteral("audio/srcQuality"), 7).toInt();
+    dsp_enabled_ = settings.value(QStringLiteral("audio/dspEnabled"), true).toBool();
     ThemeManager::apply(*qApp, theme_name_, accent_name_);
 
     build_menus();
@@ -237,6 +249,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), session_(std::mak
     build_center();
     build_right_dock();
     refresh_audio_devices();
+    host_rate_combo_->setCurrentText(settings.value(QStringLiteral("audio/hostRate"), QStringLiteral("48000")).toString());
+    buffer_combo_->setCurrentText(settings.value(QStringLiteral("audio/buffer"), QStringLiteral("256")).toString());
+    clock_combo_->setCurrentText(settings.value(QStringLiteral("audio/fv1Clock"), QStringLiteral("32768")).toString());
+    const QString saved_playback = settings.value(QStringLiteral("audio/playbackName")).toString();
+    const QString saved_capture = settings.value(QStringLiteral("audio/captureName")).toString();
+    if (!saved_playback.isEmpty()) { const int i = playback_combo_->findText(saved_playback); if (i >= 0) playback_combo_->setCurrentIndex(i); }
+    if (!saved_capture.isEmpty()) { const int i = capture_combo_->findText(saved_capture); if (i >= 0) capture_combo_->setCurrentIndex(i); }
+    set_dsp_enabled(dsp_enabled_);
 
     telemetry_timer_ = new QTimer(this);
     telemetry_timer_->setInterval(50);
@@ -259,6 +279,15 @@ void MainWindow::build_menus() {
     file->addSeparator();
     auto* quit = file->addAction(QStringLiteral("Quit"));
     connect(quit, &QAction::triggered, qApp, &QApplication::quit);
+
+    auto* audio = menuBar()->addMenu(QStringLiteral("&Audio"));
+    auto* audio_settings = audio->addAction(QStringLiteral("Audio Settings…"));
+    connect(audio_settings, &QAction::triggered, this, [this]{ show_audio_settings(); });
+    auto* refresh_devices = audio->addAction(QStringLiteral("Refresh Audio Devices"));
+    connect(refresh_devices, &QAction::triggered, this, [this]{ refresh_audio_devices(); });
+    audio->addSeparator();
+    auto* bypass = audio->addAction(QStringLiteral("Toggle DSP/FX Bypass"));
+    connect(bypass, &QAction::triggered, this, [this]{ set_dsp_enabled(!dsp_enabled_); });
 
     auto* view = menuBar()->addMenu(QStringLiteral("&View"));
     auto* theme_menu = view->addMenu(QStringLiteral("Theme"));
@@ -289,8 +318,15 @@ void MainWindow::build_toolbar() {
     auto* start = bar->addAction(QStringLiteral("▶ Start"));
     auto* stop = bar->addAction(QStringLiteral("■ Stop"));
     bar->addSeparator();
+    dsp_action_ = bar->addAction(QStringLiteral("DSP/FX ON — PROCESSED"));
+    dsp_action_->setCheckable(true);
+    dsp_action_->setChecked(dsp_enabled_);
+    connect(dsp_action_, &QAction::toggled, this, [this](bool enabled){ set_dsp_enabled(enabled); });
+    bar->addSeparator();
     auto* open = bar->addAction(QStringLiteral("Open Program"));
+    auto* audio_settings = bar->addAction(QStringLiteral("Audio Settings…"));
     connect(open, &QAction::triggered, this, [this]{ choose_program(); });
+    connect(audio_settings, &QAction::triggered, this, [this]{ show_audio_settings(); });
     connect(start, &QAction::triggered, this, [this]{ start_session(); });
     connect(stop, &QAction::triggered, this, [this]{ stop_session(); });
 }
@@ -306,6 +342,14 @@ void MainWindow::build_left_dock() {
     auto* program_layout = new QVBoxLayout(program);
     program_label_ = new QLabel(QStringLiteral("No program loaded"), program);
     program_label_->setWordWrap(true);
+    program_label_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(program_label_, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+        QMenu menu(this);
+        menu.addAction(QStringLiteral("Open FV-1 Program…"), this, [this]{ choose_program(); });
+        auto* inspect = menu.addAction(QStringLiteral("Re-run Resource Analysis"), this, [this]{ inspect_program(); });
+        inspect->setEnabled(!program_path_.isEmpty());
+        menu.exec(program_label_->mapToGlobal(pos));
+    });
     auto* program_button = new QPushButton(QStringLiteral("Open .spn / .bin"), program);
     connect(program_button, &QPushButton::clicked, this, [this]{ choose_program(); });
     program_layout->addWidget(program_label_);
@@ -369,6 +413,23 @@ void MainWindow::build_left_dock() {
     audio_form->addRow(QStringLiteral("Host rate"), host_rate_combo_);
     audio_form->addRow(QStringLiteral("Buffer"), buffer_combo_);
     audio_form->addRow(QStringLiteral("FV-1 clock"), clock_combo_);
+    auto* audio_settings_button = new QPushButton(QStringLiteral("Audio Settings…"), audio);
+    connect(audio_settings_button, &QPushButton::clicked, this, [this]{ show_audio_settings(); });
+    audio_form->addRow(audio_settings_button);
+    const auto install_audio_context = [this](QWidget* widget) {
+        widget->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(widget, &QWidget::customContextMenuRequested, this, [this, widget](const QPoint& pos) {
+            QMenu menu(this);
+            menu.addAction(QStringLiteral("Audio Settings…"), this, [this]{ show_audio_settings(); });
+            menu.addAction(QStringLiteral("Refresh Audio Devices"), this, [this]{ refresh_audio_devices(); });
+            menu.exec(widget->mapToGlobal(pos));
+        });
+    };
+    install_audio_context(playback_combo_);
+    install_audio_context(capture_combo_);
+    install_audio_context(host_rate_combo_);
+    install_audio_context(buffer_combo_);
+    install_audio_context(clock_combo_);
     layout->addWidget(audio);
     layout->addStretch(1);
 
@@ -390,6 +451,22 @@ void MainWindow::build_center() {
     tabs->addTab(spectrum_plot_, QStringLiteral("SPECTRUM"));
     tabs->addTab(spectrogram_plot_, QStringLiteral("SPECTROGRAM"));
     tabs->addTab(levels_plot_, QStringLiteral("LEVELS"));
+    const auto install_plot_context = [this](InstrumentPlot* plot) {
+        plot->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(plot, &QWidget::customContextMenuRequested, this, [this, plot](const QPoint& pos) {
+            QMenu menu(this);
+            menu.addAction(dsp_enabled_ ? QStringLiteral("Bypass DSP/FX — View Raw Signal")
+                                        : QStringLiteral("Enable DSP/FX — View Processed Signal"),
+                           this, [this]{ set_dsp_enabled(!dsp_enabled_); });
+            menu.addSeparator();
+            menu.addAction(QStringLiteral("Clear Display"), plot, [plot]{ plot->clear_display(); });
+            menu.exec(plot->mapToGlobal(pos));
+        });
+    };
+    install_plot_context(scope_plot_);
+    install_plot_context(spectrum_plot_);
+    install_plot_context(spectrogram_plot_);
+    install_plot_context(levels_plot_);
     main->addWidget(tabs, 1);
 
     auto* bottom = new QSplitter(Qt::Horizontal, center);
@@ -434,6 +511,17 @@ void MainWindow::build_right_dock() {
     console_ = new QPlainTextEdit(console_group);
     console_->setReadOnly(true);
     console_->setMaximumBlockCount(4000);
+    console_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(console_, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+        std::unique_ptr<QMenu> menu(console_->createStandardContextMenu());
+        menu->addSeparator();
+        menu->addAction(QStringLiteral("Clear Log"), console_, [this]{ console_->clear(); });
+        menu->addAction(QStringLiteral("Copy Entire Log"), console_, [this]{
+            console_->selectAll();
+            console_->copy();
+        });
+        menu->exec(console_->mapToGlobal(pos));
+    });
     console_layout->addWidget(console_);
     split->addWidget(console_group);
 
@@ -476,6 +564,108 @@ void MainWindow::refresh_audio_devices() {
     }
     if (!error.empty()) log(QStringLiteral("Audio enumeration: ") + QString::fromStdString(error));
     else log(QStringLiteral("Audio devices enumerated through Phase-2 miniaudio backend."));
+}
+
+void MainWindow::show_audio_settings() {
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Audio Settings"));
+    dialog.setMinimumWidth(560);
+
+    auto* outer = new QVBoxLayout(&dialog);
+    auto* note = new QLabel(
+        session_ && session_->running()
+            ? QStringLiteral("The current audio session keeps its existing settings. Changes below apply the next time Start is pressed.")
+            : QStringLiteral("Configure the Linux audio host and virtual FV-1 clock. These settings are remembered between launches."),
+        &dialog);
+    note->setWordWrap(true);
+    outer->addWidget(note);
+
+    auto* form = new QFormLayout;
+    auto* backend = new QLabel(QStringLiteral("miniaudio / system audio"), &dialog);
+    auto* playback = new QComboBox(&dialog);
+    auto* capture = new QComboBox(&dialog);
+    auto* host_rate = new QComboBox(&dialog);
+    auto* buffer = new QComboBox(&dialog);
+    auto* clock = new QComboBox(&dialog);
+    auto* quality = new QSpinBox(&dialog);
+    quality->setRange(0, 10);
+    quality->setValue(resampler_quality_);
+    quality->setToolTip(QStringLiteral("SpeexDSP resampler quality: 0 = lightest CPU load, 10 = highest quality."));
+
+    const auto clone_combo = [](QComboBox* dst, const QComboBox* src) {
+        dst->clear();
+        for (int i = 0; i < src->count(); ++i) dst->addItem(src->itemText(i), src->itemData(i));
+        dst->setCurrentIndex(std::max(0, src->currentIndex()));
+    };
+    clone_combo(playback, playback_combo_);
+    clone_combo(capture, capture_combo_);
+    clone_combo(host_rate, host_rate_combo_);
+    clone_combo(buffer, buffer_combo_);
+    clone_combo(clock, clock_combo_);
+
+    form->addRow(QStringLiteral("Backend"), backend);
+    form->addRow(QStringLiteral("Playback device"), playback);
+    form->addRow(QStringLiteral("Capture device"), capture);
+    form->addRow(QStringLiteral("Host sample rate"), host_rate);
+    form->addRow(QStringLiteral("Buffer / period"), buffer);
+    form->addRow(QStringLiteral("Virtual FV-1 clock"), clock);
+    form->addRow(QStringLiteral("SRC quality"), quality);
+    outer->addLayout(form);
+
+    auto* refresh = new QPushButton(QStringLiteral("Refresh Audio Devices"), &dialog);
+    connect(refresh, &QPushButton::clicked, &dialog, [this, playback, capture] {
+        const QString playback_name = playback->currentText();
+        const QString capture_name = capture->currentText();
+        playback->clear(); capture->clear();
+        playback->addItem(QStringLiteral("OS Default"), -1);
+        capture->addItem(QStringLiteral("OS Default"), -1);
+        std::string error;
+        const auto devices = fv1::AudioHost::enumerate(&error);
+        for (const auto& d : devices) {
+            const QString label = QString::fromStdString(d.name) + (d.is_default ? QStringLiteral("  (default)") : QString());
+            if (d.direction == fv1::AudioDeviceDirection::Playback) playback->addItem(label, static_cast<int>(d.index));
+            else capture->addItem(label, static_cast<int>(d.index));
+        }
+        const int p = playback->findText(playback_name); if (p >= 0) playback->setCurrentIndex(p);
+        const int c = capture->findText(capture_name); if (c >= 0) capture->setCurrentIndex(c);
+        if (!error.empty()) log(QStringLiteral("Audio enumeration: ") + QString::fromStdString(error));
+        else log(QStringLiteral("Audio devices refreshed from Audio Settings dialog."));
+    });
+    outer->addWidget(refresh);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    outer->addWidget(buttons);
+
+    if (dialog.exec() != QDialog::Accepted) return;
+
+    const auto apply_combo = [](QComboBox* dst, const QComboBox* src) {
+        const QVariant data = src->currentData();
+        const int by_data = dst->findData(data);
+        if (by_data >= 0) dst->setCurrentIndex(by_data);
+        else dst->setCurrentText(src->currentText());
+    };
+    apply_combo(playback_combo_, playback);
+    apply_combo(capture_combo_, capture);
+    host_rate_combo_->setCurrentText(host_rate->currentText());
+    buffer_combo_->setCurrentText(buffer->currentText());
+    clock_combo_->setCurrentText(clock->currentText());
+    resampler_quality_ = quality->value();
+
+    QSettings settings;
+    settings.setValue(QStringLiteral("audio/playbackName"), playback_combo_->currentText());
+    settings.setValue(QStringLiteral("audio/captureName"), capture_combo_->currentText());
+    settings.setValue(QStringLiteral("audio/hostRate"), host_rate_combo_->currentText());
+    settings.setValue(QStringLiteral("audio/buffer"), buffer_combo_->currentText());
+    settings.setValue(QStringLiteral("audio/fv1Clock"), clock_combo_->currentText());
+    settings.setValue(QStringLiteral("audio/srcQuality"), resampler_quality_);
+
+    log(QStringLiteral("Audio settings: playback '%1', capture '%2', host %3 Hz, buffer %4, FV-1 %5 Hz, SRC quality %6.")
+        .arg(playback_combo_->currentText(), capture_combo_->currentText(), host_rate_combo_->currentText(),
+             buffer_combo_->currentText(), clock_combo_->currentText()).arg(resampler_quality_));
+    if (session_ && session_->running())
+        statusBar()->showMessage(QStringLiteral("Audio settings saved — restart session to apply"), 5000);
 }
 
 void MainWindow::choose_program() {
@@ -531,6 +721,7 @@ void MainWindow::start_session() {
     const int capture = capture_combo_->currentData().toInt();
     if (!session_->start(bytes, source_combo_->currentText(), audio_file_path_, generator_combo_->currentText(),
                          generator_frequency_->value(), host_rate, buffer, clock, playback, capture,
+                         resampler_quality_, dsp_enabled_,
                          static_cast<float>(pot0_->value())/1000.0f,
                          static_cast<float>(pot1_->value())/1000.0f,
                          static_cast<float>(pot2_->value())/1000.0f, error)) {
@@ -539,8 +730,9 @@ void MainWindow::start_session() {
         return;
     }
     telemetry_timer_->start();
-    log(QStringLiteral("Realtime session started: %1, host %2 Hz, virtual FV-1 %3 Hz, buffer %4.")
-        .arg(source_combo_->currentText()).arg(host_rate).arg(clock,0,'f',1).arg(buffer));
+    log(QStringLiteral("Realtime session started: %1, host %2 Hz, virtual FV-1 %3 Hz, buffer %4, %5.")
+        .arg(source_combo_->currentText()).arg(host_rate).arg(clock,0,'f',1).arg(buffer)
+        .arg(dsp_enabled_ ? QStringLiteral("DSP/FX processed") : QStringLiteral("DSP/FX bypassed — raw monitor")));
     statusBar()->showMessage(QStringLiteral("RUNNING"));
 }
 
@@ -564,8 +756,8 @@ void MainWindow::update_telemetry() {
     const auto hs = session_->host_stats();
     const auto rs = session_->runtime_stats();
     runtime_status_->setText(QStringLiteral(
-        "RUNNING\nHost frames      %1\nFV-1 frames      %2\nCallback CPU     %3%\nUnderruns        %4\nAnalyzer drops   %5\nRMS L/R          %6 / %7\nDominant         %8 Hz\nSRC              %9")
-        .arg(rs.host_output_frames)
+        "RUNNING — %10\nHost frames      %1\nFV-1 frames      %2\nCallback CPU     %3%\nUnderruns        %4\nAnalyzer drops   %5\nRMS L/R          %6 / %7\nDominant         %8 Hz\nSRC              %9")
+        .arg(hs.source_frames)
         .arg(rs.fv1_frames)
         .arg(hs.callback_cpu_load * 100.0, 0, 'f', 2)
         .arg(rs.output_underrun_frames)
@@ -573,11 +765,39 @@ void MainWindow::update_telemetry() {
         .arg(a.rms_left, 0, 'f', 3)
         .arg(a.rms_right, 0, 'f', 3)
         .arg(a.dominant_frequency_hz, 0, 'f', 1)
-        .arg(session_->using_speex() ? QStringLiteral("SpeexDSP") : QStringLiteral("linear fallback")));
+        .arg(session_->using_speex() ? QStringLiteral("SpeexDSP") : QStringLiteral("linear fallback"))
+        .arg(dsp_enabled_ ? QStringLiteral("DSP/FX ON") : QStringLiteral("BYPASS / RAW")));
 }
 
 void MainWindow::log(const QString& text) {
     if (console_) console_->appendPlainText(text);
+}
+
+void MainWindow::update_signal_monitor_labels() {
+    const QString label = dsp_enabled_ ? QStringLiteral("PROCESSED") : QStringLiteral("RAW INPUT / DSP BYPASS");
+    if (scope_plot_) scope_plot_->set_signal_label(label);
+    if (spectrum_plot_) spectrum_plot_->set_signal_label(label);
+    if (spectrogram_plot_) spectrogram_plot_->set_signal_label(label);
+    if (levels_plot_) levels_plot_->set_signal_label(label);
+}
+
+void MainWindow::set_dsp_enabled(bool enabled) {
+    dsp_enabled_ = enabled;
+    if (session_) session_->set_dsp_enabled(enabled);
+    if (dsp_action_) {
+        const bool blocked = dsp_action_->blockSignals(true);
+        dsp_action_->setChecked(enabled);
+        dsp_action_->setText(enabled ? QStringLiteral("DSP/FX ON — PROCESSED")
+                                     : QStringLiteral("DSP/FX BYPASS — RAW"));
+        dsp_action_->blockSignals(blocked);
+    }
+    update_signal_monitor_labels();
+    QSettings settings;
+    settings.setValue(QStringLiteral("audio/dspEnabled"), enabled);
+    if (console_) log(enabled ? QStringLiteral("DSP/FX processing enabled; analyzers monitor processed output.")
+                              : QStringLiteral("DSP/FX BYPASS enabled; output and analyzers monitor the raw source."));
+    if (statusBar()) statusBar()->showMessage(enabled ? QStringLiteral("DSP/FX ON — processed signal")
+                                                     : QStringLiteral("DSP/FX BYPASS — raw signal"), 3000);
 }
 
 void MainWindow::set_theme(const QString& theme_name) {

@@ -23,7 +23,7 @@ Deliverables:
 
 Exit test: all unit tests pass, all eight project example effects compile, execute and render finite non-silent audio on Linux.
 
-## Phase 2 — Realtime audio, file loops and analysis — CURRENT
+## Phase 2 — Realtime audio, file loops and analysis — ACCEPTED / CAPTURE TEST DEFERRED
 
 Add the reusable runtime around `libfv1-core`:
 
@@ -39,9 +39,9 @@ Add the reusable runtime around `libfv1-core`:
 - background spectrum/measurement engine behind a swappable FFT backend;
 - scope data, meters, correlation and runtime/xrun statistics.
 
-Exit test: automated clock/source/analyzer tests pass, then guitar/line input can be processed live and an imported audio file can loop continuously through the same FV-1 processing path on Cortana.
+Exit status: automated clock/source/analyzer tests pass; production SpeexDSP/miniaudio playback and looped-file processing are accepted on Cortana. Guitar/line capture through an external duplex interface remains a documented deferred acceptance test until hardware is available.
 
-## Phase 3 — Linux Qt application
+## Phase 3 — Linux Qt application — CURRENT
 
 Build the full Linux desktop application on the stable Phase-1/2 libraries:
 
@@ -56,7 +56,10 @@ Build the full Linux desktop application on the stable Phase-1/2 libraries:
 - register/memory inspector;
 - Dark, Light, Midnight, Amber CRT, Green Phosphor, Slate and High Contrast themes;
 - independent accent-color selection;
-- semantic theme palette rather than hard-coded widget colors.
+- semantic theme palette rather than hard-coded widget colors;
+- DAW-style audio preferences dialog;
+- realtime DSP/FX bypass with explicit raw-signal scope/analyzer monitoring;
+- right-click context menus for high-value local engineering actions.
 
 ## Phase 4 — Integrated FV-1 development environment
 
@@ -85,8 +88,11 @@ Only after the shared APIs are mature:
 
 DAW/VST/AU/CLAP plugins are **not part of this standalone application project**. If desired later, they should be separate consumers of the core library.
 
-## Current status — Phase 3 started
+## Current status — Phase 3 operational on Cortana
 
 Phase 2 is accepted on Linux for generator/file-loop playback, production SpeexDSP clock bridging, analyzer telemetry and real miniaudio playback. External capture/duplex interface validation is deferred until hardware is available.
 
-Phase 3 has started with the Qt 6 `fv1-lab` engineering GUI shell and theme system. The next increment connects the GUI session controls and plots to the already-tested Phase-2 runtime/analyzer APIs.
+Phase 3 is operational on Cortana with Qt 6.4.2: the approved dashboard launches, programs load and analyze, test-generator and file-loop sessions run through the Phase-2 runtime, plots consume live analyzer data, themes switch, and the offscreen GUI smoke test passes. The current refinement adds DAW-style Audio Settings, DSP/FX bypass/raw monitoring, and task-local context menus.
+
+The next larger Phase-3 increment is the dedicated offline debugger session, richer delay/register visualization, loop-region editing, and source/compiler diagnostics.
+

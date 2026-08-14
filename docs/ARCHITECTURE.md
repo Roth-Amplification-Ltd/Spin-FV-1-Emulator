@@ -79,3 +79,11 @@ This is required so a looped recording is a deterministic substitute for repeate
 The device callback owns no emulator policy. It asks the selected `AudioSource` for a host-rate block, passes that block through `Runtime`, writes the returned host-rate block to the device, and enqueues a copy to `AnalyzerWorker`. The runtime and source objects are prepared before the device starts so the callback performs no intentional allocation.
 
 See `docs/AUDIO-RUNTIME.md` and `docs/PHASE2-LINUX-TEST-PLAN.md`.
+
+## Realtime DSP bypass / raw monitor
+
+The UI bypass control is implemented at the `AudioHost` callback boundary rather than by mutating or replacing the virtual FV-1 program. The selected `AudioSource` still renders normally. With DSP enabled, its frames pass through `Runtime`; with DSP bypassed, the host copies those frames directly to the device output and analyzer queue.
+
+This keeps the audio device and source transport alive, makes processed/raw A/B switching realtime-safe, and ensures the oscilloscope can display the exact raw source presented to the emulator. The bypass flag is atomic; toggling it from the Qt thread requires no callback-thread lock or allocation.
+
+Audio preferences remain a frontend concern. Qt stores user selections through `QSettings` and passes concrete playback/capture/rate/buffer/FV-1-clock/SRC-quality values into the platform-neutral runtime/audio APIs when a session starts.

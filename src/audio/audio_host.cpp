@@ -29,6 +29,7 @@ public:
     std::atomic<std::uint64_t> source_frames{0};
     std::atomic<double> callback_cpu{0.0};
     std::atomic<bool> finished{false};
+    std::atomic<bool> dsp_enabled{true};
 
     ~Impl() { close(); }
 
@@ -72,8 +73,12 @@ public:
 
         const auto begin = std::chrono::steady_clock::now();
         self->source->render(in, self->source_buffer.data(), process_frames);
-        const bool ok = self->runtime->process_block(self->source_buffer.data(), out, process_frames);
-        if (!ok) std::fill_n(out, process_frames, StereoFrame{});
+        if (self->dsp_enabled.load(std::memory_order_relaxed)) {
+            const bool ok = self->runtime->process_block(self->source_buffer.data(), out, process_frames);
+            if (!ok) std::fill_n(out, process_frames, StereoFrame{});
+        } else {
+            std::copy_n(self->source_buffer.data(), process_frames, out);
+        }
         if (process_frames < frames)
             std::fill(out + static_cast<std::ptrdiff_t>(process_frames),
                       out + static_cast<std::ptrdiff_t>(frames), StereoFrame{});
@@ -93,7 +98,10 @@ public:
     }
 };
 #else
-class AudioHost::Impl {};
+class AudioHost::Impl {
+public:
+    std::atomic<bool> dsp_enabled{true};
+};
 #endif
 
 AudioHost::AudioHost() : impl_(std::make_unique<Impl>()) {}
@@ -214,6 +222,7 @@ bool AudioHost::open(const AudioHostConfig& config,
     impl_->source_frames.store(0, std::memory_order_relaxed);
     impl_->callback_cpu.store(0.0, std::memory_order_relaxed);
     impl_->finished.store(false, std::memory_order_relaxed);
+    impl_->dsp_enabled.store(true, std::memory_order_relaxed);
     return true;
 #else
     (void)config; (void)source; (void)runtime; (void)analyzer;
@@ -282,6 +291,14 @@ AudioHostStats AudioHost::stats() const noexcept {
 #else
     return {};
 #endif
+}
+
+void AudioHost::set_dsp_enabled(bool enabled) noexcept {
+    impl_->dsp_enabled.store(enabled, std::memory_order_release);
+}
+
+bool AudioHost::dsp_enabled() const noexcept {
+    return impl_->dsp_enabled.load(std::memory_order_acquire);
 }
 
 } // namespace fv1

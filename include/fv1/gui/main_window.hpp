@@ -4,6 +4,7 @@
 
 #include <memory>
 
+class QAction;
 class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
@@ -31,6 +32,7 @@ private:
     void build_center();
     void build_right_dock();
     void refresh_audio_devices();
+    void show_audio_settings();
     void choose_program();
     void choose_audio_file();
     void inspect_program();
@@ -40,14 +42,19 @@ private:
     void log(const QString& text);
     void set_theme(const QString& theme_name);
     void set_accent(const QString& accent_name);
+    void set_dsp_enabled(bool enabled);
+    void update_signal_monitor_labels();
 
     QString theme_name_{QStringLiteral("Dark")};
     QString accent_name_{QStringLiteral("Cyan")};
     QString program_path_;
     QString audio_file_path_;
+    int resampler_quality_{7};
+    bool dsp_enabled_{true};
 
     std::unique_ptr<SessionController> session_;
     QTimer* telemetry_timer_{};
+    QAction* dsp_action_{};
 
     QComboBox* source_combo_{};
     QComboBox* playback_combo_{};

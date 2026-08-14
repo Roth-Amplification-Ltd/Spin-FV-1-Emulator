@@ -65,6 +65,12 @@ public:
     bool is_finished() const noexcept;
     AudioHostStats stats() const noexcept;
 
+    /* Realtime-safe processing bypass.  When disabled, the host copies the
+       selected source directly to output and to the analyzer, allowing the GUI
+       to monitor the raw signal without tearing down the audio device. */
+    void set_dsp_enabled(bool enabled) noexcept;
+    bool dsp_enabled() const noexcept;
+
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(SpinFV1Emulator VERSION 0.3.0 LANGUAGES C CXX)
+project(SpinFV1Emulator VERSION 0.3.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -142,6 +142,10 @@ if(FV1_BUILD_TESTS)
     add_executable(fv1-phase2-tests tests/test_phase2.cpp)
     target_link_libraries(fv1-phase2-tests PRIVATE FV1::runtime FV1::analysis Threads::Threads)
     add_test(NAME fv1-phase2-tests COMMAND fv1-phase2-tests)
+
+    add_executable(fv1-audio-host-tests tests/test_audio_host_api.cpp)
+    target_link_libraries(fv1-audio-host-tests PRIVATE FV1::audio)
+    add_test(NAME fv1-audio-host-tests COMMAND fv1-audio-host-tests)
 
     add_test(NAME compile-steal-this-bank
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_compile_examples.py
