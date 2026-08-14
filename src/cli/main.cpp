@@ -1,4 +1,5 @@
 #include <fv1/fv1.h>
+#include <fv1/runtime.hpp>
 
 #include <algorithm>
 #include <array>
@@ -305,7 +306,7 @@ void write_wav_float32(const fs::path& path, uint32_t sample_rate,
 
 void print_usage() {
     std::cout <<
-R"(Spin FV-1 Emulator - Phase 1 Linux CLI
+R"(Spin FV-1 Emulator - Phase 2 Linux CLI
 
 Usage:
   fv1-cli assemble <program.spn> <program.bin>
@@ -317,10 +318,11 @@ Usage:
 
 Common options:
   --clock Hz          Virtual FV-1 sample/clock rate (default 32768)
-  --full-delay-24     Diagnostic full-24-bit delay RAM instead of reference reduced precision
+  --resampler-quality N SpeexDSP SRC quality 0..10 (default 7)
+  --full-delay-24       Diagnostic full-24-bit delay RAM instead of reference reduced precision
 
-Phase 1 intentionally requires render input WAV sample rate == --clock.
-Realtime host/FV-1 sample-rate conversion belongs to Phase 2.
+Render accepts arbitrary WAV sample rates. The runtime keeps the virtual FV-1
+clock independent and performs host<->FV-1 sample-rate conversion.
 )";
 }
 
@@ -401,21 +403,40 @@ int cmd_render(const Args& args) {
     if (args.values.size() < 4) throw Error("render requires program, input.wav, output.wav");
     const double clock = std::stod(args.get("--clock", "32768"));
     WavData w = read_wav(args.values[2]);
-    if (std::abs(static_cast<double>(w.sample_rate) - clock) > 0.01) {
-        std::ostringstream ss;
-        ss << "Phase 1 render requires input WAV sample rate (" << w.sample_rate
-           << ") to equal virtual FV-1 clock (" << clock
-           << "). Phase 2 adds host/FV-1 SRC.";
-        throw Error(ss.str());
-    }
-    fv1_engine* e = make_engine(args);
-    load_engine_program(e, args.values[1], get_uint(args, "--slot", 0));
+
+    fv1::Runtime runtime;
+    fv1::RuntimeConfig cfg;
+    cfg.host_sample_rate = static_cast<double>(w.sample_rate);
+    cfg.fv1_sample_rate = clock;
+    cfg.max_host_block_frames = 1024;
+    cfg.resampler_quality = static_cast<int>(get_uint(args, "--resampler-quality", 7));
+    cfg.delay_model = args.has("--full-delay-24") ? FV1_DELAY_FULL_24 : FV1_DELAY_REFERENCE_16;
+    if (!runtime.prepare(cfg)) throw Error("Phase 2 runtime prepare failed");
+
+    auto image = load_program_image(args.values[1], get_uint(args, "--slot", 0));
+    if (!runtime.load_program_bytes(image.data(), image.size())) throw Error("program load failed");
+    runtime.set_pots(get_float(args, "--pot0", 0.5f),
+                     get_float(args, "--pot1", 0.5f),
+                     get_float(args, "--pot2", 0.5f));
+
     std::vector<float> out_l(w.left.size()), out_r(w.right.size());
-    const auto rr = fv1_process_block(e, w.left.data(), w.right.data(), out_l.data(), out_r.data(), w.left.size());
-    if (rr != FV1_OK) throw Error(fv1_result_string(rr));
+    std::vector<fv1::StereoFrame> input(cfg.max_host_block_frames);
+    std::vector<fv1::StereoFrame> output(cfg.max_host_block_frames);
+    for (size_t base = 0; base < w.left.size(); base += cfg.max_host_block_frames) {
+        const size_t frames = std::min(cfg.max_host_block_frames, w.left.size() - base);
+        for (size_t i = 0; i < frames; ++i) input[i] = {w.left[base + i], w.right[base + i]};
+        if (!runtime.process_block(input.data(), output.data(), frames)) throw Error("runtime processing failed");
+        for (size_t i = 0; i < frames; ++i) { out_l[base + i] = output[i].left; out_r[base + i] = output[i].right; }
+    }
+
     write_wav_float32(args.values[3], w.sample_rate, out_l, out_r);
-    std::cout << "Rendered " << w.left.size() << " frames at " << w.sample_rate << " Hz to " << args.values[3] << "\n";
-    fv1_destroy(e);
+    const auto stats = runtime.stats();
+    std::cout << "Rendered " << w.left.size() << " host frames at " << w.sample_rate
+              << " Hz through virtual FV-1 at " << clock << " Hz to " << args.values[3] << "\n"
+              << "Virtual FV-1 frames: " << stats.fv1_frames
+              << "; SRC: " << (std::abs(static_cast<double>(w.sample_rate) - clock) < 0.01
+                                    ? "bypass (same rate)"
+                                    : (runtime.using_speexdsp() ? "SpeexDSP" : "linear fallback")) << "\n";
     return 0;
 }
 

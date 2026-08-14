@@ -36,7 +36,7 @@ Options:
   --build-type TYPE    CMake build type (default: RelWithDebInfo).
   -h, --help           Show this help.
 
-Supported bootstrap hosts for Phase 1:
+Supported bootstrap hosts for Phase 2:
   Pop!_OS, Ubuntu, Debian, and apt-compatible derivatives.
 
 Examples:
@@ -110,10 +110,10 @@ printf '\n=== Spin FV-1 Emulator: developer bootstrap ===\n'
 printf 'Project:     %s\n' "$ROOT_DIR"
 printf 'Build type:  %s\n' "$BUILD_TYPE"
 printf 'Compiler:    %s\n' "$COMPILER"
-printf 'Platform:    Linux-first Phase 1\n\n'
+printf 'Platform:    Linux-first Phase 2\n\n'
 
 # Commands required for development. Package installation below supplies them.
-required_commands=(cmake python3 git)
+required_commands=(cmake python3 git pkg-config gdb valgrind)
 if [[ "$COMPILER" == "gcc" ]]; then
     required_commands+=(gcc g++)
 else
@@ -133,10 +133,26 @@ if ! command -v ninja >/dev/null 2>&1; then
     missing_commands+=(ninja)
 fi
 
+# Phase-2 library dependencies. These are checked independently from command
+# availability so a machine that already has GCC/CMake still receives the
+# realtime audio and high-quality SRC development packages.
+missing_phase2=()
+if ! command -v pkg-config >/dev/null 2>&1 || ! pkg-config --exists speexdsp 2>/dev/null; then
+    missing_phase2+=(libspeexdsp-dev)
+fi
+if [[ ! -f /usr/include/miniaudio.h ]]; then
+    missing_phase2+=(libminiaudio-dev)
+fi
+
 if (( CHECK_ONLY )); then
     echo "=== Environment check ==="
     if ((${#missing_commands[@]})); then
-        printf 'Missing: %s\n' "${missing_commands[*]}"
+        printf 'Missing commands: %s\n' "${missing_commands[*]}"
+    fi
+    if ((${#missing_phase2[@]})); then
+        printf 'Missing Phase-2 packages: %s\n' "${missing_phase2[*]}"
+    fi
+    if ((${#missing_commands[@]} || ${#missing_phase2[@]})); then
         echo "Status: NOT READY"
         exit 1
     fi
@@ -152,11 +168,11 @@ if (( CHECK_ONLY )); then
 fi
 
 if (( DO_INSTALL )); then
-    if ((${#missing_commands[@]})); then
+    if ((${#missing_commands[@]} || ${#missing_phase2[@]})); then
         if ! command -v apt-get >/dev/null 2>&1; then
             echo "error: missing development tools: ${missing_commands[*]}" >&2
-            echo "Phase 1 automatic installation currently supports apt-based Linux distributions." >&2
-            echo "Install a C/C++ compiler, CMake, Ninja, Python 3, Git, pkg-config, GDB, and Valgrind, then rerun." >&2
+            echo "Phase 2 automatic installation currently supports apt-based Linux distributions." >&2
+            echo "Install a C/C++ compiler, CMake, Ninja, Python 3, Git, pkg-config, GDB, Valgrind, miniaudio headers, and SpeexDSP development files, then rerun." >&2
             exit 1
         fi
 
@@ -179,6 +195,8 @@ if (( DO_INSTALL )); then
             python3-pip
             gdb
             valgrind
+            libspeexdsp-dev
+            libminiaudio-dev
         )
         if [[ "$COMPILER" == "clang" ]]; then
             packages+=(clang)
@@ -202,6 +220,18 @@ if ((${#post_missing[@]})); then
     exit 1
 fi
 
+phase2_post_missing=()
+if ! command -v pkg-config >/dev/null 2>&1 || ! pkg-config --exists speexdsp 2>/dev/null; then
+    phase2_post_missing+=(libspeexdsp-dev)
+fi
+if [[ ! -f /usr/include/miniaudio.h ]]; then
+    phase2_post_missing+=(libminiaudio-dev)
+fi
+if ((${#phase2_post_missing[@]})); then
+    echo "error: Phase-2 development dependencies are still missing: ${phase2_post_missing[*]}" >&2
+    exit 1
+fi
+
 printf '\n=== Toolchain ===\n'
 "$CC_BIN" --version | head -n 1
 "$CXX_BIN" --version | head -n 1
@@ -211,6 +241,8 @@ git --version
 if command -v ninja >/dev/null 2>&1; then
     ninja --version | sed 's/^/ninja /'
 fi
+pkg-config --modversion speexdsp | sed 's/^/SpeexDSP /'
+grep -m1 -E 'miniaudio - v[0-9]+' /usr/include/miniaudio.h 2>/dev/null | sed 's/^/miniaudio /' || echo "miniaudio headers present"
 
 if (( ! DO_BUILD )); then
     echo
@@ -246,5 +278,6 @@ if (( DO_TEST )); then
 fi
 
 printf '\n=== READY ===\n'
-printf 'CLI: %s/fv1-cli\n' "$BUILD_DIR"
+printf 'CLI:       %s/fv1-cli\n' "$BUILD_DIR"
+printf 'Live host: %s/fv1-live\n' "$BUILD_DIR"
 printf 'Try: %s/fv1-cli inspect %s/examples/steal-this-dsp-programs/03_pitch_maw.spn\n' "$BUILD_DIR" "$ROOT_DIR"

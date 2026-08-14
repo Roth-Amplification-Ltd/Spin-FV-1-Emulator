@@ -6,7 +6,7 @@ Development is **Linux-first**. Do not spend Phase 1–3 engineering time mainta
 
 The target application GUI is the wide engineering-dashboard concept established for the project: program/parameter controls at left, scopes/analyzers and delay/resource views in the center, and a large vertically stacked Console + Step Debugger side panel. The future GUI must support Dark, Light and additional configurable color themes rather than hard-coded colors.
 
-## Phase 1 — Emulator foundation — CURRENT
+## Phase 1 — Emulator foundation — COMPLETE
 
 Deliverables:
 
@@ -23,23 +23,23 @@ Deliverables:
 
 Exit test: all unit tests pass, all eight project example effects compile, execute and render finite non-silent audio on Linux.
 
-## Phase 2 — Realtime audio, file loops and analysis
+## Phase 2 — Realtime audio, file loops and analysis — CURRENT
 
 Add the reusable runtime around `libfv1-core`:
 
 - miniaudio Linux device backend initially;
 - host audio-interface capture/playback;
 - an `AudioSource` abstraction with Live Input, File Loop and Test Generator implementations;
-- WAV/AIFF/etc. import through a dedicated audio-file library;
+- WAV import in the initial Linux runtime; broader formats remain an extension point;
 - loop entire file or a selected region;
-- seamless/crossfaded looping;
+- seamless loop-region wrapping; optional crossfade controls follow with the GUI;
 - explicit virtual FV-1 clock independent of host interface rate;
-- SpeexDSP host↔FV-1 SRC, with a high-quality offline/reference SRC option;
+- SpeexDSP host↔FV-1 SRC, with a deterministic linear build fallback;
 - lock-free SPSC audio/telemetry queues;
-- PFFFT-based spectrum/spectrogram analysis;
+- background spectrum/measurement engine behind a swappable FFT backend;
 - scope data, meters, correlation and runtime/xrun statistics.
 
-Exit test: guitar/line input can be processed live, and an imported audio file can loop continuously through the same FV-1 processing path.
+Exit test: automated clock/source/analyzer tests pass, then guitar/line input can be processed live and an imported audio file can loop continuously through the same FV-1 processing path on Cortana.
 
 ## Phase 3 — Linux Qt application
 

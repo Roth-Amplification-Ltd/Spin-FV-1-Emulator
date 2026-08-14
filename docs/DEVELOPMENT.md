@@ -20,8 +20,10 @@ For Linux-first projects, the bootstrap should:
 9. Provide `--clean` when stale build state must be discarded.
 10. Fail early with an actionable message on unsupported hosts.
 
-For Spin-FV-1-Emulator Phase 1, the supported automatic-bootstrap hosts are Pop!_OS,
-Ubuntu, Debian, and apt-compatible derivatives. Windows and macOS bootstrap scripts
+For Spin-FV-1-Emulator Phase 2, the supported automatic-bootstrap hosts are Pop!_OS,
+Ubuntu, Debian, and apt-compatible derivatives. The Phase-2 bootstrap also checks/installs
+miniaudio development headers and SpeexDSP so realtime audio and production SRC are not
+silently omitted on a newly cloned machine. Windows and macOS bootstrap scripts
 will be added when those ports begin; the emulator core itself remains platform-neutral.
 
 ## First build

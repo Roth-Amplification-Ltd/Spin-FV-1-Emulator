@@ -1,4 +1,4 @@
-name: Linux Phase 1 CI
+name: Linux Phase 2 CI
 
 on:
   push:
@@ -10,10 +10,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Dependencies
-        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake python3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake python3 pkg-config libspeexdsp-dev libminiaudio-dev
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
       - name: Build
         run: cmake --build build --parallel 2
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Confirm Phase 2 backends
+        run: |
+          grep -q "FV1_HAVE_SPEEXDSP" build/build.ninja
+          grep -q "FV1_HAVE_MINIAUDIO" build/build.ninja

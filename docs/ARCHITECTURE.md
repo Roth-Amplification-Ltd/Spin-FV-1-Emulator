@@ -8,9 +8,11 @@ The fundamental rule is that the virtual DSP never depends on an application fra
 frontends (future Qt / SwiftUI)
              |
              v
-       fv1-runtime       audio sources / SRC / devices (Phase 2)
+       fv1-runtime       source routing + host/FV-1 SRC
              |
-             +----------> fv1-analysis (Phase 2)
+             +----------> fv1-analysis (background worker)
+             |
+             +----------> fv1-audio (miniaudio host)
              |
              v
          fv1-core        zero GUI/audio/OS dependencies
@@ -61,7 +63,7 @@ This lets the emulator core stabilize independently. A future native compiler li
 
 ## Phase-2 audio-source boundary
 
-Realtime/live and imported-file processing will not be separate DSP paths. Both will implement one source interface and feed the same runtime:
+Realtime/live and imported-file processing are not separate DSP paths. Both will implement one source interface and feed the same runtime:
 
 ```text
 LiveInputSource ---+
@@ -70,3 +72,10 @@ TestSignalSource --+
 ```
 
 This is required so a looped recording is a deterministic substitute for repeatedly playing an instrument while debugging an effect.
+
+
+## Phase-2 realtime callback
+
+The device callback owns no emulator policy. It asks the selected `AudioSource` for a host-rate block, passes that block through `Runtime`, writes the returned host-rate block to the device, and enqueues a copy to `AnalyzerWorker`. The runtime and source objects are prepared before the device starts so the callback performs no intentional allocation.
+
+See `docs/AUDIO-RUNTIME.md` and `docs/PHASE2-LINUX-TEST-PLAN.md`.
