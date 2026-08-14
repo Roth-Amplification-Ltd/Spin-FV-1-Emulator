@@ -168,6 +168,22 @@ void test_file_loop_source() {
     std::error_code ec; fs::remove(path,ec);
 }
 
+
+void test_analyzer_silence_suppression() {
+    fv1::AnalyzerWorker analyzer;
+    check(analyzer.prepare(48000,1024,8192), "silent analyzer prepare");
+    std::vector<fv1::StereoFrame> block(1024, fv1::StereoFrame{});
+    analyzer.start();
+    for (int i=0;i<4;++i) analyzer.push(block.data(),block.size());
+    for (int i=0;i<100 && analyzer.latest().sequence==0;++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    analyzer.stop();
+    const auto s=analyzer.latest();
+    check(s.sequence>0,"silent analyzer produced snapshot");
+    check(s.rms_left==0.0f && s.rms_right==0.0f,"silent analyzer RMS is zero");
+    check(s.dominant_frequency_hz==0.0f,"silent analyzer suppresses meaningless dominant frequency");
+}
+
 void test_generator_and_analyzer() {
     fv1::TestSignalConfig cfg;
     cfg.kind=fv1::TestSignalKind::Sine;
@@ -203,6 +219,7 @@ int main() {
     test_extensible_wav_source();
     test_file_loop_source();
     test_generator_and_analyzer();
+    test_analyzer_silence_suppression();
     if (failures) {
         std::cerr << failures << " Phase-2 test(s) failed\n";
         return 1;

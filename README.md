@@ -214,3 +214,13 @@ On a fresh Pop!_OS/Ubuntu/Debian development machine, use the repository bootstr
 
 It verifies/installs the Linux build environment, configures the project, builds it, and runs the test suite. Use `./bootstrap-dev.sh --check` to audit the environment without changing it. See `docs/DEVELOPMENT.md` for the project-wide bootstrap convention.
 
+
+## Phase 3 desktop frontend
+
+The repository now includes the initial Qt 6 `fv1-lab` desktop frontend. On supported apt-based Linux hosts, `./bootstrap-dev.sh` installs Qt 6 development packages along with the Phase-2 audio dependencies. After building, launch it with:
+
+```bash
+./build/fv1-lab
+```
+
+The initial frontend follows the approved FV-1 Lab layout and includes Dark, Light, Midnight, Amber CRT, Green Phosphor, Slate and High Contrast themes with independent accent selection. Its Start/Stop controls run the existing Phase-2 audio/runtime engine for test-generator, looped-WAV, or live-input sources, while Phase-2 DSP/audio libraries remain Qt-free.

@@ -167,7 +167,7 @@ Audio/runtime:
   --resampler-quality N       SpeexDSP quality 0..10 (default 7).
   --pot0 X --pot1 X --pot2 X FV-1 controls, 0..1 (default 0.5).
   --slot N                    Program-bank slot 0..7.
-  --seconds N                 Auto-stop after N seconds; otherwise Enter stops.
+  --seconds N                 Process exactly N seconds of host frames; otherwise Enter stops.
   --meter                     Print analyzer/runtime status while timed run executes.
   --full-delay-24             Diagnostic full-24-bit delay RAM model.
 )";
@@ -277,6 +277,9 @@ int cmd_run(const Args& args) {
     host_cfg.needs_capture = needs_capture;
     host_cfg.playback_device = std::stoi(args.get("--output-device", "-1"));
     host_cfg.capture_device = std::stoi(args.get("--input-device", "-1"));
+    const double seconds = std::stod(args.get("--seconds", "0"));
+    if (seconds > 0.0)
+        host_cfg.stop_after_frames = static_cast<std::uint64_t>(std::llround(seconds * static_cast<double>(host_rate)));
     std::string error;
     if (!host.open(host_cfg, *source, runtime, &analyzer, &error)) throw Error(error);
     if (!host.start(&error)) throw Error(error);
@@ -290,12 +293,10 @@ int cmd_run(const Args& args) {
                                             ? "bypass (same rate)"
                                             : (runtime.using_speexdsp() ? "SpeexDSP" : "built-in linear fallback")) << "\n";
 
-    const double seconds = std::stod(args.get("--seconds", "0"));
     if (seconds > 0.0) {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::duration<double>(seconds);
         auto next_meter = std::chrono::steady_clock::now();
-        while (std::chrono::steady_clock::now() < deadline) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        while (!host.is_finished()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
             if (args.has("--meter") && std::chrono::steady_clock::now() >= next_meter) {
                 print_meter(host, runtime, analyzer);
                 next_meter = std::chrono::steady_clock::now() + std::chrono::seconds(1);

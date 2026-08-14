@@ -21,6 +21,9 @@ struct AnalysisSnapshot {
     float dominant_frequency_hz{};
     float dominant_level_db{};
     std::vector<float> spectrum_db; // N/2+1 mono magnitude bins.
+    // Decimated time-domain block for the GUI oscilloscope. Produced on the
+    // analyzer worker thread, never in the realtime callback.
+    std::vector<StereoFrame> scope_frames;
 };
 
 /* Realtime-safe producer / background-worker analyzer. push() never allocates,

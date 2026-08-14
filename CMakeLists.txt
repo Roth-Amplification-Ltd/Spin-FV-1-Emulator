@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(SpinFV1Emulator VERSION 0.2.0 LANGUAGES C CXX)
+project(SpinFV1Emulator VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(FV1_BUILD_TESTS "Build emulator tests" ON)
 option(FV1_ENABLE_WARNINGS "Enable strict compiler warnings" ON)
 option(FV1_ENABLE_LIVE_AUDIO "Build Linux realtime audio host when miniaudio is available" ON)
+option(FV1_BUILD_GUI "Build the Phase 3 Qt desktop application" ON)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 find_package(Threads REQUIRED)
@@ -108,6 +109,27 @@ target_compile_definitions(fv1-live PRIVATE
 fv1_strict_warnings(fv1-live)
 
 # -----------------------------------------------------------------------------
+# Phase 3: Qt engineering GUI (Linux/Windows frontend)
+# -----------------------------------------------------------------------------
+if(FV1_BUILD_GUI)
+    find_package(Qt6 COMPONENTS Widgets QUIET)
+    if(Qt6_FOUND)
+        add_executable(fv1-lab
+            src/gui/main.cpp
+            src/gui/main_window.cpp
+            src/gui/theme_manager.cpp
+            src/gui/instrument_plot.cpp)
+        target_link_libraries(fv1-lab PRIVATE
+            Qt6::Widgets FV1::audio FV1::analysis FV1::runtime FV1::core)
+        target_include_directories(fv1-lab PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        fv1_strict_warnings(fv1-lab)
+        message(STATUS "Phase 3 GUI: Qt ${Qt6_VERSION} enabled")
+    else()
+        message(WARNING "Qt 6 Widgets not found: fv1-lab GUI will not be built. Run bootstrap-dev.sh on Linux to install qt6-base-dev.")
+    endif()
+endif()
+
+# -----------------------------------------------------------------------------
 # Tests
 # -----------------------------------------------------------------------------
 if(FV1_BUILD_TESTS)
@@ -145,12 +167,21 @@ if(FV1_BUILD_TESTS)
     set_tests_properties(phase2-render-src PROPERTIES TIMEOUT 30)
 
     add_test(NAME fv1-live-help COMMAND fv1-live --help)
+
+    if(TARGET fv1-lab)
+        add_test(NAME fv1-lab-smoke COMMAND fv1-lab --smoke)
+        set_tests_properties(fv1-lab-smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endif()
 endif()
 
 # -----------------------------------------------------------------------------
 # Installation
 # -----------------------------------------------------------------------------
-install(TARGETS fv1-core fv1-runtime fv1-analysis fv1-audio fv1-cli fv1-live
+set(FV1_INSTALL_TARGETS fv1-core fv1-runtime fv1-analysis fv1-audio fv1-cli fv1-live)
+if(TARGET fv1-lab)
+    list(APPEND FV1_INSTALL_TARGETS fv1-lab)
+endif()
+install(TARGETS ${FV1_INSTALL_TARGETS}
         EXPORT FV1Targets
         ARCHIVE DESTINATION lib
         RUNTIME DESTINATION bin)

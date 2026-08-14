@@ -36,7 +36,7 @@ Options:
   --build-type TYPE    CMake build type (default: RelWithDebInfo).
   -h, --help           Show this help.
 
-Supported bootstrap hosts for Phase 2:
+Supported bootstrap hosts for Phase 3:
   Pop!_OS, Ubuntu, Debian, and apt-compatible derivatives.
 
 Examples:
@@ -110,7 +110,7 @@ printf '\n=== Spin FV-1 Emulator: developer bootstrap ===\n'
 printf 'Project:     %s\n' "$ROOT_DIR"
 printf 'Build type:  %s\n' "$BUILD_TYPE"
 printf 'Compiler:    %s\n' "$COMPILER"
-printf 'Platform:    Linux-first Phase 2\n\n'
+printf 'Platform:    Linux-first Phase 3\n\n'
 
 # Commands required for development. Package installation below supplies them.
 required_commands=(cmake python3 git pkg-config gdb valgrind)
@@ -133,7 +133,7 @@ if ! command -v ninja >/dev/null 2>&1; then
     missing_commands+=(ninja)
 fi
 
-# Phase-2 library dependencies. These are checked independently from command
+# Phase-2/3 library dependencies. These are checked independently from command
 # availability so a machine that already has GCC/CMake still receives the
 # realtime audio and high-quality SRC development packages.
 missing_phase2=()
@@ -143,6 +143,9 @@ fi
 if [[ ! -f /usr/include/miniaudio.h ]]; then
     missing_phase2+=(libminiaudio-dev)
 fi
+if ! command -v pkg-config >/dev/null 2>&1 || ! pkg-config --exists Qt6Widgets 2>/dev/null; then
+    missing_phase2+=(qt6-base-dev)
+fi
 
 if (( CHECK_ONLY )); then
     echo "=== Environment check ==="
@@ -150,7 +153,7 @@ if (( CHECK_ONLY )); then
         printf 'Missing commands: %s\n' "${missing_commands[*]}"
     fi
     if ((${#missing_phase2[@]})); then
-        printf 'Missing Phase-2 packages: %s\n' "${missing_phase2[*]}"
+        printf 'Missing Phase-2/3 packages: %s\n' "${missing_phase2[*]}"
     fi
     if ((${#missing_commands[@]} || ${#missing_phase2[@]})); then
         echo "Status: NOT READY"
@@ -171,7 +174,7 @@ if (( DO_INSTALL )); then
     if ((${#missing_commands[@]} || ${#missing_phase2[@]})); then
         if ! command -v apt-get >/dev/null 2>&1; then
             echo "error: missing development tools: ${missing_commands[*]}" >&2
-            echo "Phase 2 automatic installation currently supports apt-based Linux distributions." >&2
+            echo "Phase 3 automatic installation currently supports apt-based Linux distributions." >&2
             echo "Install a C/C++ compiler, CMake, Ninja, Python 3, Git, pkg-config, GDB, Valgrind, miniaudio headers, and SpeexDSP development files, then rerun." >&2
             exit 1
         fi
@@ -197,6 +200,8 @@ if (( DO_INSTALL )); then
             valgrind
             libspeexdsp-dev
             libminiaudio-dev
+            qt6-base-dev
+            qt6-base-dev-tools
         )
         if [[ "$COMPILER" == "clang" ]]; then
             packages+=(clang)
@@ -227,8 +232,11 @@ fi
 if [[ ! -f /usr/include/miniaudio.h ]]; then
     phase2_post_missing+=(libminiaudio-dev)
 fi
+if ! pkg-config --exists Qt6Widgets 2>/dev/null; then
+    phase2_post_missing+=(qt6-base-dev)
+fi
 if ((${#phase2_post_missing[@]})); then
-    echo "error: Phase-2 development dependencies are still missing: ${phase2_post_missing[*]}" >&2
+    echo "error: Phase-2/3 development dependencies are still missing: ${phase2_post_missing[*]}" >&2
     exit 1
 fi
 
@@ -243,6 +251,7 @@ if command -v ninja >/dev/null 2>&1; then
 fi
 pkg-config --modversion speexdsp | sed 's/^/SpeexDSP /'
 grep -m1 -E 'miniaudio - v[0-9]+' /usr/include/miniaudio.h 2>/dev/null | sed 's/^/miniaudio /' || echo "miniaudio headers present"
+pkg-config --modversion Qt6Widgets | sed 's/^/Qt6 Widgets /'
 
 if (( ! DO_BUILD )); then
     echo
@@ -280,4 +289,7 @@ fi
 printf '\n=== READY ===\n'
 printf 'CLI:       %s/fv1-cli\n' "$BUILD_DIR"
 printf 'Live host: %s/fv1-live\n' "$BUILD_DIR"
+if [[ -x "$BUILD_DIR/fv1-lab" ]]; then
+    printf 'GUI:       %s/fv1-lab\n' "$BUILD_DIR"
+fi
 printf 'Try: %s/fv1-cli inspect %s/examples/steal-this-dsp-programs/03_pitch_maw.spn\n' "$BUILD_DIR" "$ROOT_DIR"

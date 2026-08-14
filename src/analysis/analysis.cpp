@@ -130,6 +130,14 @@ public:
         const double denom = std::sqrt(sum_l2 * sum_r2);
         next.correlation = denom > 1e-20 ? static_cast<float>(std::clamp(sum_lr / denom, -1.0, 1.0)) : 0.0f;
 
+        constexpr std::size_t scope_target = 512;
+        const std::size_t scope_count = std::min(scope_target, fft_size);
+        next.scope_frames.reserve(scope_count);
+        for (std::size_t i = 0; i < scope_count; ++i) {
+            const std::size_t src = i * fft_size / scope_count;
+            next.scope_frames.push_back(block[src]);
+        }
+
         const std::size_t bins = fft_size / 2 + 1;
         next.spectrum_db.resize(bins);
         float dominant_db = -200.0f;
@@ -141,9 +149,19 @@ public:
             next.spectrum_db[bin] = db;
             if (bin > 0 && db > dominant_db) { dominant_db = db; dominant_bin = bin; }
         }
-        next.dominant_level_db = dominant_db;
-        next.dominant_frequency_hz = static_cast<float>(
-            static_cast<double>(dominant_bin) * sample_rate / static_cast<double>(fft_size));
+        // A dominant-frequency readout is meaningless when the analyzed block is
+        // effectively silent.  Suppress it instead of allowing numerical FFT
+        // residue to produce a random-looking high-frequency bin in the UI/CLI.
+        const double mono_energy = 0.25 * (sum_l2 + sum_r2 + 2.0 * sum_lr);
+        const double mono_rms = std::sqrt(std::max(0.0, mono_energy) / static_cast<double>(fft_size));
+        if (mono_rms < 1.0e-6) {
+            next.dominant_level_db = -200.0f;
+            next.dominant_frequency_hz = 0.0f;
+        } else {
+            next.dominant_level_db = dominant_db;
+            next.dominant_frequency_hz = static_cast<float>(
+                static_cast<double>(dominant_bin) * sample_rate / static_cast<double>(fft_size));
+        }
 
         std::lock_guard lock(snapshot_mutex);
         snapshot = std::move(next);

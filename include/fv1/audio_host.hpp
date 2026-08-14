@@ -28,6 +28,10 @@ struct AudioHostConfig {
     int playback_device{-1}; // -1 = OS default
     int capture_device{-1};  // -1 = OS default
     bool needs_capture{true};
+    // 0 = unlimited.  For timed/reproducible sessions the callback processes
+    // exactly this many host frames, zero-fills the remainder of the final
+    // device period, then reports finished to the controlling thread.
+    std::uint64_t stop_after_frames{};
 };
 
 struct AudioHostStats {
@@ -58,6 +62,7 @@ public:
     void close() noexcept;
     bool is_open() const noexcept;
     bool is_started() const noexcept;
+    bool is_finished() const noexcept;
     AudioHostStats stats() const noexcept;
 
 private:

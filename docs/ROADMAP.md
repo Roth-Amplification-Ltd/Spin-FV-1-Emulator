@@ -84,3 +84,9 @@ Only after the shared APIs are mature:
 - both reuse the same platform-neutral emulator/runtime/analysis libraries.
 
 DAW/VST/AU/CLAP plugins are **not part of this standalone application project**. If desired later, they should be separate consumers of the core library.
+
+## Current status — Phase 3 started
+
+Phase 2 is accepted on Linux for generator/file-loop playback, production SpeexDSP clock bridging, analyzer telemetry and real miniaudio playback. External capture/duplex interface validation is deferred until hardware is available.
+
+Phase 3 has started with the Qt 6 `fv1-lab` engineering GUI shell and theme system. The next increment connects the GUI session controls and plots to the already-tested Phase-2 runtime/analyzer APIs.

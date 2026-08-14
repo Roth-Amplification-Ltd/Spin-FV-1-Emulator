@@ -28,6 +28,7 @@ public:
     std::atomic<std::uint64_t> callbacks{0};
     std::atomic<std::uint64_t> source_frames{0};
     std::atomic<double> callback_cpu{0.0};
+    std::atomic<bool> finished{false};
 
     ~Impl() { close(); }
 
@@ -57,21 +58,38 @@ public:
             return;
         }
 
+        const std::uint64_t already = self->source_frames.load(std::memory_order_relaxed);
+        std::size_t process_frames = frames;
+        if (self->cfg.stop_after_frames != 0) {
+            if (already >= self->cfg.stop_after_frames) {
+                std::fill_n(out, frames, StereoFrame{});
+                self->finished.store(true, std::memory_order_release);
+                return;
+            }
+            const std::uint64_t remaining = self->cfg.stop_after_frames - already;
+            process_frames = std::min<std::size_t>(frames, static_cast<std::size_t>(remaining));
+        }
+
         const auto begin = std::chrono::steady_clock::now();
-        self->source->render(in, self->source_buffer.data(), frames);
-        const bool ok = self->runtime->process_block(self->source_buffer.data(), out, frames);
-        if (!ok) std::fill_n(out, frames, StereoFrame{});
-        if (self->analyzer) self->analyzer->push(out, frames);
+        self->source->render(in, self->source_buffer.data(), process_frames);
+        const bool ok = self->runtime->process_block(self->source_buffer.data(), out, process_frames);
+        if (!ok) std::fill_n(out, process_frames, StereoFrame{});
+        if (process_frames < frames)
+            std::fill(out + static_cast<std::ptrdiff_t>(process_frames),
+                      out + static_cast<std::ptrdiff_t>(frames), StereoFrame{});
+        if (self->analyzer) self->analyzer->push(out, process_frames);
         const auto end = std::chrono::steady_clock::now();
 
         const double elapsed = std::chrono::duration<double>(end - begin).count();
-        const double available = static_cast<double>(frames) /
+        const double available = static_cast<double>(process_frames) /
                                  static_cast<double>(self->cfg.host_sample_rate);
         const double instant = available > 0.0 ? elapsed / available : 0.0;
         const double previous = self->callback_cpu.load(std::memory_order_relaxed);
         self->callback_cpu.store(previous * 0.95 + instant * 0.05, std::memory_order_relaxed);
         self->callbacks.fetch_add(1, std::memory_order_relaxed);
-        self->source_frames.fetch_add(frames, std::memory_order_relaxed);
+        const std::uint64_t total = self->source_frames.fetch_add(process_frames, std::memory_order_relaxed) + process_frames;
+        if (self->cfg.stop_after_frames != 0 && total >= self->cfg.stop_after_frames)
+            self->finished.store(true, std::memory_order_release);
     }
 };
 #else
@@ -195,6 +213,7 @@ bool AudioHost::open(const AudioHostConfig& config,
     impl_->callbacks.store(0, std::memory_order_relaxed);
     impl_->source_frames.store(0, std::memory_order_relaxed);
     impl_->callback_cpu.store(0.0, std::memory_order_relaxed);
+    impl_->finished.store(false, std::memory_order_relaxed);
     return true;
 #else
     (void)config; (void)source; (void)runtime; (void)analyzer;
@@ -244,6 +263,13 @@ bool AudioHost::is_open() const noexcept {
 bool AudioHost::is_started() const noexcept {
 #if defined(FV1_HAVE_MINIAUDIO)
     return impl_->started;
+#else
+    return false;
+#endif
+}
+bool AudioHost::is_finished() const noexcept {
+#if defined(FV1_HAVE_MINIAUDIO)
+    return impl_->finished.load(std::memory_order_acquire);
 #else
     return false;
 #endif
