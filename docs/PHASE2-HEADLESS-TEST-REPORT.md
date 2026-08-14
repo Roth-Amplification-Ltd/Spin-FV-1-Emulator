@@ -28,7 +28,7 @@ Final `RelWithDebInfo` build used GCC 14.2 in the build container. CTest result:
 fv1-core-tests                 PASS
 fv1-phase2-tests               PASS
 compile-steal-this-bank        PASS
-cli-inspect-pitch-maw          PASS
+cli-inspect-gravity-clerk          PASS
 render-steal-this-bank         PASS
 phase2-render-src              PASS
 fv1-live-help                  PASS

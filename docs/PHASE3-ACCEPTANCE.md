@@ -32,7 +32,7 @@ The original Phase-3 acceptance run passed all eight tests, including the offscr
 fv1-core-tests            PASS
 fv1-phase2-tests          PASS
 compile-steal-this-bank   PASS
-cli-inspect-pitch-maw     PASS
+cli-inspect-gravity-clerk     PASS
 render-steal-this-bank    PASS
 phase2-render-src         PASS
 fv1-live-help             PASS
@@ -45,7 +45,7 @@ The current refinement adds a ninth `fv1-audio-host-tests` test covering the rea
 
 ## Interactive GUI acceptance
 
-The GUI was launched normally under the desktop session and exercised with the Steal This DSP `Pitch Maw` program.
+The GUI was launched normally under the desktop session and exercised with the Steal This DSP `Gravity Clerk` program.
 
 Verified interactively:
 
@@ -65,9 +65,9 @@ External capture/duplex-interface acceptance remains deferred because an externa
 
 ## Recorded evidence
 
-### Running Pitch Maw
+### Running Gravity Clerk
 
-![FV-1 Lab running Pitch Maw](media/phase3-cortana-running.png)
+![FV-1 Lab running Gravity Clerk](media/phase3-cortana-running.png)
 
 ### Initial dashboard/layout
 

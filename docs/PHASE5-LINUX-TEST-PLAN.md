@@ -46,8 +46,8 @@ Expected:
 
 ```bash
 ./build/fv1-cli render \
-  examples/steal-this-dsp-programs/03_pitch_maw.spn \
-  /tmp/fv1-validation.wav /tmp/pitch-maw-virtual.wav \
+  examples/steal-this-dsp-programs/03_gravity_clerk.spn \
+  /tmp/fv1-validation.wav /tmp/gravity-clerk-virtual.wav \
   --clock 32768 --pot0 0.60 --pot1 0.50 --pot2 0.70
 ```
 

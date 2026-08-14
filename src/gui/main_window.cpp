@@ -24,6 +24,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFontDatabase>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -39,6 +40,7 @@
 #include <QProgressBar>
 #include <QPixmap>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QSlider>
 #include <QSpinBox>
@@ -368,7 +370,7 @@ private:
     bool running_{};
 };
 
-MainWindow::MainWindow(QWidget* parent)
+MainWindow::MainWindow(QWidget* parent, std::function<void(int, const QString&)> startup_progress)
     : QMainWindow(parent),
       session_(std::make_unique<SessionController>()),
       debugger_(std::make_unique<fv1::Debugger>()) {
@@ -376,6 +378,11 @@ MainWindow::MainWindow(QWidget* parent)
     resize(1680, 980);
     setDockOptions(QMainWindow::AnimatedDocks | QMainWindow::AllowNestedDocks |
                    QMainWindow::AllowTabbedDocks | QMainWindow::GroupedDragging);
+
+    auto startup = [&startup_progress](int percent, const QString& text) {
+        if (startup_progress) startup_progress(percent, text);
+    };
+    startup(26, QStringLiteral("Loading persistent preferences…"));
 
     QSettings settings;
     theme_name_ = settings.value(QStringLiteral("ui/theme"), QStringLiteral("Dark")).toString();
@@ -398,14 +405,19 @@ MainWindow::MainWindow(QWidget* parent)
     loop_crossfade_ms_ = settings.value(QStringLiteral("fileLoop/crossfadeMs"), 5.0).toDouble();
 
     ThemeManager::apply(*qApp, theme_name_, accent_name_);
+    startup(34, QStringLiteral("Applying theme and application identity…"));
 
     set_app_icon(icon_name_);
     build_menus();
     build_toolbar();
+    startup(46, QStringLiteral("Building program and transport controls…"));
     build_left_dock();
+    startup(58, QStringLiteral("Building analyzer and validation workspace…"));
     build_center();
+    startup(70, QStringLiteral("Building virtual-chip inspector…"));
     build_right_dock();
     build_status_footer();
+    startup(80, QStringLiteral("Enumerating audio devices…"));
     refresh_audio_devices();
 
     host_rate_combo_->setCurrentText(settings.value(QStringLiteral("audio/hostRate"), QStringLiteral("48000")).toString());
@@ -423,15 +435,17 @@ MainWindow::MainWindow(QWidget* parent)
     }
     set_dsp_enabled(dsp_enabled_);
     set_compare_enabled(compare_raw_processed_);
+    startup(90, QStringLiteral("Restoring FV-1 Lab session preferences…"));
 
     telemetry_timer_ = new QTimer(this);
     telemetry_timer_->setInterval(50);
     connect(telemetry_timer_, &QTimer::timeout, this, [this]{ update_telemetry(); });
 
-    statusBar()->showMessage(QStringLiteral("Phase 5A validation framework — ready"));
+    startup(96, QStringLiteral("Finalizing Phase 5B validation testbench…"));
+    statusBar()->showMessage(QStringLiteral("Phase 5B hardware validation — ready"));
     log(QStringLiteral("FV-1 Lab GUI initialized."));
     log(QStringLiteral("Runtime connected: live input, file loop, test generator, virtual-clock SRC and dual raw/processed analyzers."));
-    log(QStringLiteral("Phase 5A focus: deterministic emulator/reference vs hardware-capture validation and accuracy measurement."));
+    log(QStringLiteral("Phase 5B focus: reproducible physical-FV-1 capture packs, comparison and accuracy refinement."));
     log(QStringLiteral("External capture-interface acceptance remains deferred; playback path accepted on Cortana."));
 }
 
@@ -441,6 +455,8 @@ void MainWindow::build_menus() {
     auto* file = menuBar()->addMenu(QStringLiteral("&File"));
     auto* open_program = file->addAction(QStringLiteral("Open FV-1 Program…"));
     connect(open_program, &QAction::triggered, this, [this]{ choose_program(); });
+    auto* paste_program = file->addAction(QStringLiteral("Paste SpinASM…"));
+    connect(paste_program, &QAction::triggered, this, [this]{ paste_spinasm(); });
     auto* open_audio = file->addAction(QStringLiteral("Open Audio Loop…"));
     connect(open_audio, &QAction::triggered, this, [this]{ choose_audio_file(); });
     file->addSeparator();
@@ -584,11 +600,13 @@ void MainWindow::build_left_dock() {
     connect(program_label_, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
         QMenu menu(this);
         menu.addAction(QStringLiteral("Open FV-1 Program…"), this, [this]{ choose_program(); });
+        menu.addAction(QStringLiteral("Paste SpinASM…"), this, [this]{ paste_spinasm(); });
+        menu.addSeparator();
         auto* inspect = menu.addAction(QStringLiteral("Re-run Resource Analysis"), this, [this]{ inspect_program(); });
-        inspect->setEnabled(!program_path_.isEmpty());
+        inspect->setEnabled(!program_image_.isEmpty());
         menu.addSeparator();
         auto* reset_debug = menu.addAction(QStringLiteral("Load / Reset Offline Chip Inspector"), this, [this]{ debugger_load_program(); });
-        reset_debug->setEnabled(!program_path_.isEmpty());
+        reset_debug->setEnabled(!program_image_.isEmpty());
         menu.exec(program_label_->mapToGlobal(pos));
     });
     auto* program_button = new QPushButton(QStringLiteral("Open .spn / .bin"), program);
@@ -1353,10 +1371,148 @@ void MainWindow::choose_program() {
     const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("Open FV-1 Program"), {},
         QStringLiteral("FV-1 Programs (*.spn *.bin);;All files (*)"));
     if (path.isEmpty()) return;
-    program_path_ = path;
-    program_label_->setText(path);
-    log(QStringLiteral("Program selected: ") + path);
+
+    QByteArray bytes;
+    QString error;
+    if (!load_program_image(path, bytes, error)) {
+        QMessageBox::warning(this, QStringLiteral("FV-1 Program"), error);
+        log(QStringLiteral("Program load failed: ") + error);
+        return;
+    }
+    install_program_image(bytes, path, path);
+}
+
+bool MainWindow::install_program_image(const QByteArray& bytes, const QString& display_name, const QString& source_path) {
+    if (bytes.size() != static_cast<qsizetype>(FV1_PROGRAM_BYTES)) {
+        log(QStringLiteral("Program rejected: image is %1 bytes; expected %2.").arg(bytes.size()).arg(FV1_PROGRAM_BYTES));
+        return false;
+    }
+    if (session_ && session_->running()) stop_session();
+    program_image_ = bytes;
+    program_path_ = source_path;
+    program_display_name_ = display_name;
+    if (program_label_) program_label_->setText(display_name);
+    log(QStringLiteral("Program loaded: ") + display_name);
     inspect_program();
+    return true;
+}
+
+void MainWindow::paste_spinasm() {
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Paste SpinASM Program"));
+    dialog.resize(900, 650);
+
+    auto* outer = new QVBoxLayout(&dialog);
+    auto* intro = new QLabel(QStringLiteral(
+        "Paste FV-1 / SpinASM assembly below. Compile & Load uses the same project assembler and the same 512-byte program path as opening a .spn file."), &dialog);
+    intro->setWordWrap(true);
+    outer->addWidget(intro);
+
+    auto* editor = new QPlainTextEdit(&dialog);
+    editor->setLineWrapMode(QPlainTextEdit::NoWrap);
+    editor->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    editor->setTabStopDistance(editor->fontMetrics().horizontalAdvance(QLatin1Char(' ')) * 4.0);
+    if (!pasted_spinasm_source_.isEmpty()) {
+        editor->setPlainText(pasted_spinasm_source_);
+    } else {
+        editor->setPlainText(QStringLiteral(
+            "; Paste FV-1 SpinASM here\n"
+            "; Simple stereo passthrough example:\n"
+            "RDAX ADCL, 1.0\n"
+            "WRAX DACL, 0\n"
+            "RDAX ADCR, 1.0\n"
+            "WRAX DACR, 0\n"));
+    }
+    outer->addWidget(editor, 1);
+
+    auto* status = new QPlainTextEdit(&dialog);
+    status->setReadOnly(true);
+    status->setMaximumHeight(105);
+    status->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    status->setPlainText(QStringLiteral("Ready — paste SpinASM source and choose Compile & Load."));
+    outer->addWidget(status);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
+    auto* compile = buttons->addButton(QStringLiteral("Compile & Load"), QDialogButtonBox::ActionRole);
+    compile->setDefault(true);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(compile, &QPushButton::clicked, &dialog, [this, &dialog, editor, status, compile] {
+        const QString source_text = editor->toPlainText();
+        if (source_text.trimmed().isEmpty()) {
+            status->setPlainText(QStringLiteral("ERROR: SpinASM source is empty."));
+            return;
+        }
+        const QString assembler = find_assembler_script();
+        if (assembler.isEmpty()) {
+            status->setPlainText(QStringLiteral("ERROR: Cannot locate tools/fv1_assembler.py. Set FV1_ASSEMBLER_SCRIPT for an installed build."));
+            return;
+        }
+
+        QTemporaryDir temp;
+        if (!temp.isValid()) {
+            status->setPlainText(QStringLiteral("ERROR: Cannot create temporary directory for SpinASM compilation."));
+            return;
+        }
+        const QString source_path = temp.filePath(QStringLiteral("pasted-program.spn"));
+        const QString output_path = temp.filePath(QStringLiteral("pasted-program.bin"));
+        QFile source_file(source_path);
+        if (!source_file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            status->setPlainText(QStringLiteral("ERROR: Cannot create temporary SpinASM source."));
+            return;
+        }
+        source_file.write(source_text.toUtf8());
+        source_file.close();
+
+        compile->setEnabled(false);
+        status->setPlainText(QStringLiteral("Compiling pasted SpinASM…"));
+        QApplication::processEvents();
+        QProcess proc;
+        proc.start(QStringLiteral("python3"), {assembler, source_path, output_path});
+        const bool started = proc.waitForStarted(3000);
+        const bool finished = started && proc.waitForFinished(30000);
+        const QByteArray stdout_text = proc.readAllStandardOutput();
+        const QByteArray stderr_text = proc.readAllStandardError();
+        compile->setEnabled(true);
+        if (!started || !finished || proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0) {
+            QString detail = QString::fromUtf8(stderr_text).trimmed();
+            if (detail.isEmpty()) detail = QString::fromUtf8(stdout_text).trimmed();
+            if (detail.isEmpty()) detail = QStringLiteral("SpinASM compiler exited without diagnostics.");
+            status->setPlainText(QStringLiteral("COMPILE ERROR\n") + detail);
+            log(QStringLiteral("Pasted SpinASM compilation failed: ") + detail);
+            return;
+        }
+
+        QFile binary(output_path);
+        if (!binary.open(QIODevice::ReadOnly)) {
+            status->setPlainText(QStringLiteral("ERROR: Compiler did not produce a readable program image."));
+            return;
+        }
+        const QByteArray bytes = binary.readAll();
+        if (bytes.size() != static_cast<qsizetype>(FV1_PROGRAM_BYTES)) {
+            status->setPlainText(QStringLiteral("ERROR: Compiler produced %1 bytes; expected %2.").arg(bytes.size()).arg(FV1_PROGRAM_BYTES));
+            return;
+        }
+
+        QString summary = QString::fromUtf8(stdout_text).trimmed();
+        const QRegularExpression count_re(QStringLiteral(":\\s*(\\d+) instructions, highest delay address (\\d+)"));
+        const auto match = count_re.match(summary);
+        if (match.hasMatch()) {
+            summary = QStringLiteral("Compiled successfully — %1 / 128 instructions; highest delay address %2; 512-byte program loaded.")
+                .arg(match.captured(1), match.captured(2));
+        } else {
+            summary = QStringLiteral("Compiled successfully — 512-byte FV-1 program loaded.");
+        }
+        status->setPlainText(summary);
+        pasted_spinasm_source_ = source_text;
+        if (!install_program_image(bytes, QStringLiteral("Pasted SpinASM Program"))) {
+            status->appendPlainText(QStringLiteral("ERROR: Emulator rejected the compiled image."));
+            return;
+        }
+        log(summary);
+        dialog.accept();
+    });
+    outer->addWidget(buttons);
+    dialog.exec();
 }
 
 void MainWindow::choose_audio_file() {
@@ -1386,13 +1542,8 @@ void MainWindow::choose_audio_file() {
 }
 
 void MainWindow::inspect_program() {
-    if (program_path_.isEmpty()) return;
-    QByteArray bytes;
-    QString error;
-    if (!load_program_image(program_path_, bytes, error)) {
-        log(QStringLiteral("Program inspection failed: ") + error);
-        return;
-    }
+    if (program_image_.isEmpty()) return;
+    const QByteArray& bytes = program_image_;
     fv1_config cfg{32768.0, FV1_DELAY_REFERENCE_16};
     fv1_engine* engine = fv1_create(&cfg);
     if (!engine) {
@@ -1444,17 +1595,13 @@ void MainWindow::inspect_program() {
 
 void MainWindow::start_session() {
     if (session_->running()) stop_session();
-    if (program_path_.isEmpty()) {
-        log(QStringLiteral("Start refused: open an FV-1 program first."));
-        statusBar()->showMessage(QStringLiteral("Open an FV-1 program first"), 5000);
+    if (program_image_.isEmpty()) {
+        log(QStringLiteral("Start refused: open or paste an FV-1 program first."));
+        statusBar()->showMessage(QStringLiteral("Open or paste an FV-1 program first"), 5000);
         return;
     }
-    QByteArray bytes;
+    const QByteArray& bytes = program_image_;
     QString error;
-    if (!load_program_image(program_path_, bytes, error)) {
-        log(QStringLiteral("Start failed: ") + error);
-        return;
-    }
 
     const auto host_rate = static_cast<std::uint32_t>(host_rate_combo_->currentText().toUInt());
     const auto buffer = static_cast<std::uint32_t>(buffer_combo_->currentText().toUInt());
@@ -1738,17 +1885,12 @@ void MainWindow::set_compare_enabled(bool enabled) {
 
 void MainWindow::debugger_load_program() {
     if (!debugger_) return;
-    if (program_path_.isEmpty()) {
-        log(QStringLiteral("Chip inspector: open an FV-1 program first."));
+    if (program_image_.isEmpty()) {
+        log(QStringLiteral("Chip inspector: open or paste an FV-1 program first."));
         return;
     }
 
-    QByteArray bytes;
-    QString error;
-    if (!load_program_image(program_path_, bytes, error)) {
-        log(QStringLiteral("Chip inspector load failed: ") + error);
-        return;
-    }
+    const QByteArray& bytes = program_image_;
 
     if (!debugger_->load_program(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(bytes.constData()), static_cast<std::size_t>(bytes.size())))) {
         log(QStringLiteral("Chip inspector load failed: emulator rejected the program image."));
@@ -1756,7 +1898,7 @@ void MainWindow::debugger_load_program() {
     }
 
     debugger_refresh();
-    log(QStringLiteral("Offline chip inspector loaded/reset: ") + QFileInfo(program_path_).fileName());
+    log(QStringLiteral("Offline chip inspector loaded/reset: ") + (program_display_name_.isEmpty() ? QStringLiteral("FV-1 program") : program_display_name_));
 }
 
 void MainWindow::debugger_reset() {

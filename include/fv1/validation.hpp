@@ -87,8 +87,8 @@ ValidationResult validate_recordings(const ValidationAudio& reference,
                                      const ValidationAudio& capture,
                                      const ValidationConfig& config = {});
 
-// Export a complete validation bundle. prefix=/tmp/pitch-maw creates:
-//   pitch-maw.json, pitch-maw.md, pitch-maw-frequency.csv, pitch-maw-residual.wav
+// Export a complete validation bundle. prefix=/tmp/gravity-clerk creates:
+//   gravity-clerk.json, gravity-clerk.md, gravity-clerk-frequency.csv, gravity-clerk-residual.wav
 bool write_validation_report_bundle(const std::filesystem::path& prefix,
                                     const ValidationResult& result,
                                     std::string* error = nullptr);
@@ -104,5 +104,20 @@ bool generate_validation_stimulus(ValidationAudio& audio,
                                   double sweep_end_hz = 16000.0,
                                   std::uint32_t seed = 0x465631u,
                                   std::string* error = nullptr);
+
+struct ValidationPackConfig {
+    std::uint32_t sample_rate{48000};
+    double standard_seconds{5.0};
+    double level{0.25};
+    std::uint32_t seed{0x465631u};
+};
+
+// Create a deterministic Phase-5B hardware-validation stimulus directory.
+// The same files are intended to be rendered by the emulator and played
+// through a physical FV-1 fixture, with the resulting capture WAVs compared
+// by validate_recordings(). A JSON manifest records the exact stimuli.
+bool write_validation_stimulus_pack(const std::filesystem::path& directory,
+                                    const ValidationPackConfig& config = {},
+                                    std::string* error = nullptr);
 
 } // namespace fv1

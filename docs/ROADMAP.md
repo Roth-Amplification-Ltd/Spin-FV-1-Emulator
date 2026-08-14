@@ -79,7 +79,7 @@ The Phase-3/3.1 build is accepted on Cortana and documented with screenshots and
 
 Phase 4 passed 11/11 tests on Cortana and was committed as `Complete Phase 4 FV-1 emulator testbench`.
 
-## Phase 5A — Validation framework — CURRENT
+## Phase 5A — Validation framework — COMPLETE
 
 Build the measurement framework before physical hardware is available so the same tools can be
 self-tested against synthetic captures and later used unchanged with real FV-1 recordings.
@@ -100,11 +100,24 @@ self-tested against synthetic captures and later used unchanged with real FV-1 r
 - regression tests using synthetic captures with deliberately known delay/gain/error;
 - four switchable FV-1 Emulator application icons plus Linux desktop metadata.
 
-Phase-5A exit test: identical reference/capture files produce zero delay, unity correlation and
-numerically silent residual; synthetic delayed/gain-scaled captures recover their planted values;
-full CTest plus Qt smoke pass on Cortana.
+Phase-5A exit test passed: identical reference/capture files produced zero delay, unity correlation
+and numerically silent residual; synthetic delayed/gain-scaled captures recovered their planted
+values; the software validation/report pipeline is accepted.
 
-## Phase 5B — Physical FV-1 silicon validation — HARDWARE DEFERRED
+## Phase 5B — Physical FV-1 silicon validation — CURRENT / SILICON MEASUREMENT PENDING
+
+The Phase-5B software-preparation pass adds the fixture workflow needed before physical captures:
+
+- deterministic multi-file hardware-validation packs plus machine-readable manifests;
+- `fv1-cli validation-pack` and matching GUI generation workflow;
+- File → **Paste SpinASM…** scratchpad that compiles through the same assembler/program-image path;
+- software-rendered startup splash with dedicated FV-1/waveform/DIP foreground, real startup milestones,
+  progress percentage, and an optional future theme-tinted monochrome background-image hook;
+- Linux application identity hardening and correctly transparent rounded-badge icon corners;
+- Pop!_OS/Ubuntu 22.04+ bootstrap compatibility, including pinned miniaudio fallback handling.
+
+Actual silicon acceptance remains pending until an FV-1 board and capture interface are connected.
+At that point, use the generated pack unchanged for both virtual and physical runs.
 
 When the audio interface and FV-1 hardware rig are available, feed **the exact same deterministic
 stimulus** to the emulator and the physical board and capture both at one host sample rate.

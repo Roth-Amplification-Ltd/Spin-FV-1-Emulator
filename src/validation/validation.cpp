@@ -645,4 +645,89 @@ bool generate_validation_stimulus(ValidationAudio& audio,
     return true;
 }
 
+
+bool write_validation_stimulus_pack(const std::filesystem::path& directory,
+                                    const ValidationPackConfig& config,
+                                    std::string* error) {
+    if (config.sample_rate < 8000 || config.sample_rate > 384000)
+        return fail(error, "validation pack sample rate must be 8000..384000 Hz");
+    if (!(config.standard_seconds > 0.0) || config.standard_seconds > 120.0)
+        return fail(error, "validation pack duration must be > 0 and <= 120 seconds");
+    if (!(config.level > 0.0) || config.level > 0.8)
+        return fail(error, "validation pack level must be > 0 and <= 0.8");
+
+    std::error_code ec;
+    std::filesystem::create_directories(directory, ec);
+    if (ec) return fail(error, "cannot create validation-pack directory: " + ec.message());
+
+    struct Stimulus {
+        const char* filename;
+        const char* kind;
+        double seconds_scale;
+        double level_scale;
+        double frequency_hz;
+        double sweep_end_hz;
+    };
+    const std::array<Stimulus, 6> stimuli{{
+        {"01-impulse.wav", "impulse", 0.4, 1.0, 440.0, 16000.0},
+        {"02-multitone.wav", "multitone", 1.0, 1.0, 440.0, 16000.0},
+        {"03-log-sweep.wav", "sweep", 2.0, 1.0, 20.0, 20000.0},
+        {"04-sine-1khz.wav", "sine", 1.0, 1.0, 1000.0, 1000.0},
+        {"05-white-noise.wav", "white", 1.0, 0.72, 440.0, 16000.0},
+        {"06-pink-noise.wav", "pink", 1.0, 0.72, 440.0, 16000.0}
+    }};
+
+    for (std::size_t i = 0; i < stimuli.size(); ++i) {
+        const auto& spec = stimuli[i];
+        ValidationAudio audio;
+        const double seconds = std::max(0.05, config.standard_seconds * spec.seconds_scale);
+        const double level = config.level * spec.level_scale;
+        const double sweep_end = std::min(spec.sweep_end_hz, 0.45 * static_cast<double>(config.sample_rate));
+        if (!generate_validation_stimulus(audio, config.sample_rate, seconds, spec.kind,
+                                          level, spec.frequency_hz, sweep_end,
+                                          config.seed + static_cast<std::uint32_t>(i), error))
+            return false;
+        if (!write_validation_wav(directory / spec.filename, audio, error)) return false;
+    }
+
+    const auto manifest_path = directory / "manifest.json";
+    std::ofstream manifest(manifest_path);
+    if (!manifest) return fail(error, "cannot create " + manifest_path.string());
+    manifest << std::fixed << std::setprecision(6);
+    manifest << "{\n"
+             << "  \"schema\": \"spin-fv1-hardware-validation-pack-1\",\n"
+             << "  \"sample_rate\": " << config.sample_rate << ",\n"
+             << "  \"standard_seconds\": " << config.standard_seconds << ",\n"
+             << "  \"level\": " << config.level << ",\n"
+             << "  \"seed\": " << config.seed << ",\n"
+             << "  \"workflow\": \"Feed each WAV unchanged to both the emulator and physical FV-1 fixture; capture hardware output at the same host sample rate; validate reference render vs capture.\",\n"
+             << "  \"stimuli\": [\n";
+    for (std::size_t i = 0; i < stimuli.size(); ++i) {
+        const auto& spec = stimuli[i];
+        const double seconds = std::max(0.05, config.standard_seconds * spec.seconds_scale);
+        const double level = config.level * spec.level_scale;
+        const double sweep_end = std::min(spec.sweep_end_hz, 0.45 * static_cast<double>(config.sample_rate));
+        manifest << "    {\"file\": \"" << spec.filename << "\", \"kind\": \"" << spec.kind
+                 << "\", \"seconds\": " << seconds << ", \"level\": " << level
+                 << ", \"frequency_hz\": " << spec.frequency_hz
+                 << ", \"sweep_end_hz\": " << sweep_end
+                 << ", \"seed\": " << (config.seed + static_cast<std::uint32_t>(i)) << "}"
+                 << (i + 1 == stimuli.size() ? "\n" : ",\n");
+    }
+    manifest << "  ]\n}\n";
+    if (!manifest) return fail(error, "failed while writing " + manifest_path.string());
+
+    const auto readme_path = directory / "README.txt";
+    std::ofstream readme(readme_path);
+    if (!readme) return fail(error, "cannot create " + readme_path.string());
+    readme << "Spin FV-1 Emulator — Phase 5B Hardware Validation Pack\n\n"
+           << "1. Use the same FV-1 program, clock and POT settings for virtual and physical runs.\n"
+           << "2. Render each stimulus through the emulator to create reference output.\n"
+           << "3. Play the untouched stimulus through the physical FV-1 fixture and record its output.\n"
+           << "4. Capture at " << config.sample_rate << " Hz without normalization, limiting or post-processing.\n"
+           << "5. Compare each reference/capture pair with fv1-cli validate or the VALIDATION tab.\n"
+           << "6. Preserve the manifest with the captures so regressions remain reproducible.\n";
+    return static_cast<bool>(readme);
+}
+
 } // namespace fv1

@@ -120,6 +120,44 @@ void ThemeManager::apply(QApplication& app, const QString& theme_name, const QSt
 
     app.setStyleSheet(QStringLiteral(R"(
         QMainWindow, QWidget { background-color: %1; color: %2; }
+
+        /* Standard desktop-menu affordance: both top-level menu-bar entries
+           and dropdown menu rows follow the currently selected FV-1 accent. */
+        QMenuBar { background: %1; color: %2; }
+        QMenuBar::item {
+            background: transparent;
+            color: %2;
+            padding: 5px 8px;
+            border-radius: 3px;
+        }
+        QMenuBar::item:selected, QMenuBar::item:pressed {
+            background: %5;
+            color: %1;
+        }
+        QMenu {
+            background: %6;
+            color: %2;
+            border: 1px solid %4;
+            padding: 3px;
+        }
+        QMenu::item {
+            background: transparent;
+            color: %2;
+            padding: 6px 28px 6px 24px;
+            border-radius: 3px;
+        }
+        QMenu::item:selected {
+            background: %5;
+            color: %1;
+        }
+        QMenu::item:disabled { color: %7; }
+        QMenu::separator {
+            height: 1px;
+            background: %4;
+            margin: 4px 8px;
+        }
+        QMenu::indicator { left: 6px; }
+
         QDockWidget { color: %2; }
         QDockWidget::title { background: %3; padding: 6px; border-bottom: 1px solid %4; }
         QGroupBox { border: 1px solid %4; border-radius: 5px; margin-top: 11px; padding-top: 8px; font-weight: 600; }
@@ -146,7 +184,8 @@ void ThemeManager::apply(QApplication& app, const QString& theme_name, const QSt
         .arg(t.raised.name())
         .arg(t.border.name())
         .arg(t.accent.name())
-        .arg(t.panel.name()));
+        .arg(t.panel.name())
+        .arg(t.muted.name()));
 
     app.setProperty("fv1ThemeName", t.name);
     app.setProperty("fv1ThemeAccent", t.accent);

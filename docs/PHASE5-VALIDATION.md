@@ -100,32 +100,32 @@ Render it through the virtual chip:
 
 ```bash
 ./build/fv1-cli render \
-  examples/steal-this-dsp-programs/03_pitch_maw.spn \
-  /tmp/fv1-validation.wav /tmp/pitch-maw-virtual.wav \
+  examples/steal-this-dsp-programs/03_gravity_clerk.spn \
+  /tmp/fv1-validation.wav /tmp/gravity-clerk-virtual.wav \
   --clock 32768 --pot0 0.60 --pot1 0.50 --pot2 0.70
 ```
 
 Later, feed `/tmp/fv1-validation.wav` to the physical test rig and record the result as
-`/tmp/pitch-maw-hardware.wav` at the same host sample rate.
+`/tmp/gravity-clerk-hardware.wav` at the same host sample rate.
 
 Compare:
 
 ```bash
 ./build/fv1-cli validate \
-  /tmp/pitch-maw-virtual.wav \
-  /tmp/pitch-maw-hardware.wav \
+  /tmp/gravity-clerk-virtual.wav \
+  /tmp/gravity-clerk-hardware.wav \
   --max-lag-ms 100 \
   --gain-match \
-  --report-prefix /tmp/pitch-maw-validation
+  --report-prefix /tmp/gravity-clerk-validation
 ```
 
 The report prefix creates:
 
 ```text
-pitch-maw-validation.json
-pitch-maw-validation.md
-pitch-maw-validation-frequency.csv
-pitch-maw-validation-residual.wav
+gravity-clerk-validation.json
+gravity-clerk-validation.md
+gravity-clerk-validation-frequency.csv
+gravity-clerk-validation-residual.wav
 ```
 
 ## Qt workspace

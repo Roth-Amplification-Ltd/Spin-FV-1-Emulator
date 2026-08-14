@@ -7,7 +7,7 @@ Phase 2 is accepted for continued development on Linux with one intentionally de
 The production Ubuntu 24.04 paths were exercised with system SpeexDSP and miniaudio. The following paths completed without output underruns or analyzer queue drops:
 
 - test generator -> 48 kHz host -> 32.768 kHz virtual FV-1 -> audio playback
-- Pitch Maw -> real Linux audio playback
+- Gravity Clerk -> real Linux audio playback
 - looped WAV source -> source-rate conversion -> 48 kHz host -> 32.768 kHz virtual FV-1 -> audio playback
 - runtime/analyzer regression suite
 

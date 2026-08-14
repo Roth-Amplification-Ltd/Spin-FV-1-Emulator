@@ -36,7 +36,7 @@ Options:
   --build-type TYPE    CMake build type (default: RelWithDebInfo).
   -h, --help           Show this help.
 
-Supported bootstrap hosts for Phase 5A:
+Supported bootstrap hosts for Phase 5B:
   Pop!_OS, Ubuntu, Debian, and apt-compatible derivatives.
 
 Examples:
@@ -110,10 +110,10 @@ printf '\n=== Spin FV-1 Emulator: developer bootstrap ===\n'
 printf 'Project:     %s\n' "$ROOT_DIR"
 printf 'Build type:  %s\n' "$BUILD_TYPE"
 printf 'Compiler:    %s\n' "$COMPILER"
-printf 'Platform:    Linux-first Phase 5A\n\n'
+printf 'Platform:    Linux-first Phase 5B\n\n'
 
 # Commands required for development. Package installation below supplies them.
-required_commands=(cmake python3 git pkg-config gdb valgrind)
+required_commands=(cmake python3 git pkg-config gdb valgrind curl)
 if [[ "$COMPILER" == "gcc" ]]; then
     required_commands+=(gcc g++)
 else
@@ -140,10 +140,11 @@ missing_phase2=()
 if ! command -v pkg-config >/dev/null 2>&1 || ! pkg-config --exists speexdsp 2>/dev/null; then
     missing_phase2+=(libspeexdsp-dev)
 fi
-if [[ ! -f /usr/include/miniaudio.h ]]; then
-    missing_phase2+=(libminiaudio-dev)
+MINIAUDIO_VENDOR_HEADER="$ROOT_DIR/third_party/miniaudio/miniaudio.h"
+if [[ ! -f /usr/include/miniaudio.h && ! -f "$MINIAUDIO_VENDOR_HEADER" ]]; then
+    missing_phase2+=(miniaudio-header)
 fi
-if ! command -v pkg-config >/dev/null 2>&1 || ! pkg-config --exists Qt6Widgets 2>/dev/null; then
+if ! command -v qmake6 >/dev/null 2>&1; then
     missing_phase2+=(qt6-base-dev)
 fi
 
@@ -174,7 +175,7 @@ if (( DO_INSTALL )); then
     if ((${#missing_commands[@]} || ${#missing_phase2[@]})); then
         if ! command -v apt-get >/dev/null 2>&1; then
             echo "error: missing development tools: ${missing_commands[*]}" >&2
-            echo "Phase 5A automatic installation currently supports apt-based Linux distributions." >&2
+            echo "Phase 5B automatic installation currently supports apt-based Linux distributions." >&2
             echo "Install a C/C++ compiler, CMake, Ninja, Python 3, Git, pkg-config, GDB, Valgrind, miniaudio headers, and SpeexDSP development files, then rerun." >&2
             exit 1
         fi
@@ -199,7 +200,7 @@ if (( DO_INSTALL )); then
             gdb
             valgrind
             libspeexdsp-dev
-            libminiaudio-dev
+            curl
             qt6-base-dev
             qt6-base-dev-tools
         )
@@ -212,6 +213,12 @@ if (( DO_INSTALL )); then
         "${SUDO[@]}" apt-get install -y "${packages[@]}"
     else
         echo "=== Development prerequisites already present ==="
+    fi
+
+    if [[ ! -f /usr/include/miniaudio.h && ! -f "$MINIAUDIO_VENDOR_HEADER" ]]; then
+        echo "=== Fetching pinned miniaudio 0.11.21 header ==="
+        mkdir -p "$(dirname -- "$MINIAUDIO_VENDOR_HEADER")"
+        curl -fL --retry 3 --connect-timeout 15             https://raw.githubusercontent.com/mackron/miniaudio/0.11.21/miniaudio.h             -o "$MINIAUDIO_VENDOR_HEADER"
     fi
 fi
 
@@ -229,10 +236,10 @@ phase2_post_missing=()
 if ! command -v pkg-config >/dev/null 2>&1 || ! pkg-config --exists speexdsp 2>/dev/null; then
     phase2_post_missing+=(libspeexdsp-dev)
 fi
-if [[ ! -f /usr/include/miniaudio.h ]]; then
-    phase2_post_missing+=(libminiaudio-dev)
+if [[ ! -f /usr/include/miniaudio.h && ! -f "$MINIAUDIO_VENDOR_HEADER" ]]; then
+    phase2_post_missing+=(miniaudio-header)
 fi
-if ! pkg-config --exists Qt6Widgets 2>/dev/null; then
+if ! command -v qmake6 >/dev/null 2>&1; then
     phase2_post_missing+=(qt6-base-dev)
 fi
 if ((${#phase2_post_missing[@]})); then
@@ -250,8 +257,10 @@ if command -v ninja >/dev/null 2>&1; then
     ninja --version | sed 's/^/ninja /'
 fi
 pkg-config --modversion speexdsp | sed 's/^/SpeexDSP /'
-grep -m1 -E 'miniaudio - v[0-9]+' /usr/include/miniaudio.h 2>/dev/null | sed 's/^/miniaudio /' || echo "miniaudio headers present"
-pkg-config --modversion Qt6Widgets | sed 's/^/Qt6 Widgets /'
+MINIAUDIO_REPORT_HEADER=/usr/include/miniaudio.h
+[[ -f "$MINIAUDIO_REPORT_HEADER" ]] || MINIAUDIO_REPORT_HEADER="$MINIAUDIO_VENDOR_HEADER"
+grep -m1 -E 'miniaudio - v[0-9]+' "$MINIAUDIO_REPORT_HEADER" 2>/dev/null | sed 's/^/miniaudio /' || echo "miniaudio headers present"
+qmake6 -query QT_VERSION | sed 's/^/Qt6 Widgets /'
 
 if (( ! DO_BUILD )); then
     echo
@@ -292,4 +301,4 @@ printf 'Live host: %s/fv1-live\n' "$BUILD_DIR"
 if [[ -x "$BUILD_DIR/fv1-lab" ]]; then
     printf 'GUI:       %s/fv1-lab\n' "$BUILD_DIR"
 fi
-printf 'Try: %s/fv1-cli inspect %s/examples/steal-this-dsp-programs/03_pitch_maw.spn\n' "$BUILD_DIR" "$ROOT_DIR"
+printf 'Try: %s/fv1-cli inspect %s/examples/steal-this-dsp-programs/03_gravity_clerk.spn\n' "$BUILD_DIR" "$ROOT_DIR"

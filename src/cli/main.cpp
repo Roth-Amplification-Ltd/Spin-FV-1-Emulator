@@ -326,6 +326,8 @@ Phase 5 validation:
                    [--min-corr 0.995 --max-residual-rms-dbfs -45]
                    [--max-residual-peak-dbfs -24]
                    [--report-prefix path/prefix]
+  fv1-cli validation-pack <directory> [--host-rate 48000]
+                   [--seconds 5 --level 0.25 --seed N]
 
 Common options:
   --clock Hz            Virtual FV-1 sample/clock rate (default 32768)
@@ -478,6 +480,22 @@ int cmd_stimulus(const Args& args) {
     return 0;
 }
 
+
+int cmd_validation_pack(const Args& args) {
+    if (args.values.size() < 2) throw Error("validation-pack requires an output directory");
+    fv1::ValidationPackConfig cfg;
+    cfg.sample_rate = get_uint(args, "--host-rate", 48000);
+    cfg.standard_seconds = std::stod(args.get("--seconds", "5"));
+    cfg.level = std::stod(args.get("--level", "0.25"));
+    cfg.seed = get_uint(args, "--seed", 0x465631u);
+    std::string error;
+    if (!fv1::write_validation_stimulus_pack(args.values[1], cfg, &error)) throw Error(error);
+    std::cout << "Generated Phase 5B hardware-validation pack at " << args.values[1]
+              << " (" << cfg.sample_rate << " Hz, standard duration " << cfg.standard_seconds
+              << " s, level " << cfg.level << ")\n";
+    return 0;
+}
+
 int cmd_validate(const Args& args) {
     if (args.values.size() < 3) throw Error("validate requires reference.wav and capture.wav");
     fv1::ValidationAudio reference, capture;
@@ -544,6 +562,7 @@ int main(int argc, char** argv) {
         if (cmd == "render") return cmd_render(args);
         if (cmd == "stimulus") return cmd_stimulus(args);
         if (cmd == "validate") return cmd_validate(args);
+        if (cmd == "validation-pack") return cmd_validation_pack(args);
         if (cmd == "help" || cmd == "--help" || cmd == "-h") { print_usage(); return 0; }
         throw Error("unknown command: " + cmd);
     } catch (const std::exception& e) {

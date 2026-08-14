@@ -52,7 +52,7 @@ ValidationPanel::ValidationPanel(QWidget* parent) : QWidget(parent) {
     outer->setContentsMargins(8, 8, 8, 8);
 
     auto* heading = new QLabel(QStringLiteral(
-        "PHASE 5 VALIDATION — compare the emulator/reference response with a captured physical FV-1 response. "
+        "PHASE 5B HARDWARE VALIDATION — compare the emulator/reference response with a captured physical FV-1 response. "
         "Recordings are automatically time-aligned before residual, gain, correlation and spectral error measurements."), this);
     heading->setWordWrap(true);
     outer->addWidget(heading);
@@ -112,13 +112,16 @@ ValidationPanel::ValidationPanel(QWidget* parent) : QWidget(parent) {
 
     auto* buttons = new QHBoxLayout;
     auto* stimulus = new QPushButton(QStringLiteral("Generate Validation Stimulus…"), this);
+    auto* hardware_pack = new QPushButton(QStringLiteral("Generate Hardware Test Pack…"), this);
     auto* analyze_button = new QPushButton(QStringLiteral("Analyze Reference vs Capture"), this);
     export_button_ = new QPushButton(QStringLiteral("Export Validation Report…"), this);
     export_button_->setEnabled(false);
     connect(stimulus, &QPushButton::clicked, this, [this]{ generate_stimulus(); });
+    connect(hardware_pack, &QPushButton::clicked, this, [this]{ generate_hardware_pack(); });
     connect(analyze_button, &QPushButton::clicked, this, [this]{ analyze(); });
     connect(export_button_, &QPushButton::clicked, this, [this]{ export_report(); });
     buttons->addWidget(stimulus);
+    buttons->addWidget(hardware_pack);
     buttons->addStretch(1);
     buttons->addWidget(analyze_button);
     buttons->addWidget(export_button_);
@@ -280,6 +283,64 @@ void ValidationPanel::export_report() {
     if (log_callback_) log_callback_(QStringLiteral("Validation report bundle exported: ") + path);
     QMessageBox::information(this, QStringLiteral("FV-1 Validation"),
         QStringLiteral("Exported JSON, Markdown, frequency CSV and residual WAV using prefix:\n%1").arg(path));
+}
+
+void ValidationPanel::generate_hardware_pack() {
+    const QString directory = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("Create Phase 5B Hardware Validation Pack"));
+    if (directory.isEmpty()) return;
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Hardware Validation Pack"));
+    auto* outer = new QVBoxLayout(&dialog);
+    auto* form = new QFormLayout;
+    auto* rate = new QSpinBox(&dialog);
+    rate->setRange(8000, 384000);
+    rate->setValue(48000);
+    rate->setSuffix(QStringLiteral(" Hz"));
+    auto* seconds = new QDoubleSpinBox(&dialog);
+    seconds->setRange(0.05, 120.0);
+    seconds->setDecimals(2);
+    seconds->setValue(5.0);
+    seconds->setSuffix(QStringLiteral(" s"));
+    auto* level = new QDoubleSpinBox(&dialog);
+    level->setRange(0.01, 0.8);
+    level->setDecimals(3);
+    level->setValue(0.25);
+    auto* seed = new QSpinBox(&dialog);
+    seed->setRange(1, 0x7fffffff);
+    seed->setValue(0x465631);
+    form->addRow(QStringLiteral("Host/capture sample rate"), rate);
+    form->addRow(QStringLiteral("Standard stimulus duration"), seconds);
+    form->addRow(QStringLiteral("Nominal level"), level);
+    form->addRow(QStringLiteral("Deterministic seed"), seed);
+    outer->addLayout(form);
+    auto* note = new QLabel(QStringLiteral(
+        "Creates impulse, multitone, log sweep, 1 kHz sine, white-noise and pink-noise WAVs plus a manifest and fixture workflow README. Use the untouched WAVs for both virtual and physical runs."), &dialog);
+    note->setWordWrap(true);
+    outer->addWidget(note);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Generate Pack"));
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    outer->addWidget(buttons);
+    if (dialog.exec() != QDialog::Accepted) return;
+
+    fv1::ValidationPackConfig cfg;
+    cfg.sample_rate = static_cast<std::uint32_t>(rate->value());
+    cfg.standard_seconds = seconds->value();
+    cfg.level = level->value();
+    cfg.seed = static_cast<std::uint32_t>(seed->value());
+    const std::filesystem::path pack_dir = std::filesystem::path(directory.toStdString()) / "fv1-hardware-validation-pack";
+    std::string error;
+    if (!fv1::write_validation_stimulus_pack(pack_dir, cfg, &error)) {
+        QMessageBox::warning(this, QStringLiteral("Hardware Validation Pack"), QString::fromStdString(error));
+        return;
+    }
+    const QString created = QString::fromStdString(pack_dir.string());
+    QMessageBox::information(this, QStringLiteral("Hardware Validation Pack"),
+        QStringLiteral("Created deterministic Phase 5B hardware-validation pack:\n%1").arg(created));
+    if (log_callback_) log_callback_(QStringLiteral("Hardware validation stimulus pack generated: ") + created);
 }
 
 void ValidationPanel::generate_stimulus() {

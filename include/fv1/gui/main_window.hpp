@@ -1,6 +1,9 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QByteArray>
+
+#include <functional>
 
 #include <fv1/debugger.hpp>
 
@@ -26,7 +29,8 @@ class SessionController;
 
 class MainWindow final : public QMainWindow {
 public:
-    explicit MainWindow(QWidget* parent = nullptr);
+    explicit MainWindow(QWidget* parent = nullptr,
+                        std::function<void(int, const QString&)> startup_progress = {});
     ~MainWindow() override;
 
 private:
@@ -42,6 +46,8 @@ private:
     void show_generator_settings();
     void show_loop_region_settings();
     void choose_program();
+    void paste_spinasm();
+    bool install_program_image(const QByteArray& bytes, const QString& display_name, const QString& source_path = {});
     void choose_audio_file();
     void inspect_program();
     void start_session();
@@ -70,6 +76,9 @@ private:
     QString accent_name_{QStringLiteral("Cyan")};
     QString icon_name_{QStringLiteral("Silver")};
     QString program_path_;
+    QString program_display_name_;
+    QString pasted_spinasm_source_;
+    QByteArray program_image_;
     QString audio_file_path_;
     int resampler_quality_{7};
     std::size_t analyzer_fft_size_{4096};

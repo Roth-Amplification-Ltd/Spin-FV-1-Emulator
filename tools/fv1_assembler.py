@@ -399,5 +399,14 @@ if __name__ == "__main__":
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
-    count, max_delay = assemble_file(args.source, args.output)
+    try:
+        count, max_delay = assemble_file(args.source, args.output)
+    except AssemblyError as exc:
+        import sys
+        print(f"{args.source}: {exc}", file=sys.stderr)
+        raise SystemExit(2) from None
+    except OSError as exc:
+        import sys
+        print(f"{args.source}: {exc}", file=sys.stderr)
+        raise SystemExit(2) from None
     print(f"Assembled {args.source}: {count} instructions, highest delay address {max_delay}, {PROGRAM_BYTES} bytes")

@@ -30,7 +30,7 @@ Result:
 
 fv1-core-tests ................. PASS
 compile-steal-this-bank ........ PASS
-cli-inspect-pitch-maw .......... PASS
+cli-inspect-gravity-clerk .......... PASS
 render-steal-this-bank ......... PASS
 ```
 

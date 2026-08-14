@@ -2,7 +2,7 @@
 
 Linux-first, open-source tools for emulating, measuring and inspecting the Spin Semiconductor FV-1 DSP.
 
-**Current milestone: Phase 5A — validation framework.**
+**Current milestone: Phase 5B — physical-FV-1 validation preparation and accuracy refinement.**
 
 The product is intentionally a polished virtual FV-1 and DSP lab instrument, not a full source-code IDE. Lightweight development/debug conveniences are welcome when they directly support emulation, while the underlying libraries remain reusable by a future dedicated IDE and other applications.
 
@@ -28,7 +28,18 @@ Complete and regression-tested:
 - deterministic offline WAV rendering at the configured virtual FV-1 rate
 - Linux CMake/CTest build and regression suite
 
-The repository also carries the eight **Steal This DSP** factory programs as non-authoritative regression/examples so the emulator is continuously exercised with real effects rather than only synthetic opcodes.
+The repository also carries the eight **Steal This DSP** factory programs as non-authoritative regression/examples so the emulator is continuously exercised with real effects rather than only synthetic opcodes. The bundled demo names track the current factory bank:
+
+| Slot | Demo program |
+|---:|---|
+| 0 | **55 Gallon Saint** |
+| 1 | **Last Known Copy** |
+| 2 | **Ghost Spring** |
+| 3 | **Gravity Clerk** |
+| 4 | **Cold Case** |
+| 5 | **Municipal Lung** |
+| 6 | **Reverse Witness** |
+| 7 | **Data Felon** |
 
 
 ## Phase 2 status
@@ -120,10 +131,10 @@ Enumerate Linux audio devices:
 ./build/fv1-live devices
 ```
 
-Process a live interface input through Pitch Maw:
+Process a live interface input through Gravity Clerk:
 
 ```bash
-./build/fv1-live run examples/steal-this-dsp-programs/03_pitch_maw.spn \
+./build/fv1-live run examples/steal-this-dsp-programs/03_gravity_clerk.spn \
   --live --input-device 0 --output-device 0 \
   --host-rate 48000 --buffer 256 --clock 32768 \
   --pot0 0.60 --pot1 0.50 --pot2 0.70
@@ -132,7 +143,7 @@ Process a live interface input through Pitch Maw:
 Loop an imported WAV through the exact same FV-1 runtime:
 
 ```bash
-./build/fv1-live run examples/steal-this-dsp-programs/03_pitch_maw.spn \
+./build/fv1-live run examples/steal-this-dsp-programs/03_gravity_clerk.spn \
   --file ~/Music/fv1-test.wav --loop-start 0 --loop-end 8 \
   --host-rate 48000 --buffer 256 --clock 32768 \
   --seconds 20 --meter
@@ -175,7 +186,7 @@ The core exposes two execution styles:
 The debugger can begin a virtual audio sample, execute one FV-1 instruction at a time, inspect ACC/PACC/LR/register/LFO state, observe SKP branches, and then retrieve the completed stereo DAC sample.
 
 
-## Phase 5A validation framework
+## Phase 5A validation framework — complete
 
 Phase 5A adds a reusable, GUI-independent `libfv1-validation` layer so emulator output can be
 compared numerically with a later physical FV-1 capture without changing the measurement code.
@@ -210,6 +221,29 @@ Compare a virtual reference with a capture:
 
 See [`docs/PHASE5-VALIDATION.md`](docs/PHASE5-VALIDATION.md) and
 [`docs/PHASE5-LINUX-TEST-PLAN.md`](docs/PHASE5-LINUX-TEST-PLAN.md).
+
+
+## Phase 5B hardware-validation workflow
+
+Phase 5B keeps the standalone FV-1 testbench identity while preparing reproducible physical-chip
+measurement. The GUI now includes **File → Paste SpinASM…** for quickly compiling/pasting one
+program without creating a source file, plus a software-rendered startup splash with actual startup
+progress milestones. The splash uses a dedicated standalone FV-1/waveform/DIP composition rather
+than reusing the application icon; its background remains intentionally dark/blank until an optional
+monochrome collage is supplied through the splash background hook. The VALIDATION tab can generate a deterministic hardware test pack containing
+impulse, multitone, sweep, 1 kHz sine, white-noise and pink-noise WAVs together with a JSON manifest.
+
+Generate the same pack headlessly:
+
+```bash
+./build/fv1-cli validation-pack /tmp/fv1-hardware-pack \
+  --host-rate 48000 --seconds 5 --level 0.25
+```
+
+The physical FV-1 board and capture interface remain the final Phase-5B acceptance gate; the
+software does not claim silicon-equivalent accuracy until those measurements are performed.
+
+See [`docs/PHASE5B-HARDWARE-VALIDATION.md`](docs/PHASE5B-HARDWARE-VALIDATION.md) and [`docs/PHASE5B-LINUX-TEST-PLAN.md`](docs/PHASE5B-LINUX-TEST-PLAN.md).
 
 ## Fidelity policy
 
@@ -287,7 +321,7 @@ The repository includes the Qt 6 `fv1-lab` desktop frontend. On supported apt-ba
 ./build/fv1-lab
 ```
 
-![FV-1 Lab running Pitch Maw on Cortana](docs/media/phase3-cortana-running.png)
+![FV-1 Lab running Gravity Clerk on Cortana](docs/media/phase3-cortana-running.png)
 
 [▶ Phase 3 Cortana runtime screencast (WebM)](docs/media/phase3-cortana-demo.webm)
 

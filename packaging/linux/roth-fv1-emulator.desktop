@@ -8,3 +8,4 @@ Terminal=false
 Categories=AudioVideo;Audio;Development;Engineering;
 Keywords=FV-1;DSP;audio;emulator;testbench;SpinASM;
 StartupNotify=true
+StartupWMClass=fv1-lab

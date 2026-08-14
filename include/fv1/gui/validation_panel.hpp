@@ -35,6 +35,7 @@ private:
     void analyze();
     void export_report();
     void generate_stimulus();
+    void generate_hardware_pack();
     void refresh_result();
 
     std::function<void(const QString&)> log_callback_;

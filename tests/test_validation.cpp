@@ -112,6 +112,21 @@ int main() {
     check(fs::exists(dir / "known-capture-frequency.csv"), "frequency CSV exists");
     check(fs::exists(dir / "known-capture-residual.wav"), "residual WAV exists");
 
+    fv1::ValidationPackConfig pack_cfg;
+    pack_cfg.sample_rate = 16000;
+    pack_cfg.standard_seconds = 0.05;
+    pack_cfg.level = 0.2;
+    pack_cfg.seed = 123u;
+    const fs::path pack = dir / "hardware-pack";
+    check(fv1::write_validation_stimulus_pack(pack, pack_cfg, &error), "write hardware validation stimulus pack");
+    check(fs::exists(pack / "01-impulse.wav"), "validation pack impulse exists");
+    check(fs::exists(pack / "02-multitone.wav"), "validation pack multitone exists");
+    check(fs::exists(pack / "03-log-sweep.wav"), "validation pack sweep exists");
+    check(fs::exists(pack / "04-sine-1khz.wav"), "validation pack sine exists");
+    check(fs::exists(pack / "05-white-noise.wav"), "validation pack white noise exists");
+    check(fs::exists(pack / "06-pink-noise.wav"), "validation pack pink noise exists");
+    check(fs::exists(pack / "manifest.json") && fs::exists(pack / "README.txt"), "validation pack manifest/readme exist");
+
     auto broken = capture;
     for (std::size_t i = delay; i < broken.frames.size(); i += 11) broken.frames[i].left += 0.2f;
     cfg.gain_match_residual = false;

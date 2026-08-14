@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(SpinFV1Emulator VERSION 0.5.0 LANGUAGES C CXX)
+project(SpinFV1Emulator VERSION 0.6.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -17,7 +17,8 @@ find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
     pkg_check_modules(SPEEXDSP QUIET IMPORTED_TARGET speexdsp)
 endif()
-find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h)
+find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h
+    HINTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio")
 
 function(fv1_strict_warnings target)
     if(NOT FV1_ENABLE_WARNINGS)
@@ -106,7 +107,7 @@ if(FV1_ENABLE_LIVE_AUDIO AND MINIAUDIO_INCLUDE_DIR)
     endif()
     message(STATUS "Phase 2 audio: miniaudio enabled from ${MINIAUDIO_INCLUDE_DIR}")
 else()
-    message(WARNING "miniaudio.h not found: fv1-live will build in no-device stub mode. On Ubuntu 24.04 run bootstrap-dev.sh to install libminiaudio-dev.")
+    message(WARNING "miniaudio.h not found: fv1-live will build in no-device stub mode. Run bootstrap-dev.sh to fetch the pinned development header.")
 endif()
 if(UNIX AND NOT APPLE)
     target_link_libraries(fv1-audio PRIVATE m)
@@ -129,7 +130,7 @@ target_compile_definitions(fv1-live PRIVATE
 fv1_strict_warnings(fv1-live)
 
 # -----------------------------------------------------------------------------
-# Phase 4: Qt FV-1 emulator/testbench (Linux/Windows frontend)
+# Phase 5B: Qt FV-1 emulator/testbench (Linux/Windows frontend)
 # -----------------------------------------------------------------------------
 if(FV1_BUILD_GUI)
     find_package(Qt6 COMPONENTS Widgets QUIET)
@@ -137,6 +138,7 @@ if(FV1_BUILD_GUI)
         add_executable(fv1-lab
             src/gui/main.cpp
             src/gui/main_window.cpp
+            src/gui/startup_splash.cpp
             src/gui/theme_manager.cpp
             src/gui/instrument_plot.cpp
             src/gui/validation_panel.cpp)
@@ -144,7 +146,7 @@ if(FV1_BUILD_GUI)
             Qt6::Widgets FV1::audio FV1::analysis FV1::validation FV1::runtime FV1::debugger FV1::core)
         target_include_directories(fv1-lab PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
         fv1_strict_warnings(fv1-lab)
-        message(STATUS "Phase 5A validation/testbench GUI: Qt ${Qt6_VERSION} enabled")
+        message(STATUS "Phase 5B hardware-validation/testbench GUI: Qt ${Qt6_VERSION} enabled")
     else()
         message(WARNING "Qt 6 Widgets not found: fv1-lab GUI will not be built. Run bootstrap-dev.sh on Linux to install qt6-base-dev.")
     endif()
@@ -185,9 +187,14 @@ if(FV1_BUILD_TESTS)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/fv1_assembler.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/examples/steal-this-dsp-programs
                 ${CMAKE_CURRENT_BINARY_DIR}/example-programs)
+    add_test(NAME spinasm-diagnostics
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_assembler_diagnostics.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/fv1_assembler.py
+                ${CMAKE_CURRENT_BINARY_DIR}/spinasm-diagnostics)
 
-    add_test(NAME cli-inspect-pitch-maw
-        COMMAND fv1-cli inspect ${CMAKE_CURRENT_SOURCE_DIR}/examples/steal-this-dsp-programs/03_pitch_maw.spn)
+
+    add_test(NAME cli-inspect-gravity-clerk
+        COMMAND fv1-cli inspect ${CMAKE_CURRENT_SOURCE_DIR}/examples/steal-this-dsp-programs/03_gravity_clerk.spn)
 
     add_test(NAME render-steal-this-bank
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_render_examples.py
@@ -199,7 +206,7 @@ if(FV1_BUILD_TESTS)
     add_test(NAME phase2-render-src
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_phase2_render_src.py
                 $<TARGET_FILE:fv1-cli>
-                ${CMAKE_CURRENT_SOURCE_DIR}/examples/steal-this-dsp-programs/03_pitch_maw.spn
+                ${CMAKE_CURRENT_SOURCE_DIR}/examples/steal-this-dsp-programs/03_gravity_clerk.spn
                 ${CMAKE_CURRENT_BINARY_DIR}/phase2-src-regression)
     set_tests_properties(phase2-render-src PROPERTIES TIMEOUT 30)
 
@@ -209,6 +216,11 @@ if(FV1_BUILD_TESTS)
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_validation_cli.py
                 $<TARGET_FILE:fv1-cli> ${CMAKE_CURRENT_BINARY_DIR}/phase5-validation-cli)
     set_tests_properties(phase5-validation-cli PROPERTIES TIMEOUT 30)
+
+    add_test(NAME phase5b-validation-pack-cli
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_validation_pack_cli.py
+                $<TARGET_FILE:fv1-cli> ${CMAKE_CURRENT_BINARY_DIR}/phase5b-validation-pack-cli)
+    set_tests_properties(phase5b-validation-pack-cli PROPERTIES TIMEOUT 30)
 
     if(TARGET fv1-lab)
         add_test(NAME fv1-lab-smoke COMMAND fv1-lab --smoke)
@@ -229,10 +241,9 @@ install(TARGETS ${FV1_INSTALL_TARGETS}
         RUNTIME DESTINATION bin)
 install(DIRECTORY include/ DESTINATION include)
 install(PROGRAMS tools/fv1_assembler.py DESTINATION libexec/spin-fv1-emulator)
-install(DIRECTORY assets/icons/ DESTINATION share/spin-fv1-emulator/icons)
+install(DIRECTORY assets/icons/ DESTINATION share/spin-fv1-emulator/icons
+        PATTERN "hicolor" EXCLUDE)
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/roth-fv1-emulator.desktop")
     install(FILES packaging/linux/roth-fv1-emulator.desktop DESTINATION share/applications)
 endif()
-install(FILES assets/icons/fv1-emulator-silver.png
-        DESTINATION share/icons/hicolor/512x512/apps
-        RENAME roth-fv1-emulator.png)
+install(DIRECTORY assets/icons/hicolor/ DESTINATION share/icons/hicolor)

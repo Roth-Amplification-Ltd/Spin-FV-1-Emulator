@@ -26,12 +26,12 @@ Confirm the accepted Phase-3 dashboard remains recognizable and the bottom-right
 
 ## 3. Program/resource inspection
 
-Open `examples/steal-this-dsp-programs/03_pitch_maw.spn`. Confirm Resource Usage populates and the
+Open `examples/steal-this-dsp-programs/03_gravity_clerk.spn`. Confirm Resource Usage populates and the
 offline chip inspector resets/loads the same program.
 
 ## 4. Raw vs processed scope
 
-Use Test Generator / Sine / 440 Hz, host 48 kHz, buffer 256, virtual FV-1 32768 Hz. Start Pitch Maw.
+Use Test Generator / Sine / 440 Hz, host 48 kHz, buffer 256, virtual FV-1 32768 Hz. Start Gravity Clerk.
 Enable **RAW + FX OVERLAY**. Confirm the raw and processed traces are visually distinct and that DSP
 bypass still switches the audible/primary monitor to the raw signal without stopping the device.
 
@@ -68,7 +68,7 @@ drops during the short acceptance run.
 
 ## 8. Offline chip inspector
 
-With Pitch Maw loaded, set debug input L/R and press Step Instruction repeatedly. Confirm PC,
+With Gravity Clerk loaded, set debug input L/R and press Step Instruction repeatedly. Confirm PC,
 instruction/opcode, ACC/PACC/LR, registers and Delay RAM update. Step Sample should complete one virtual
 sample without affecting realtime playback if a realtime session is also running.
 

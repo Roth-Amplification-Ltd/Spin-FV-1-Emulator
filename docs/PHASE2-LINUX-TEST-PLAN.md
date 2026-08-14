@@ -68,7 +68,7 @@ Expected:
 
 ```bash
 ./build/fv1-live run \
-  examples/steal-this-dsp-programs/03_pitch_maw.spn \
+  examples/steal-this-dsp-programs/03_gravity_clerk.spn \
   --file ~/Music/fv1-test.wav \
   --loop-start 0 \
   --loop-end 8 \
@@ -90,7 +90,7 @@ After `devices`, substitute the actual indices:
 
 ```bash
 ./build/fv1-live run \
-  examples/steal-this-dsp-programs/03_pitch_maw.spn \
+  examples/steal-this-dsp-programs/03_gravity_clerk.spn \
   --live \
   --input-device 0 \
   --output-device 0 \

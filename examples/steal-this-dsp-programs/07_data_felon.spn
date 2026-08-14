@@ -1,6 +1,6 @@
 ; SPDX-License-Identifier: MPL-2.0
 ; Steal This Pedal factory bank — slot 7
-; EVIDENCE DESTROYER
+; DATA FELON
 ; POT0 = resolution / bit depth
 ; POT1 = unstable resonant feedback
 ; POT2 = alias-clock frequency and ring-mod amount
