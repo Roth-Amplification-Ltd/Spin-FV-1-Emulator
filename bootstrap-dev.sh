@@ -36,7 +36,7 @@ Options:
   --build-type TYPE    CMake build type (default: RelWithDebInfo).
   -h, --help           Show this help.
 
-Supported bootstrap hosts for Phase 4:
+Supported bootstrap hosts for Phase 5A:
   Pop!_OS, Ubuntu, Debian, and apt-compatible derivatives.
 
 Examples:
@@ -110,7 +110,7 @@ printf '\n=== Spin FV-1 Emulator: developer bootstrap ===\n'
 printf 'Project:     %s\n' "$ROOT_DIR"
 printf 'Build type:  %s\n' "$BUILD_TYPE"
 printf 'Compiler:    %s\n' "$COMPILER"
-printf 'Platform:    Linux-first Phase 4\n\n'
+printf 'Platform:    Linux-first Phase 5A\n\n'
 
 # Commands required for development. Package installation below supplies them.
 required_commands=(cmake python3 git pkg-config gdb valgrind)
@@ -153,7 +153,7 @@ if (( CHECK_ONLY )); then
         printf 'Missing commands: %s\n' "${missing_commands[*]}"
     fi
     if ((${#missing_phase2[@]})); then
-        printf 'Missing Phase-2/3 packages: %s\n' "${missing_phase2[*]}"
+        printf 'Missing runtime/GUI packages: %s\n' "${missing_phase2[*]}"
     fi
     if ((${#missing_commands[@]} || ${#missing_phase2[@]})); then
         echo "Status: NOT READY"
@@ -174,7 +174,7 @@ if (( DO_INSTALL )); then
     if ((${#missing_commands[@]} || ${#missing_phase2[@]})); then
         if ! command -v apt-get >/dev/null 2>&1; then
             echo "error: missing development tools: ${missing_commands[*]}" >&2
-            echo "Phase 4 automatic installation currently supports apt-based Linux distributions." >&2
+            echo "Phase 5A automatic installation currently supports apt-based Linux distributions." >&2
             echo "Install a C/C++ compiler, CMake, Ninja, Python 3, Git, pkg-config, GDB, Valgrind, miniaudio headers, and SpeexDSP development files, then rerun." >&2
             exit 1
         fi

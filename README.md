@@ -2,7 +2,7 @@
 
 Linux-first, open-source tools for emulating, measuring and inspecting the Spin Semiconductor FV-1 DSP.
 
-**Current milestone: Phase 4 — standalone FV-1 emulator/testbench completion.**
+**Current milestone: Phase 5A — validation framework.**
 
 The product is intentionally a polished virtual FV-1 and DSP lab instrument, not a full source-code IDE. Lightweight development/debug conveniences are welcome when they directly support emulation, while the underlying libraries remain reusable by a future dedicated IDE and other applications.
 
@@ -173,6 +173,43 @@ The core exposes two execution styles:
 2. instruction-step mode for the future debugger.
 
 The debugger can begin a virtual audio sample, execute one FV-1 instruction at a time, inspect ACC/PACC/LR/register/LFO state, observe SKP branches, and then retrieve the completed stereo DAC sample.
+
+
+## Phase 5A validation framework
+
+Phase 5A adds a reusable, GUI-independent `libfv1-validation` layer so emulator output can be
+compared numerically with a later physical FV-1 capture without changing the measurement code.
+
+Current capabilities:
+
+- deterministic multitone, sweep, sine, white/pink-noise and impulse validation WAV generation;
+- automatic reference/capture time alignment and latency reporting;
+- raw gain error plus optional residual-only gain matching;
+- per-channel correlation, residual RMS/peak and SNR;
+- magnitude-error and phase-error measurements on active FFT bins;
+- configurable PASS/FAIL thresholds;
+- JSON, Markdown, frequency-CSV and residual-WAV report bundles;
+- `fv1-cli stimulus` and `fv1-cli validate`;
+- an offline **VALIDATION** tab in FV-1 Lab;
+- four switchable FV-1 Emulator icons (Silver, Dark Cyan, Blue, Amber) and Linux desktop metadata.
+
+Generate a deterministic lab stimulus:
+
+```bash
+./build/fv1-cli stimulus /tmp/fv1-validation.wav \
+  --kind multitone --seconds 5 --host-rate 48000 --level 0.25
+```
+
+Compare a virtual reference with a capture:
+
+```bash
+./build/fv1-cli validate virtual.wav hardware-capture.wav \
+  --max-lag-ms 100 --gain-match \
+  --report-prefix /tmp/fv1-validation-report
+```
+
+See [`docs/PHASE5-VALIDATION.md`](docs/PHASE5-VALIDATION.md) and
+[`docs/PHASE5-LINUX-TEST-PLAN.md`](docs/PHASE5-LINUX-TEST-PLAN.md).
 
 ## Fidelity policy
 

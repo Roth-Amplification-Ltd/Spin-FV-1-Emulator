@@ -8,6 +8,7 @@
 #include <fv1/fv1.h>
 #include <fv1/gui/instrument_plot.hpp>
 #include <fv1/gui/theme_manager.hpp>
+#include <fv1/gui/validation_panel.hpp>
 #include <fv1/runtime.hpp>
 
 #include <QActionGroup>
@@ -27,6 +28,7 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QIcon>
 #include <QInputDialog>
 #include <QLabel>
 #include <QMenu>
@@ -77,15 +79,6 @@ QString format_time(double seconds) {
         .arg(remainder, 6, 'f', 3, QChar('0'));
 }
 
-QWidget* titled_text_panel(const QString& title, const QString& text, QWidget* parent = nullptr) {
-    auto* group = new QGroupBox(title, parent);
-    auto* layout = new QVBoxLayout(group);
-    auto* edit = new QPlainTextEdit(group);
-    edit->setReadOnly(true);
-    edit->setPlainText(text);
-    layout->addWidget(edit);
-    return group;
-}
 
 QString find_assembler_script() {
     const QByteArray env = qgetenv("FV1_ASSEMBLER_SCRIPT");
@@ -95,6 +88,22 @@ QString find_assembler_script() {
         QDir::current().filePath(QStringLiteral("tools/fv1_assembler.py")),
         QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("../tools/fv1_assembler.py")),
         QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("../libexec/spin-fv1-emulator/fv1_assembler.py"))
+    };
+    for (const QString& path : candidates) {
+        const QString clean = QDir::cleanPath(path);
+        if (QFileInfo::exists(clean)) return clean;
+    }
+    return {};
+}
+
+QString find_icon_asset(const QString& icon_name) {
+    QString slug = icon_name.toLower();
+    if (slug == QStringLiteral("dark cyan")) slug = QStringLiteral("dark-cyan");
+    const QString file = QStringLiteral("fv1-emulator-%1.png").arg(slug);
+    const QStringList candidates{
+        QDir::current().filePath(QStringLiteral("assets/icons/") + file),
+        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("../share/spin-fv1-emulator/icons/") + file),
+        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("../assets/icons/") + file)
     };
     for (const QString& path : candidates) {
         const QString clean = QDir::cleanPath(path);
@@ -371,6 +380,7 @@ MainWindow::MainWindow(QWidget* parent)
     QSettings settings;
     theme_name_ = settings.value(QStringLiteral("ui/theme"), QStringLiteral("Dark")).toString();
     accent_name_ = settings.value(QStringLiteral("ui/accent"), QStringLiteral("Cyan")).toString();
+    icon_name_ = settings.value(QStringLiteral("ui/appIcon"), QStringLiteral("Silver")).toString();
     resampler_quality_ = settings.value(QStringLiteral("audio/srcQuality"), 7).toInt();
     analyzer_fft_size_ = static_cast<std::size_t>(
         settings.value(QStringLiteral("analysis/fftSize"), 4096).toUInt());
@@ -389,6 +399,7 @@ MainWindow::MainWindow(QWidget* parent)
 
     ThemeManager::apply(*qApp, theme_name_, accent_name_);
 
+    set_app_icon(icon_name_);
     build_menus();
     build_toolbar();
     build_left_dock();
@@ -417,10 +428,10 @@ MainWindow::MainWindow(QWidget* parent)
     telemetry_timer_->setInterval(50);
     connect(telemetry_timer_, &QTimer::timeout, this, [this]{ update_telemetry(); });
 
-    statusBar()->showMessage(QStringLiteral("Phase 4 emulator/testbench — ready"));
+    statusBar()->showMessage(QStringLiteral("Phase 5A validation framework — ready"));
     log(QStringLiteral("FV-1 Lab GUI initialized."));
     log(QStringLiteral("Runtime connected: live input, file loop, test generator, virtual-clock SRC and dual raw/processed analyzers."));
-    log(QStringLiteral("Phase 4 focus: emulator/testbench instrumentation. IDE-like features remain secondary and lightweight."));
+    log(QStringLiteral("Phase 5A focus: deterministic emulator/reference vs hardware-capture validation and accuracy measurement."));
     log(QStringLiteral("External capture-interface acceptance remains deferred; playback path accepted on Cortana."));
 }
 
@@ -516,6 +527,17 @@ void MainWindow::build_menus() {
         action->setChecked(name == accent_name_);
         accent_group->addAction(action);
         connect(action, &QAction::triggered, this, [this, name]{ set_accent(name); });
+    }
+    auto* icon_menu = view->addMenu(QStringLiteral("Application Icon"));
+    auto* icon_group = new QActionGroup(icon_menu);
+    icon_group->setExclusive(true);
+    for (const QString& name : {QStringLiteral("Silver"), QStringLiteral("Dark Cyan"),
+                                QStringLiteral("Blue"), QStringLiteral("Amber")}) {
+        auto* action = icon_menu->addAction(name);
+        action->setCheckable(true);
+        action->setChecked(name == icon_name_);
+        icon_group->addAction(action);
+        connect(action, &QAction::triggered, this, [this, name]{ set_app_icon(name); });
     }
 }
 
@@ -736,6 +758,9 @@ void MainWindow::build_center() {
     tabs->addTab(spectrum_plot_, QStringLiteral("SPECTRUM"));
     tabs->addTab(spectrogram_plot_, QStringLiteral("SPECTROGRAM"));
     tabs->addTab(levels_plot_, QStringLiteral("LEVELS"));
+    validation_panel_ = new ValidationPanel(tabs);
+    validation_panel_->set_log_callback([this](const QString& message){ log(message); });
+    tabs->addTab(validation_panel_, QStringLiteral("VALIDATION"));
     install_plot_context_menu(scope_plot_);
     install_plot_context_menu(spectrum_plot_);
     install_plot_context_menu(spectrogram_plot_);
@@ -1165,8 +1190,8 @@ void MainWindow::show_audio_settings() {
     if (dialog.exec() != QDialog::Accepted) return;
 
     const auto apply_combo = [](QComboBox* dst, const QComboBox* src) {
-        const QVariant data = src->currentData();
-        const int by_data = dst->findData(data);
+        const QVariant device_data = src->currentData();
+        const int by_data = dst->findData(device_data);
         if (by_data >= 0) dst->setCurrentIndex(by_data);
         else dst->setCurrentText(src->currentText());
     };
@@ -1904,6 +1929,24 @@ void MainWindow::set_accent(const QString& accent_name) {
     QSettings settings; settings.setValue(QStringLiteral("ui/accent"), accent_name_);
     update();
     log(QStringLiteral("Accent: ") + accent_name_);
+}
+
+void MainWindow::set_app_icon(const QString& icon_name) {
+    const QString path = find_icon_asset(icon_name);
+    if (path.isEmpty()) {
+        if (console_) log(QStringLiteral("Application icon asset not found: ") + icon_name);
+        return;
+    }
+    const QIcon icon(path);
+    if (icon.isNull()) {
+        if (console_) log(QStringLiteral("Application icon could not be loaded: ") + path);
+        return;
+    }
+    icon_name_ = icon_name;
+    QSettings().setValue(QStringLiteral("ui/appIcon"), icon_name_);
+    if (qApp) qApp->setWindowIcon(icon);
+    setWindowIcon(icon);
+    if (console_) log(QStringLiteral("Application icon: ") + icon_name_);
 }
 
 } // namespace fv1::gui

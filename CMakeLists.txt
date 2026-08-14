@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(SpinFV1Emulator VERSION 0.4.0 LANGUAGES C CXX)
+project(SpinFV1Emulator VERSION 0.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -71,6 +71,14 @@ target_include_directories(fv1-debugger PUBLIC
 target_link_libraries(fv1-debugger PUBLIC FV1::core)
 fv1_strict_warnings(fv1-debugger)
 
+add_library(fv1-validation STATIC src/validation/validation.cpp)
+add_library(FV1::validation ALIAS fv1-validation)
+target_include_directories(fv1-validation PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+target_link_libraries(fv1-validation PUBLIC FV1::runtime)
+fv1_strict_warnings(fv1-validation)
+
 add_library(fv1-analysis STATIC src/analysis/analysis.cpp)
 add_library(FV1::analysis ALIAS fv1-analysis)
 target_include_directories(fv1-analysis PUBLIC
@@ -109,7 +117,7 @@ fv1_strict_warnings(fv1-audio)
 # Command-line tools
 # -----------------------------------------------------------------------------
 add_executable(fv1-cli src/cli/main.cpp)
-target_link_libraries(fv1-cli PRIVATE FV1::core FV1::runtime)
+target_link_libraries(fv1-cli PRIVATE FV1::core FV1::runtime FV1::validation)
 target_compile_definitions(fv1-cli PRIVATE
     FV1_ASSEMBLER_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/tools/fv1_assembler.py")
 fv1_strict_warnings(fv1-cli)
@@ -130,12 +138,13 @@ if(FV1_BUILD_GUI)
             src/gui/main.cpp
             src/gui/main_window.cpp
             src/gui/theme_manager.cpp
-            src/gui/instrument_plot.cpp)
+            src/gui/instrument_plot.cpp
+            src/gui/validation_panel.cpp)
         target_link_libraries(fv1-lab PRIVATE
-            Qt6::Widgets FV1::audio FV1::analysis FV1::runtime FV1::debugger FV1::core)
+            Qt6::Widgets FV1::audio FV1::analysis FV1::validation FV1::runtime FV1::debugger FV1::core)
         target_include_directories(fv1-lab PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
         fv1_strict_warnings(fv1-lab)
-        message(STATUS "Phase 4 testbench GUI: Qt ${Qt6_VERSION} enabled")
+        message(STATUS "Phase 5A validation/testbench GUI: Qt ${Qt6_VERSION} enabled")
     else()
         message(WARNING "Qt 6 Widgets not found: fv1-lab GUI will not be built. Run bootstrap-dev.sh on Linux to install qt6-base-dev.")
     endif()
@@ -167,6 +176,10 @@ if(FV1_BUILD_TESTS)
     target_link_libraries(fv1-recorder-tests PRIVATE FV1::audio)
     add_test(NAME fv1-recorder-tests COMMAND fv1-recorder-tests)
 
+    add_executable(fv1-validation-tests tests/test_validation.cpp)
+    target_link_libraries(fv1-validation-tests PRIVATE FV1::validation)
+    add_test(NAME fv1-validation-tests COMMAND fv1-validation-tests)
+
     add_test(NAME compile-steal-this-bank
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_compile_examples.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/fv1_assembler.py
@@ -192,6 +205,11 @@ if(FV1_BUILD_TESTS)
 
     add_test(NAME fv1-live-help COMMAND fv1-live --help)
 
+    add_test(NAME phase5-validation-cli
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_validation_cli.py
+                $<TARGET_FILE:fv1-cli> ${CMAKE_CURRENT_BINARY_DIR}/phase5-validation-cli)
+    set_tests_properties(phase5-validation-cli PROPERTIES TIMEOUT 30)
+
     if(TARGET fv1-lab)
         add_test(NAME fv1-lab-smoke COMMAND fv1-lab --smoke)
         set_tests_properties(fv1-lab-smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -201,7 +219,7 @@ endif()
 # -----------------------------------------------------------------------------
 # Installation
 # -----------------------------------------------------------------------------
-set(FV1_INSTALL_TARGETS fv1-core fv1-runtime fv1-analysis fv1-debugger fv1-audio fv1-cli fv1-live)
+set(FV1_INSTALL_TARGETS fv1-core fv1-runtime fv1-analysis fv1-validation fv1-debugger fv1-audio fv1-cli fv1-live)
 if(TARGET fv1-lab)
     list(APPEND FV1_INSTALL_TARGETS fv1-lab)
 endif()
@@ -211,3 +229,10 @@ install(TARGETS ${FV1_INSTALL_TARGETS}
         RUNTIME DESTINATION bin)
 install(DIRECTORY include/ DESTINATION include)
 install(PROGRAMS tools/fv1_assembler.py DESTINATION libexec/spin-fv1-emulator)
+install(DIRECTORY assets/icons/ DESTINATION share/spin-fv1-emulator/icons)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/roth-fv1-emulator.desktop")
+    install(FILES packaging/linux/roth-fv1-emulator.desktop DESTINATION share/applications)
+endif()
+install(FILES assets/icons/fv1-emulator-silver.png
+        DESTINATION share/icons/hicolor/512x512/apps
+        RENAME roth-fv1-emulator.png)

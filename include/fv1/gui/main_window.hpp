@@ -21,6 +21,7 @@ class QTimer;
 namespace fv1::gui {
 
 class InstrumentPlot;
+class ValidationPanel;
 class SessionController;
 
 class MainWindow final : public QMainWindow {
@@ -52,6 +53,7 @@ private:
     void log(const QString& text);
     void set_theme(const QString& theme_name);
     void set_accent(const QString& accent_name);
+    void set_app_icon(const QString& icon_name);
     void set_dsp_enabled(bool enabled);
     void set_compare_enabled(bool enabled);
     void update_signal_monitor_labels();
@@ -66,6 +68,7 @@ private:
 
     QString theme_name_{QStringLiteral("Dark")};
     QString accent_name_{QStringLiteral("Cyan")};
+    QString icon_name_{QStringLiteral("Silver")};
     QString program_path_;
     QString audio_file_path_;
     int resampler_quality_{7};
@@ -132,6 +135,7 @@ private:
     InstrumentPlot* spectrum_plot_{};
     InstrumentPlot* spectrogram_plot_{};
     InstrumentPlot* levels_plot_{};
+    ValidationPanel* validation_panel_{};
 };
 
 } // namespace fv1::gui

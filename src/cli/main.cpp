@@ -1,5 +1,6 @@
 #include <fv1/fv1.h>
 #include <fv1/runtime.hpp>
+#include <fv1/validation.hpp>
 
 #include <algorithm>
 #include <array>
@@ -306,7 +307,7 @@ void write_wav_float32(const fs::path& path, uint32_t sample_rate,
 
 void print_usage() {
     std::cout <<
-R"(Spin FV-1 Emulator - Phase 2 Linux CLI
+R"(Spin FV-1 Emulator - Linux CLI
 
 Usage:
   fv1-cli assemble <program.spn> <program.bin>
@@ -316,13 +317,27 @@ Usage:
   fv1-cli render   <program.spn|bin|hex> <input.wav> <output.wav> [--slot N]
                    [--pot0 X --pot1 X --pot2 X] [--clock Hz]
 
+Phase 5 validation:
+  fv1-cli stimulus <output.wav> [--kind multitone|sweep|sine|white|pink|impulse]
+                   [--seconds 5 --host-rate 48000 --level 0.25]
+                   [--frequency 440 --sweep-end 16000 --seed N]
+  fv1-cli validate <reference.wav> <capture.wav> [--gain-match]
+                   [--max-lag-ms 100 --fft-size 16384]
+                   [--min-corr 0.995 --max-residual-rms-dbfs -45]
+                   [--max-residual-peak-dbfs -24]
+                   [--report-prefix path/prefix]
+
 Common options:
-  --clock Hz          Virtual FV-1 sample/clock rate (default 32768)
+  --clock Hz            Virtual FV-1 sample/clock rate (default 32768)
   --resampler-quality N SpeexDSP SRC quality 0..10 (default 7)
   --full-delay-24       Diagnostic full-24-bit delay RAM instead of reference reduced precision
 
-Render accepts arbitrary WAV sample rates. The runtime keeps the virtual FV-1
-clock independent and performs host<->FV-1 sample-rate conversion.
+Validation workflow:
+  1. Generate one deterministic stimulus WAV.
+  2. Render it through the emulator and feed the same stimulus to physical hardware.
+  3. Capture the hardware output at the same host sample rate.
+  4. validate aligns the two recordings and reports delay, gain, residual, SNR,
+     correlation, magnitude error and phase error.
 )";
 }
 
@@ -440,6 +455,81 @@ int cmd_render(const Args& args) {
     return 0;
 }
 
+
+int cmd_stimulus(const Args& args) {
+    if (args.values.size() < 2) throw Error("stimulus requires output.wav");
+    const std::string kind = args.get("--kind", "multitone");
+    const std::uint32_t sample_rate = get_uint(args, "--host-rate", 48000);
+    const double seconds = std::stod(args.get("--seconds", "5"));
+    const double level = std::stod(args.get("--level", "0.25"));
+    const double frequency = std::stod(args.get("--frequency", "440"));
+    const double sweep_end = std::stod(args.get("--sweep-end", "16000"));
+    const std::uint32_t seed = get_uint(args, "--seed", 0x465631u);
+
+    fv1::ValidationAudio audio;
+    std::string error;
+    if (!fv1::generate_validation_stimulus(audio, sample_rate, seconds, kind, level,
+                                           frequency, sweep_end, seed, &error))
+        throw Error(error);
+    if (!fv1::write_validation_wav(args.values[1], audio, &error)) throw Error(error);
+    std::cout << "Generated deterministic " << kind << " validation stimulus: "
+              << audio.frames.size() << " frames at " << audio.sample_rate << " Hz -> "
+              << args.values[1] << "\n";
+    return 0;
+}
+
+int cmd_validate(const Args& args) {
+    if (args.values.size() < 3) throw Error("validate requires reference.wav and capture.wav");
+    fv1::ValidationAudio reference, capture;
+    std::string error;
+    if (!fv1::load_validation_wav(args.values[1], reference, &error)) throw Error(error);
+    if (!fv1::load_validation_wav(args.values[2], capture, &error)) throw Error(error);
+
+    fv1::ValidationConfig cfg;
+    cfg.max_alignment_ms = std::stod(args.get("--max-lag-ms", "100"));
+    cfg.gain_match_residual = args.has("--gain-match");
+    cfg.fft_size = static_cast<std::size_t>(get_uint(args, "--fft-size", 16384));
+    cfg.minimum_correlation = std::stod(args.get("--min-corr", "0.995"));
+    cfg.maximum_residual_rms_dbfs = std::stod(args.get("--max-residual-rms-dbfs", "-45"));
+    cfg.maximum_residual_peak_dbfs = std::stod(args.get("--max-residual-peak-dbfs", "-24"));
+    cfg.spectral_floor_db = std::stod(args.get("--spectral-floor-db", "-90"));
+
+    const auto result = fv1::validate_recordings(reference, capture, cfg);
+    const auto max_corr = std::min(result.left.correlation, result.right.correlation);
+    const auto max_residual = std::max(result.left.residual_rms_dbfs, result.right.residual_rms_dbfs);
+    std::cout << "Spin FV-1 validation\n"
+              << "  result:                 " << (result.passed ? "PASS" : "FAIL") << "\n"
+              << "  sample rate:            " << result.sample_rate << " Hz\n"
+              << "  compared frames:        " << result.compared_frames << "\n"
+              << "  capture delay:          " << result.capture_delay_frames << " frames / "
+              << std::fixed << std::setprecision(4) << result.capture_delay_ms << " ms\n"
+              << "  raw gain error L/R:     " << result.left.gain_error_db << " / "
+              << result.right.gain_error_db << " dB\n"
+              << "  applied gain correction:" << result.applied_capture_gain_db << " dB\n"
+              << "  correlation L/R:        " << result.left.correlation << " / "
+              << result.right.correlation << " (worst " << max_corr << ")\n"
+              << "  residual RMS L/R:       " << result.left.residual_rms_dbfs << " / "
+              << result.right.residual_rms_dbfs << " dBFS (worst " << max_residual << ")\n"
+              << "  residual peak L/R:      " << result.left.residual_peak_dbfs << " / "
+              << result.right.residual_peak_dbfs << " dBFS\n"
+              << "  SNR L/R:                " << result.left.snr_db << " / "
+              << result.right.snr_db << " dB\n"
+              << "  spectral mag RMS/worst: " << result.spectral_rms_magnitude_error_db << " / "
+              << result.spectral_worst_magnitude_error_db << " dB\n"
+              << "  spectral phase worst:   " << result.spectral_worst_phase_error_degrees << " degrees\n"
+              << "  spectral points:        " << result.frequency_response.size() << "\n";
+    if (!result.failures.empty()) {
+        std::cout << "  failed limits:\n";
+        for (const auto& failure : result.failures) std::cout << "    - " << failure << "\n";
+    }
+    const std::string prefix = args.get("--report-prefix");
+    if (!prefix.empty()) {
+        if (!fv1::write_validation_report_bundle(prefix, result, &error)) throw Error(error);
+        std::cout << "  report bundle prefix:   " << prefix << "\n";
+    }
+    return result.passed ? 0 : 3;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -452,6 +542,8 @@ int main(int argc, char** argv) {
         if (cmd == "inspect") return cmd_inspect(args);
         if (cmd == "step") return cmd_step(args);
         if (cmd == "render") return cmd_render(args);
+        if (cmd == "stimulus") return cmd_stimulus(args);
+        if (cmd == "validate") return cmd_validate(args);
         if (cmd == "help" || cmd == "--help" || cmd == "-h") { print_usage(); return 0; }
         throw Error("unknown command: " + cmd);
     } catch (const std::exception& e) {

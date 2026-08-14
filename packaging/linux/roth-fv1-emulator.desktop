@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Spin FV-1 Emulator
+Comment=Virtual Spin FV-1 DSP emulator and electronic testbench
+Exec=fv1-lab
+Icon=roth-fv1-emulator
+Terminal=false
+Categories=AudioVideo;Audio;Development;Engineering;
+Keywords=FV-1;DSP;audio;emulator;testbench;SpinASM;
+StartupNotify=true

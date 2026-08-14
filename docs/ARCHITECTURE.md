@@ -131,3 +131,35 @@ I/O. A background thread writes stereo IEEE-float WAV files and finalizes their 
 File playback position, transport state, looping and seek controls use atomics or pre-existing
 prepared storage so play/pause/seek/loop changes do not require audio-device reconstruction. Optional
 loop-boundary crossfade is rendered inside `FileLoopSource` before the shared FV-1 runtime path.
+
+
+## Phase-5 validation boundary
+
+`fv1-validation` is an offline measurement layer. It never runs in the realtime audio callback and
+does not depend on Qt or a device backend.
+
+```text
+validation stimulus -----------------------------+
+       |                                         |
+       v                                         v
+  fv1-runtime / core                      physical FV-1 (later)
+       |                                         |
+       v                                         v
+  virtual reference WAV                    captured WAV
+       \                                         /
+        +-------------- fv1-validation ---------+
+                         |
+               alignment + residual
+               gain/correlation/SNR
+               magnitude/phase error
+                         |
+                JSON / MD / CSV / WAV
+```
+
+Bulk capture latency is estimated before residual comparison and remains a first-class reported
+measurement. Optional gain matching applies only to residual/SNR/spectral comparison; raw gain error
+is still reported. This distinction prevents a convenient normalization step from hiding analog
+level differences in the physical validation rig.
+
+The Qt **VALIDATION** tab and `fv1-cli validate` consume the exact same library. A future automated
+hardware runner or dedicated IDE can consume it as well.

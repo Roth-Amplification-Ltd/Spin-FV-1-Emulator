@@ -12,19 +12,26 @@ jobs:
       - name: Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            ninja-build cmake python3 pkg-config \
-            libspeexdsp-dev libminiaudio-dev \
-            qt6-base-dev qt6-base-dev-tools
+          sudo apt-get install -y ninja-build cmake python3 pkg-config \
+            libspeexdsp-dev libminiaudio-dev qt6-base-dev qt6-base-dev-tools
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
       - name: Build
         run: cmake --build build --parallel 2
       - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: ctest --test-dir build --output-on-failure
-      - name: Confirm production Linux backends and GUI
+      - name: Confirm production backends and validation layer
         run: |
           grep -q "FV1_HAVE_SPEEXDSP" build/build.ninja
           grep -q "FV1_HAVE_MINIAUDIO" build/build.ninja
-          test -x build/fv1-lab
-          QT_QPA_PLATFORM=offscreen ./build/fv1-lab --smoke
+          test -f build/libfv1-validation.a
+          ./build/fv1-cli --help | grep -q "fv1-cli validate"
+      - name: Install smoke
+        run: |
+          cmake --install build --prefix "$PWD/stage"
+          test -x stage/bin/fv1-lab
+          test -f stage/include/fv1/validation.hpp
+          test -f stage/share/icons/hicolor/512x512/apps/roth-fv1-emulator.png
+          test -f stage/share/applications/roth-fv1-emulator.desktop
