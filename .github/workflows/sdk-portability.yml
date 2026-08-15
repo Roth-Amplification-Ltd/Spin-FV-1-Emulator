@@ -1,0 +1,63 @@
+name: SDK Portability
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  sdk-only:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+        shared: [ON, OFF]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux cross-language tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake python3 clang rustc
+
+      - name: Configure SDK-only
+        shell: bash
+        run: >-
+          cmake -S . -B build-sdk -G Ninja
+          -DFV1_SDK_ONLY=ON
+          -DFV1_BUILD_TESTS=ON
+          -DFV1_BUILD_GUI=OFF
+          -DFV1_ENABLE_LIVE_AUDIO=OFF
+          -DFV1_SDK_BUILD_SHARED=${{ matrix.shared }}
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Build SDK-only
+        run: cmake --build build-sdk --parallel 2
+
+      - name: Test installed SDK and language consumers
+        run: ctest --test-dir build-sdk --output-on-failure
+
+      - name: Stage SDK package
+        run: cmake --install build-sdk --prefix stage-sdk
+
+      - name: Verify narrow development surface (POSIX)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          test -f stage-sdk/include/fv1/sdk.h
+          test -f stage-sdk/include/fv1/sdk_debug.h
+          test -f stage-sdk/include/fv1/sdk.hpp
+          test -f stage-sdk/include/fv1/module.modulemap
+          test ! -e stage-sdk/include/fv1/fv1.h
+          test ! -e stage-sdk/include/fv1/runtime.hpp
+          test ! -e stage-sdk/include/fv1/validation.hpp
+
+      - name: Verify narrow development surface (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (!(Test-Path stage-sdk/include/fv1/sdk.h)) { throw 'sdk.h missing' }
+          if (!(Test-Path stage-sdk/include/fv1/sdk_debug.h)) { throw 'sdk_debug.h missing' }
+          if (Test-Path stage-sdk/include/fv1/fv1.h) { throw 'internal fv1.h leaked into SDK package' }
+          if (Test-Path stage-sdk/include/fv1/runtime.hpp) { throw 'internal runtime.hpp leaked into SDK package' }

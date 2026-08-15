@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(SpinFV1Emulator VERSION 0.8.0 LANGUAGES C CXX)
+project(SpinFV1Emulator VERSION 0.9.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,18 +14,20 @@ option(FV1_ENABLE_LIVE_AUDIO "Build Linux realtime audio host when miniaudio is 
 option(FV1_BUILD_GUI "Build the Qt FV-1 emulator/testbench application" ON)
 option(FV1_BUILD_FUZZERS "Build Clang/libFuzzer hardening targets" OFF)
 option(FV1_SDK_BUILD_SHARED "Build the embeddable FV-1 SDK as a shared library" ON)
+option(FV1_SDK_ONLY "Build/install only the embeddable FV-1 SDK and SDK-facing tests" OFF)
 
 if(FV1_BUILD_TESTS)
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
 endif()
-find_package(Threads REQUIRED)
-find_package(PkgConfig QUIET)
-
-if(PkgConfig_FOUND)
-    pkg_check_modules(SPEEXDSP QUIET IMPORTED_TARGET speexdsp)
+if(NOT FV1_SDK_ONLY)
+    find_package(Threads REQUIRED)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(SPEEXDSP QUIET IMPORTED_TARGET speexdsp)
+    endif()
+    find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h
+        HINTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio")
 endif()
-find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h
-    HINTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio")
 
 function(fv1_strict_warnings target)
     if(NOT FV1_ENABLE_WARNINGS)
@@ -74,19 +76,26 @@ set_target_properties(fv1-spinasm PROPERTIES
     VISIBILITY_INLINES_HIDDEN YES)
 fv1_strict_warnings(fv1-spinasm)
 
+set(FV1_SDK_SOURCES
+    src/sdk/sdk.cpp
+    src/core/engine.cpp
+    src/spinasm/spinasm.cpp)
 if(FV1_SDK_BUILD_SHARED)
-    add_library(fv1-sdk SHARED src/sdk/sdk.cpp)
+    add_library(fv1-sdk SHARED ${FV1_SDK_SOURCES})
 else()
-    add_library(fv1-sdk STATIC src/sdk/sdk.cpp)
+    add_library(fv1-sdk STATIC ${FV1_SDK_SOURCES})
 endif()
 add_library(FV1::sdk ALIAS fv1-sdk)
 target_include_directories(fv1-sdk PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-target_link_libraries(fv1-sdk PRIVATE FV1::core FV1::spinasm)
 target_compile_definitions(fv1-sdk PRIVATE
     FV1_SDK_BUILDING=1
-    FV1_SDK_VERSION_STRING="${PROJECT_VERSION}")
+    FV1_SDK_VERSION_STRING="${PROJECT_VERSION}"
+    FV1_SDK_VERSION_MAJOR_VALUE=${PROJECT_VERSION_MAJOR}
+    FV1_SDK_VERSION_MINOR_VALUE=${PROJECT_VERSION_MINOR}
+    FV1_SDK_VERSION_PATCH_VALUE=${PROJECT_VERSION_PATCH}
+)
 if(FV1_SDK_BUILD_SHARED)
     target_compile_definitions(fv1-sdk PUBLIC FV1_SDK_SHARED=1)
     if(UNIX AND NOT APPLE)
@@ -107,6 +116,123 @@ set_target_properties(fv1-sdk PROPERTIES
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN YES)
 fv1_strict_warnings(fv1-sdk)
+
+# SDK installation is deliberately narrow: installed consumers receive only
+# FV1SDK::sdk plus the C ABI, optional debugger C header, C++ convenience
+# wrapper, and Clang module map. Application-internal headers/libraries are not
+# part of the SDK package contract.
+function(fv1_install_sdk)
+    install(TARGETS fv1-sdk
+            EXPORT FV1SDKTargets
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+            INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(FILES
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/fv1/sdk.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/fv1/sdk_debug.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/fv1/sdk.hpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/fv1/module.modulemap
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fv1)
+    configure_package_config_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FV1SDKConfig.cmake.in
+        ${CMAKE_CURRENT_BINARY_DIR}/FV1SDKConfig.cmake
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/FV1SDK)
+    write_basic_package_version_file(
+        ${CMAKE_CURRENT_BINARY_DIR}/FV1SDKConfigVersion.cmake
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion)
+    install(EXPORT FV1SDKTargets
+            FILE FV1SDKTargets.cmake
+            NAMESPACE FV1SDK::
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/FV1SDK)
+    install(FILES
+            ${CMAKE_CURRENT_BINARY_DIR}/FV1SDKConfig.cmake
+            ${CMAKE_CURRENT_BINARY_DIR}/FV1SDKConfigVersion.cmake
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/FV1SDK)
+endfunction()
+
+function(fv1_add_sdk_tests)
+    add_executable(fv1-sdk-c-api-tests tests/sdk/test_sdk_c.c)
+    target_link_libraries(fv1-sdk-c-api-tests PRIVATE FV1::sdk)
+    fv1_strict_warnings(fv1-sdk-c-api-tests)
+    add_test(NAME fv1-sdk-c-api-tests COMMAND fv1-sdk-c-api-tests)
+
+    add_executable(fv1-sdk-debug-api-tests tests/sdk/test_sdk_debug.c)
+    target_link_libraries(fv1-sdk-debug-api-tests PRIVATE FV1::sdk)
+    fv1_strict_warnings(fv1-sdk-debug-api-tests)
+    add_test(NAME fv1-sdk-debug-api-tests COMMAND fv1-sdk-debug-api-tests)
+
+    add_executable(fv1-sdk-cpp-wrapper-tests tests/sdk/test_sdk_cpp.cpp)
+    target_link_libraries(fv1-sdk-cpp-wrapper-tests PRIVATE FV1::sdk)
+    fv1_strict_warnings(fv1-sdk-cpp-wrapper-tests)
+    add_test(NAME fv1-sdk-cpp-wrapper-tests COMMAND fv1-sdk-cpp-wrapper-tests)
+
+    add_executable(fv1-sdk-abi-layout-tests tests/sdk/test_sdk_abi_layout.c)
+    target_link_libraries(fv1-sdk-abi-layout-tests PRIVATE FV1::sdk)
+    fv1_strict_warnings(fv1-sdk-abi-layout-tests)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(fv1-sdk-abi-layout-tests PRIVATE -fshort-enums)
+    endif()
+    add_test(NAME fv1-sdk-abi-layout-tests COMMAND fv1-sdk-abi-layout-tests)
+
+    if(FV1_SDK_BUILD_SHARED AND UNIX AND NOT APPLE AND CMAKE_NM)
+        add_test(NAME sdk-export-surface
+            COMMAND ${CMAKE_COMMAND}
+                -DSDK_LIBRARY=$<TARGET_FILE:fv1-sdk>
+                -DNM_TOOL=${CMAKE_NM}
+                -DEXPECTED_SYMBOLS_FILE=${CMAKE_CURRENT_SOURCE_DIR}/cmake/fv1-sdk-symbols.txt
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sdk/check_exports.cmake)
+    endif()
+
+    add_test(NAME installed-sdk-consumer
+        COMMAND ${CMAKE_COMMAND}
+            -DPROJECT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+            -DPROJECT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DSDK_HOST_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/examples/sdk-host
+            -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/installed-sdk-consumer
+            -DSDK_BUILD_SHARED=${FV1_SDK_BUILD_SHARED}
+            "-DSDK_C_FLAGS=${CMAKE_C_FLAGS}"
+            "-DSDK_CXX_FLAGS=${CMAKE_CXX_FLAGS}"
+            -DCMAKE_GENERATOR_NAME=${CMAKE_GENERATOR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sdk/test_installed_sdk.cmake)
+    set_tests_properties(installed-sdk-consumer PROPERTIES TIMEOUT 90)
+
+    # Foreign-language runtimes (Python/Swift) are not themselves linked with
+    # our sanitizer runtime. Loading an ASan-instrumented shared SDK into those
+    # processes is therefore not a meaningful SDK test and can fail before
+    # main() due to runtime-order rules. Normal shared builds run the full
+    # cross-language proving suite; sanitizer builds retain C/C++ installed
+    # consumer coverage through installed-sdk-consumer.
+    set(_fv1_sdk_sanitized FALSE)
+    if(CMAKE_C_FLAGS MATCHES "-fsanitize" OR CMAKE_CXX_FLAGS MATCHES "-fsanitize")
+        set(_fv1_sdk_sanitized TRUE)
+    endif()
+    if(FV1_SDK_BUILD_SHARED AND NOT _fv1_sdk_sanitized)
+        add_test(NAME sdk-cross-language-consumers
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sdk/test_cross_language_sdk.py
+                --project-binary ${CMAKE_CURRENT_BINARY_DIR}
+                --source ${CMAKE_CURRENT_SOURCE_DIR}
+                --test-root ${CMAKE_CURRENT_BINARY_DIR}/sdk-cross-language)
+        set_tests_properties(sdk-cross-language-consumers PROPERTIES TIMEOUT 180)
+    endif()
+endfunction()
+
+# A native Windows/macOS host should be able to configure this project without
+# discovering Qt, miniaudio, SpeexDSP, debugger, validation, or Linux product
+# dependencies. This is the portability proving mode used by Phase 6B CI.
+if(FV1_SDK_ONLY)
+    # fv1-core/fv1-spinasm remain available as source-level implementation
+    # targets for this repository but are not built by the SDK-only default
+    # target and are never installed/exported.
+    set_target_properties(fv1-core fv1-spinasm PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    if(FV1_BUILD_TESTS)
+        enable_testing()
+        fv1_add_sdk_tests()
+    endif()
+    fv1_install_sdk()
+    return()
+endif()
 
 # -----------------------------------------------------------------------------
 # Phase 5C: independent golden/reference model.  This target intentionally does
@@ -285,18 +411,7 @@ if(FV1_BUILD_TESTS)
     fv1_strict_warnings(fv1-spinasm-tests)
     add_test(NAME fv1-spinasm-tests COMMAND fv1-spinasm-tests)
 
-    add_executable(fv1-sdk-c-api-tests tests/sdk/test_sdk_c.c)
-    target_link_libraries(fv1-sdk-c-api-tests PRIVATE FV1::sdk)
-    fv1_strict_warnings(fv1-sdk-c-api-tests)
-    add_test(NAME fv1-sdk-c-api-tests COMMAND fv1-sdk-c-api-tests)
-
-    if(FV1_SDK_BUILD_SHARED AND UNIX AND NOT APPLE AND CMAKE_NM)
-        add_test(NAME sdk-export-surface
-            COMMAND ${CMAKE_COMMAND}
-                -DSDK_LIBRARY=$<TARGET_FILE:fv1-sdk>
-                -DNM_TOOL=${CMAKE_NM}
-                -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sdk/check_exports.cmake)
-    endif()
+    fv1_add_sdk_tests()
 
     add_test(NAME native-spinasm-python-equivalence
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_native_spinasm_equivalence.py
@@ -305,19 +420,6 @@ if(FV1_BUILD_TESTS)
                 ${CMAKE_CURRENT_SOURCE_DIR}/examples/steal-this-dsp-programs
                 ${CMAKE_CURRENT_BINARY_DIR}/native-spinasm-equivalence
                 phase6a)
-
-    add_test(NAME installed-sdk-consumer
-        COMMAND ${CMAKE_COMMAND}
-            -DPROJECT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
-            -DPROJECT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
-            -DSDK_HOST_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/examples/sdk-host
-            -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/installed-sdk-consumer
-            -DSDK_BUILD_SHARED=${FV1_SDK_BUILD_SHARED}
-            "-DSDK_C_FLAGS=${CMAKE_C_FLAGS}"
-            "-DSDK_CXX_FLAGS=${CMAKE_CXX_FLAGS}"
-            -DCMAKE_GENERATOR_NAME=${CMAKE_GENERATOR}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sdk/test_installed_sdk.cmake)
-    set_tests_properties(installed-sdk-consumer PROPERTIES TIMEOUT 90)
 
     add_test(NAME compile-steal-this-bank
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_compile_examples.py
@@ -410,43 +512,17 @@ endif()
 # -----------------------------------------------------------------------------
 # Installation / Phase-6 SDK package
 # -----------------------------------------------------------------------------
-# SDK-facing targets are exported separately from the application-internal
-# libraries. fv1-core/fv1-spinasm are present in the export only as private
-# static dependencies of fv1-sdk; consumers should link FV1SDK::sdk, never the
-# _core_internal/_spinasm_internal implementation targets.
-install(TARGETS fv1-core fv1-spinasm fv1-sdk
-        EXPORT FV1SDKTargets
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+fv1_install_sdk()
 
-set(FV1_INSTALL_TARGETS fv1-reference fv1-conformance fv1-runtime fv1-analysis fv1-validation fv1-debugger fv1-audio fv1-cli fv1-live)
+# Product installation is separate from the SDK development package. Internal
+# static libraries are implementation details and are intentionally not
+# installed as public development targets.
+set(FV1_INSTALL_TARGETS fv1-cli fv1-live)
 if(TARGET fv1-lab)
     list(APPEND FV1_INSTALL_TARGETS fv1-lab)
 endif()
 install(TARGETS ${FV1_INSTALL_TARGETS}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-
-configure_package_config_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FV1SDKConfig.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/FV1SDKConfig.cmake
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/FV1SDK)
-write_basic_package_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/FV1SDKConfigVersion.cmake
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion)
-install(EXPORT FV1SDKTargets
-        FILE FV1SDKTargets.cmake
-        NAMESPACE FV1SDK::
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/FV1SDK)
-install(FILES
-        ${CMAKE_CURRENT_BINARY_DIR}/FV1SDKConfig.cmake
-        ${CMAKE_CURRENT_BINARY_DIR}/FV1SDKConfigVersion.cmake
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/FV1SDK)
 
 install(DIRECTORY assets/icons/ DESTINATION share/spin-fv1-emulator/icons
         PATTERN "hicolor" EXCLUDE)

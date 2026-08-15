@@ -16,36 +16,42 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-## Phase 6A SDK build/install
+## Phase 6B SDK-only build/install
 
-The default build produces a shared SDK candidate. Install it into a disposable prefix and build the
-external C host exactly as a third-party application would:
+Use the SDK-only configure when testing the embeddable module. It intentionally avoids Linux product
+dependencies and builds the public package plus SDK-facing tests only:
 
 ```bash
 cmake -S . -B build-sdk -G Ninja \
-  -DFV1_BUILD_GUI=OFF -DFV1_BUILD_TESTS=ON
+  -DFV1_SDK_ONLY=ON \
+  -DFV1_BUILD_TESTS=ON \
+  -DFV1_SDK_BUILD_SHARED=ON
 cmake --build build-sdk
-ctest --test-dir build-sdk -R 'fv1-sdk|sdk-export|native-spinasm|installed-sdk' --output-on-failure
-
+ctest --test-dir build-sdk --output-on-failure
 cmake --install build-sdk --prefix /tmp/fv1-sdk
-cmake -S examples/sdk-host -B /tmp/fv1-sdk-host -G Ninja \
-  -DCMAKE_PREFIX_PATH=/tmp/fv1-sdk
-cmake --build /tmp/fv1-sdk-host
-/tmp/fv1-sdk-host/fv1-sdk-host
 ```
 
-The shared consumer above is a C-only project. To exercise the supported static form:
+The installed package exposes `FV1SDK::sdk`, `<fv1/sdk.h>`, `<fv1/sdk_debug.h>`, the header-only
+`<fv1/sdk.hpp>` convenience wrapper, and `module.modulemap`. Internal emulator headers are deliberately
+not part of the SDK development install.
+
+The static form is self-contained and no longer exports private core/compiler targets:
 
 ```bash
 cmake -S . -B build-sdk-static -G Ninja \
-  -DFV1_BUILD_GUI=OFF -DFV1_SDK_BUILD_SHARED=OFF
+  -DFV1_SDK_ONLY=ON \
+  -DFV1_BUILD_TESTS=ON \
+  -DFV1_SDK_BUILD_SHARED=OFF
 cmake --build build-sdk-static
-ctest --test-dir build-sdk-static -R 'fv1-sdk|native-spinasm|installed-sdk' --output-on-failure
+ctest --test-dir build-sdk-static --output-on-failure
 ```
 
-Only `FV1SDK::sdk` / `<fv1/sdk.h>` are Phase-6A public ABI candidates. Underscore-prefixed imported
-targets in the package are private static-link implementation dependencies and must not be consumed
-directly. See `SDK-ARCHITECTURE.md` and `SDK-ABI-POLICY.md`.
+Cross-language consumers are exercised by `sdk-cross-language-consumers`. The test always executes the
+installed C++ and Python hosts; Swift, Rust and Objective-C probes execute when the matching toolchain
+is present and otherwise report an explicit SKIP.
+
+See `SDK-CONSUMER-REQUIREMENTS.md`, `SDK-CROSS-LANGUAGE.md`, `SDK-ARCHITECTURE.md`, and
+`SDK-ABI-POLICY.md`.
 
 ## Phase 5C conformance
 
@@ -99,4 +105,4 @@ printf 'RDAX ADCL, 1.0\nWRAX DACL, 0\n' > /tmp/fv1-spinasm-fuzz-corpus/passthrou
 ./build-fuzz/fv1-spinasm-fuzzer -runs=10000 -max_len=65536 /tmp/fv1-spinasm-fuzz-corpus
 ```
 
-See `PHASE5C-MODEL-HARDENING.md` for differential-model testing and `PHASE6A-SDK-EXTRACTION.md` for the SDK/parser surface.
+See `PHASE5C-MODEL-HARDENING.md` for differential-model testing and `PHASE6B-SDK-STABILIZATION.md` for the current SDK boundary.

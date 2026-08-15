@@ -53,7 +53,15 @@ endif()
 
 set(host "${host_build}/fv1-sdk-host")
 if(WIN32)
-    set(host "${host_build}/Debug/fv1-sdk-host.exe")
+    set(host "${host_build}/fv1-sdk-host.exe")
+    if(NOT EXISTS "${host}")
+        foreach(config Debug Release RelWithDebInfo MinSizeRel)
+            if(EXISTS "${host_build}/${config}/fv1-sdk-host.exe")
+                set(host "${host_build}/${config}/fv1-sdk-host.exe")
+                break()
+            endif()
+        endforeach()
+    endif()
 endif()
 execute_process(
     COMMAND "${host}"

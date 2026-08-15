@@ -2,8 +2,7 @@
 
 ## Dependency direction
 
-The fundamental rule is that the virtual DSP never depends on an application framework. Phase 6A
-adds an even stronger rule: **frontends embed the virtual chip through a narrow SDK boundary rather
+The fundamental rule is that the virtual DSP never depends on an application framework. Phase 6A added an even stronger rule: **frontends embed the virtual chip through a narrow SDK boundary rather
 than inheriting the Linux application's object graph.**
 
 ```text
@@ -32,13 +31,13 @@ Verification-only dependency direction:
                      +---- compares against fv1-core
 ```
 
-The candidate SDK is C-shaped and contains no Qt, miniaudio, SpeexDSP, STL, exception, filesystem,
+The Phase-6B candidate SDK is C-shaped and contains no Qt, miniaudio, SpeexDSP, STL, exception, filesystem,
 CoreAudio, WASAPI, PipeWire or UI types. `fv1-runtime` now dogfoods `FV1SDK::sdk` for its virtual-chip
 create/load/POT/process path while keeping host-rate SRC outside the ABI. The current auxiliary C++
 libraries remain free to evolve until they are either kept private or deliberately wrapped by a
 future additive SDK module.
 
-See `SDK-ARCHITECTURE.md` and `SDK-ABI-POLICY.md`.
+Phase 6B adds an optional `<fv1/sdk_debug.h>` stepping/trace surface while keeping it separate from the minimum realtime host API. See `SDK-ARCHITECTURE.md`, `SDK-CONSUMER-REQUIREMENTS.md`, and `SDK-ABI-POLICY.md`.
 
 ## Phase-5C reference/conformance boundary
 
@@ -87,7 +86,7 @@ Neither is labeled as the final bit-exact hardware model. Hardware-validation ve
 
 ## Compiler boundary
 
-Phase 6A replaces the runtime Python bridge with `fv1-spinasm`, a native C++20 compiler used by the
+Phase 6A replaced the runtime Python bridge with `fv1-spinasm`, a native C++20 compiler used by the
 CLI, live host and Qt application. External SDK consumers access the same compiler through
 `fv1_sdk_compile_spinasm_v1()` and receive a caller-owned 512-byte program image plus versioned
 diagnostics metadata.

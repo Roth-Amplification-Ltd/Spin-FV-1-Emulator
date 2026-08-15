@@ -37,3 +37,10 @@ replaceable. Phase 6 therefore freezes neither Qt nor the internal C++ object gr
 small C ABI, tests it from an external consumer, and postpones the compatibility promise until a
 dedicated ABI review. This mirrors the Hardware Emulation Contract principle of defining observer,
 state and semantics explicitly before optimizing or multiplying implementations.
+
+## Cross-language observer test
+
+A portable ABI is itself an observable hardware/software interface contract. Phase 6B therefore tests
+the installed virtual-device boundary from unrelated language/toolchain observers rather than relying
+only on the Linux application's in-tree C++ view. The same principle applies as hardware conformance:
+judge the declared boundary from what an external observer can actually call and observe.

@@ -4,13 +4,13 @@
 
 The FV-1 Emulator desktop application is a **client of the FV-1 SDK**. It is not the SDK.
 
-Phase 6A extracts the smallest useful platform-neutral boundary so the same virtual chip can be
+Phase 6A extracted the smallest useful platform-neutral boundary so the same virtual chip can be
 embedded in other applications and can sit underneath independently written Linux, Windows and
 macOS frontends. The SDK boundary is intentionally C-shaped even though the implementation remains
 modern C++20.
 
-The Phase-6A ABI is a **candidate for review**, not yet the frozen v1 ABI. Phase 6B is the explicit
-ABI/API review and stabilization gate.
+Phase 6B is actively reviewing this **candidate**, not yet the frozen v1 ABI. Cross-language
+consumption and future-host completeness are the primary acceptance criteria.
 
 ## Dependency boundary
 
@@ -38,11 +38,14 @@ ABI/API review and stabilization gate.
 No Qt, miniaudio, SpeexDSP, filesystem path type, C++ standard-library type, exception, or
 platform-window/audio type crosses the SDK ABI.
 
-## Phase-6A public candidate
+## Phase-6B public candidate
 
 The supported embedding surface is:
 
-- installed header: `fv1/sdk.h`;
+- installed core header: `fv1/sdk.h`;
+- optional debugger header: `fv1/sdk_debug.h`;
+- header-only C++ convenience wrapper: `fv1/sdk.hpp`;
+- installed Clang module map for Swift/Objective-C;
 - CMake target: `FV1SDK::sdk`;
 - opaque `fv1_sdk_engine` lifetime;
 - versioned configuration/snapshot/resource/compiler-report structures;
@@ -51,7 +54,9 @@ The supported embedding surface is:
 - planar and stereo-interleaved `float` processing;
 - snapshot, delay-word inspection and program resource analysis;
 - native in-process SpinASM compilation into a caller-owned 512-byte image;
-- ABI and implementation version introspection.
+- ABI/implementation version and capability introspection;
+- program readback, single-POT and single-sample helpers;
+- optional instruction stepping/trace/state-digest primitives.
 
 The exported shared-library symbol surface is restricted to `fv1_sdk_*`. Internal C++ symbols are
 hidden on ELF and are constrained by an explicit export list on Mach-O; Windows uses explicit
@@ -59,7 +64,7 @@ hidden on ELF and are constrained by an explicit export list on Mach-O; Windows 
 
 ### What is deliberately *not* frozen
 
-The following remain implementation/development APIs during Phase 6A:
+The following remain implementation/development APIs during Phase 6B:
 
 - `fv1-core` C++ and legacy low-level C implementation details;
 - `fv1-spinasm` C++ classes;
@@ -68,8 +73,9 @@ The following remain implementation/development APIs during Phase 6A:
 - `fv1-analysis`, `fv1-debugger`, `fv1-validation`, `fv1-reference` and `fv1-conformance` C++ APIs;
 - Qt classes and application/session objects.
 
-Phase 6B will decide which additional capabilities deserve a stable C surface. Adding everything to
-ABI v1 merely because it exists internally would make the freeze larger and more fragile.
+The consumer-needs audit decides which additional capabilities deserve a stable C surface. Adding
+everything merely because it exists internally would make the freeze larger and more fragile. See
+`SDK-CONSUMER-REQUIREMENTS.md`.
 
 ## Native SpinASM boundary
 
@@ -146,6 +152,13 @@ Callers should initialize structures with the matching `*_init()` helper rather 
 zeroing or guessing defaults. Reserved fields are kept zero. An incompatible major ABI is rejected
 rather than silently reinterpreted.
 
+## SDK-only build boundary
+
+`FV1_SDK_ONLY=ON` configures a portable SDK build without discovering Qt, miniaudio, SpeexDSP, the
+Linux runtime, analysis, validation, or application targets. `fv1-sdk` contains its private machine and
+compiler implementation directly, so neither shared nor static consumers receive private core/compiler
+link targets. The SDK install exposes only the explicit public headers/package metadata.
+
 ## Shared and static forms
 
 `FV1_SDK_BUILD_SHARED=ON` is the default and produces the cleanest cross-language boundary. The
@@ -167,5 +180,6 @@ smoke test exercises both forms.
 5. creates/loads/processes/inspects a virtual FV-1;
 6. exits successfully.
 
-That test is the proof that Phase 6A has an installable module rather than merely another in-tree
-library target.
+That test is one proof that the project has an installable module rather than merely another in-tree
+library target. `sdk-cross-language-consumers` extends the same staged package test to C++, Python,
+Swift, Rust and Objective-C toolchains when available.

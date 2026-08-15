@@ -32,6 +32,11 @@ jobs:
         run: |
           cmake --install build --prefix "$PWD/stage"
           test -x stage/bin/fv1-lab
-          test -f stage/include/fv1/validation.hpp
+          test -f stage/include/fv1/sdk.h
+          test -f stage/include/fv1/sdk_debug.h
+          test -f stage/include/fv1/sdk.hpp
+          test ! -e stage/include/fv1/fv1.h
+          test ! -e stage/include/fv1/runtime.hpp
+          test ! -e stage/include/fv1/validation.hpp
           test -f stage/share/icons/hicolor/512x512/apps/roth-fv1-emulator.png
           test -f stage/share/applications/roth-fv1-emulator.desktop

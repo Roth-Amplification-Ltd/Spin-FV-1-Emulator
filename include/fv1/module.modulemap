@@ -1,0 +1,5 @@
+module FV1SDK [system] {
+    header "sdk.h"
+    header "sdk_debug.h"
+    export *
+}

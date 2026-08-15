@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.20)
+project(FV1SDKCppHost LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+find_package(FV1SDK CONFIG REQUIRED)
+add_executable(fv1-sdk-cpp-host main.cpp)
+target_link_libraries(fv1-sdk-cpp-host PRIVATE FV1SDK::sdk)

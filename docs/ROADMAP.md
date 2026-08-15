@@ -163,42 +163,35 @@ board and quantify:
 Measured discrepancies become minimal regression vectors and corrections to the machine model, never
 per-effect compatibility hacks.
 
-## Phase 6A — FV-1 SDK extraction — CURRENT
+## Phase 6A — FV-1 SDK extraction — COMPLETE
 
-Do **not** freeze the Linux Qt/C++ application architecture. Extract a small platform-neutral SDK so
-Linux Qt, future native Windows/macOS frontends, the future IDE, and other applications can all be
-clients of the same virtual chip.
+Phase 6A established the first installable `FV1SDK::sdk` C ABI candidate, native SpinASM compiler,
+shared/static packaging, exported-symbol boundary, and external pure-C installed-consumer test. The
+Linux runtime was routed through the public engine boundary so FV-1 Lab dogfoods the candidate.
 
-Implemented in the current extraction pass:
+Commit/acceptance status: completed and accepted on Rosie before Phase 6B.
 
-- candidate versioned C ABI in `fv1/sdk.h` over opaque handles;
-- shared `fv1-sdk` library plus supported static form;
-- native in-process `fv1-spinasm` compiler;
-- SDK SpinASM compile API with caller-owned output/diagnostic buffers;
-- realtime planar/interleaved float processing boundary;
-- program/POT/configuration plus snapshot/delay/resource inspection;
-- exported-symbol hiding so shared libraries expose only `fv1_sdk_*`;
-- installable `FV1SDKConfig.cmake` / `FV1SDK::sdk`;
-- external pure-C installed SDK host regression;
-- native-vs-Python byte equivalence over all eight bundled effects;
-- SpinASM parser fuzz target in addition to the Phase-5C conformance fuzzer.
+## Phase 6B — Cross-language SDK review and stabilization — CURRENT
 
-Phase 6A calls this an **ABI candidate**, not a freeze. See `SDK-ARCHITECTURE.md`,
-`SDK-ABI-POLICY.md`, and `PHASE6A-SDK-EXTRACTION.md`.
+The two priorities are cross-language usability first and consumer completeness second. Current work:
 
-## Phase 6B — SDK ABI/API review and stabilization — NEXT
+- `FV1_SDK_ONLY=ON` build that avoids application/audio/UI dependencies;
+- self-contained shared/static SDK package with no exported private core/compiler link targets;
+- intentionally narrow installed development headers;
+- C ABI capability/version discovery;
+- program readback plus single-POT/single-sample helpers;
+- optional `sdk_debug.h` instruction stepping, trace and state-digest API;
+- installed C++ RAII convenience wrapper and Clang module map;
+- external C/C++/Python/Swift/Rust/Objective-C proving hosts;
+- Linux/macOS/Windows SDK-only portability CI;
+- explicit consumer-needs audit covering native Windows, native macOS, future IDE and third-party hosts.
 
-Before promising ABI v1 compatibility:
+Phase 6B still calls ABI major 1 a **candidate**. It does not freeze private C++ libraries, Qt,
+platform audio, analysis/validation UI, or private engine-state serialization. See
+`SDK-CONSUMER-REQUIREMENTS.md`, `SDK-CROSS-LANGUAGE.md`, and `PHASE6B-SDK-STABILIZATION.md`.
 
-- review every exported function, ownership rule, aliasing rule and realtime guarantee;
-- decide whether debugger/runtime/analysis/validation need separate stable C modules now or remain
-  future additive surfaces;
-- record ABI layout/export fixtures for supported 64-bit platforms;
-- exercise the DLL/dylib boundary with MSVC and Apple Clang/Swift/Objective-C consumers;
-- prove installed shared/static packages from clean external projects;
-- make any final breaking changes while the candidate is still explicitly unfrozen.
-
-Only after this review may the project declare **FV-1 SDK ABI v1 FROZEN**.
+Only after Phase 6C hardening and final symbol/layout review may the project declare
+**FV-1 SDK ABI v1 FROZEN**.
 
 ## Phase 6C — Linux 1.0 release candidate / torture testing — AFTER 6B
 
@@ -207,7 +200,7 @@ Only after this review may the project declare **FV-1 SDK ABI v1 FROZEN**.
 - fresh-install and audio-device failure/hot-plug checks on supported Linux targets;
 - package/version/About/release metadata cleanup;
 - high-DPI and application-data/configuration-path acceptance;
-- release-candidate test report against the frozen SDK.
+- release-candidate test report against the final SDK ABI candidate.
 
 After Phase 6C, Windows and macOS frontends should be independent native clients of the same frozen
 SDK rather than ports of the Qt application's internal architecture.
