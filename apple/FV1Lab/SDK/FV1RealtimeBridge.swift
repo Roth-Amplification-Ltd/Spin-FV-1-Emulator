@@ -33,6 +33,29 @@ final class FV1RealtimeBridge: @unchecked Sendable {
         fv1_apple_realtime_set_pots(handle, pots[0], pots[1], pots[2])
     }
 
+    func configureTestGenerator(
+        kind: UInt32,
+        frequency: Double,
+        amplitude: Double,
+        sweepEnd: Double,
+        sweepSeconds: Double,
+        impulsePeriod: Double
+    ) {
+        fv1_apple_realtime_set_test_generator(
+            handle,
+            kind,
+            frequency,
+            amplitude,
+            sweepEnd,
+            sweepSeconds,
+            impulsePeriod
+        )
+    }
+
+    func processTestGenerator(frames: Int) {
+        _ = fv1_apple_realtime_process_test_generator(handle, frames)
+    }
+
     func reset() throws {
         let result = fv1_apple_realtime_reset(handle, 1)
         if result != FV1_SDK_OK { throw FV1EngineError.sdk(result, "Unable to reset realtime engine") }

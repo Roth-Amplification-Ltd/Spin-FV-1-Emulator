@@ -9,6 +9,8 @@
 #define FV1_APPLE_DEFAULT_FIFO_FRAMES 32768u
 #define FV1_APPLE_SCOPE_FRAMES 2048u
 #define FV1_APPLE_RESAMPLER_EPSILON 1.0e-12
+#define FV1_APPLE_TEST_NOISE_SEED 0x465631u
+#define FV1_APPLE_PI 3.14159265358979323846264338327950288
 
 typedef struct stereo_ring {
     float* samples;
@@ -37,6 +39,22 @@ struct fv1_apple_realtime {
     atomic_uint_least32_t desired_pot_bits[3];
     uint32_t applied_pot_bits[3];
 
+    /* UI-written generator configuration. */
+    atomic_uint_least32_t generator_kind;
+    atomic_uint_least64_t generator_frequency_bits;
+    atomic_uint_least64_t generator_amplitude_bits;
+    atomic_uint_least64_t generator_sweep_end_bits;
+    atomic_uint_least64_t generator_sweep_seconds_bits;
+    atomic_uint_least64_t generator_impulse_period_bits;
+
+    /* Realtime-thread-owned generator state. */
+    double generator_phase;
+    uint64_t generator_sample_index;
+    uint32_t generator_rng;
+    double generator_pink0;
+    double generator_pink1;
+    double generator_pink2;
+
     atomic_uint_least64_t input_frames;
     atomic_uint_least64_t chip_frames;
     atomic_uint_least64_t generated_output_frames;
@@ -61,6 +79,29 @@ static float bits_to_float(uint32_t bits) {
     return value;
 }
 
+static uint64_t double_to_bits(double value) {
+    uint64_t bits = 0u;
+    memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+static double bits_to_double(uint64_t bits) {
+    double value = 0.0;
+    memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
+static float fast_random_bipolar(uint32_t* state) {
+    uint32_t value = state ? *state : 1u;
+    if (value == 0u) value = 1u;
+    value ^= value << 13;
+    value ^= value >> 17;
+    value ^= value << 5;
+    if (state) *state = value;
+    const double unit = (double)value / (double)UINT32_MAX;
+    return (float)(unit * 2.0 - 1.0);
+}
+
 static float clamp_pot(float value) {
     if (!isfinite(value)) return 0.0f;
     if (value < 0.0f) return 0.0f;
@@ -80,6 +121,16 @@ static void resampler_reset(linear_resampler* resampler,
     resampler->source_rate = source_rate;
     resampler->target_rate = target_rate;
     resampler->step = source_rate / target_rate;
+}
+
+static void generator_reset(fv1_apple_realtime* bridge) {
+    if (!bridge) return;
+    bridge->generator_phase = 0.0;
+    bridge->generator_sample_index = 0u;
+    bridge->generator_rng = FV1_APPLE_TEST_NOISE_SEED;
+    bridge->generator_pink0 = 0.0;
+    bridge->generator_pink1 = 0.0;
+    bridge->generator_pink2 = 0.0;
 }
 
 static int ring_init(stereo_ring* ring, uint32_t capacity_frames) {
@@ -319,6 +370,15 @@ fv1_sdk_result fv1_apple_realtime_create(double input_sample_rate,
         atomic_init(&bridge->desired_pot_bits[i], bits);
         bridge->applied_pot_bits[i] = bits;
     }
+
+    atomic_init(&bridge->generator_kind, FV1_APPLE_TEST_SIGNAL_SINE);
+    atomic_init(&bridge->generator_frequency_bits, double_to_bits(440.0));
+    atomic_init(&bridge->generator_amplitude_bits, double_to_bits(0.25));
+    atomic_init(&bridge->generator_sweep_end_bits, double_to_bits(12000.0));
+    atomic_init(&bridge->generator_sweep_seconds_bits, double_to_bits(5.0));
+    atomic_init(&bridge->generator_impulse_period_bits, double_to_bits(1.0));
+    generator_reset(bridge);
+
     atomic_init(&bridge->input_frames, 0u);
     atomic_init(&bridge->chip_frames, 0u);
     atomic_init(&bridge->generated_output_frames, 0u);
@@ -349,6 +409,7 @@ fv1_sdk_result fv1_apple_realtime_configure_rates(fv1_apple_realtime* bridge,
     resampler_reset(&bridge->input_to_chip, input_sample_rate, FV1_APPLE_VIRTUAL_SAMPLE_RATE);
     resampler_reset(&bridge->chip_to_output, FV1_APPLE_VIRTUAL_SAMPLE_RATE, output_sample_rate);
     ring_clear(&bridge->output_ring);
+    generator_reset(bridge);
     return FV1_SDK_OK;
 }
 
@@ -362,6 +423,7 @@ fv1_sdk_result fv1_apple_realtime_load_program(fv1_apple_realtime* bridge,
         resampler_reset(&bridge->input_to_chip, bridge->input_to_chip.source_rate, bridge->input_to_chip.target_rate);
         resampler_reset(&bridge->chip_to_output, bridge->chip_to_output.source_rate, bridge->chip_to_output.target_rate);
         ring_clear(&bridge->output_ring);
+        generator_reset(bridge);
     }
     return result;
 }
@@ -375,6 +437,7 @@ fv1_sdk_result fv1_apple_realtime_reset(fv1_apple_realtime* bridge,
         resampler_reset(&bridge->input_to_chip, bridge->input_to_chip.source_rate, bridge->input_to_chip.target_rate);
         resampler_reset(&bridge->chip_to_output, bridge->chip_to_output.source_rate, bridge->chip_to_output.target_rate);
         ring_clear(&bridge->output_ring);
+        generator_reset(bridge);
     }
     return result;
 }
@@ -384,6 +447,7 @@ void fv1_apple_realtime_flush(fv1_apple_realtime* bridge) {
     resampler_reset(&bridge->input_to_chip, bridge->input_to_chip.source_rate, bridge->input_to_chip.target_rate);
     resampler_reset(&bridge->chip_to_output, bridge->chip_to_output.source_rate, bridge->chip_to_output.target_rate);
     ring_clear(&bridge->output_ring);
+    generator_reset(bridge);
     atomic_store_explicit(&bridge->scope_write_index, 0u, memory_order_release);
     memset(bridge->scope, 0, sizeof(bridge->scope));
 }
@@ -408,6 +472,177 @@ void fv1_apple_realtime_set_pots(fv1_apple_realtime* bridge,
     for (uint32_t i = 0u; i < 3u; ++i) {
         atomic_store_explicit(&bridge->desired_pot_bits[i], float_to_bits(values[i]), memory_order_release);
     }
+}
+
+void fv1_apple_realtime_set_test_generator(fv1_apple_realtime* bridge,
+                                            uint32_t kind,
+                                            double frequency_hz,
+                                            double amplitude,
+                                            double sweep_end_hz,
+                                            double sweep_seconds,
+                                            double impulse_period_seconds) {
+    if (!bridge) return;
+
+    if (kind > FV1_APPLE_TEST_SIGNAL_IMPULSE) {
+        kind = FV1_APPLE_TEST_SIGNAL_SINE;
+    }
+
+    if (!isfinite(frequency_hz) || frequency_hz < 0.0) frequency_hz = 440.0;
+    if (!isfinite(amplitude)) amplitude = 0.25;
+    if (amplitude < 0.0) amplitude = 0.0;
+    if (amplitude > 1.0) amplitude = 1.0;
+    if (!isfinite(sweep_end_hz) || sweep_end_hz < 1.0) sweep_end_hz = 12000.0;
+    if (!isfinite(sweep_seconds) || sweep_seconds < 0.001) sweep_seconds = 5.0;
+    if (!isfinite(impulse_period_seconds) || impulse_period_seconds < 0.001) {
+        impulse_period_seconds = 1.0;
+    }
+
+    atomic_store_explicit(&bridge->generator_kind, kind, memory_order_release);
+    atomic_store_explicit(
+        &bridge->generator_frequency_bits,
+        double_to_bits(frequency_hz),
+        memory_order_release);
+    atomic_store_explicit(
+        &bridge->generator_amplitude_bits,
+        double_to_bits(amplitude),
+        memory_order_release);
+    atomic_store_explicit(
+        &bridge->generator_sweep_end_bits,
+        double_to_bits(sweep_end_hz),
+        memory_order_release);
+    atomic_store_explicit(
+        &bridge->generator_sweep_seconds_bits,
+        double_to_bits(sweep_seconds),
+        memory_order_release);
+    atomic_store_explicit(
+        &bridge->generator_impulse_period_bits,
+        double_to_bits(impulse_period_seconds),
+        memory_order_release);
+}
+
+fv1_sdk_result fv1_apple_realtime_process_test_generator(
+    fv1_apple_realtime* bridge,
+    size_t frames) {
+    if (!bridge) return FV1_SDK_ERROR_INVALID_ARGUMENT;
+    if (frames == 0u) return FV1_SDK_OK;
+
+    apply_pending_pots(bridge);
+
+    const uint32_t kind = (uint32_t)atomic_load_explicit(
+        &bridge->generator_kind,
+        memory_order_acquire);
+
+    double frequency_hz = bits_to_double((uint64_t)atomic_load_explicit(
+        &bridge->generator_frequency_bits,
+        memory_order_acquire));
+    double amplitude = bits_to_double((uint64_t)atomic_load_explicit(
+        &bridge->generator_amplitude_bits,
+        memory_order_acquire));
+    double sweep_end_hz = bits_to_double((uint64_t)atomic_load_explicit(
+        &bridge->generator_sweep_end_bits,
+        memory_order_acquire));
+    double sweep_seconds = bits_to_double((uint64_t)atomic_load_explicit(
+        &bridge->generator_sweep_seconds_bits,
+        memory_order_acquire));
+    double impulse_period_seconds = bits_to_double((uint64_t)atomic_load_explicit(
+        &bridge->generator_impulse_period_bits,
+        memory_order_acquire));
+
+    if (!isfinite(frequency_hz) || frequency_hz < 0.0) frequency_hz = 440.0;
+    if (!isfinite(amplitude)) amplitude = 0.25;
+    if (amplitude < 0.0) amplitude = 0.0;
+    if (amplitude > 1.0) amplitude = 1.0;
+    if (!isfinite(sweep_end_hz) || sweep_end_hz < 1.0) sweep_end_hz = 12000.0;
+    if (!isfinite(sweep_seconds) || sweep_seconds < 0.001) sweep_seconds = 5.0;
+    if (!isfinite(impulse_period_seconds) || impulse_period_seconds < 0.001) {
+        impulse_period_seconds = 1.0;
+    }
+
+    const double sample_rate = bridge->input_to_chip.source_rate;
+    if (!valid_rate(sample_rate)) return FV1_SDK_ERROR_BAD_STATE;
+
+    for (size_t i = 0u; i < frames; ++i, ++bridge->generator_sample_index) {
+        double value = 0.0;
+
+        switch (kind) {
+        case FV1_APPLE_TEST_SIGNAL_SWEEP: {
+            const double t = fmod(
+                (double)bridge->generator_sample_index / sample_rate,
+                sweep_seconds) / sweep_seconds;
+            const double f0 = frequency_hz > 1.0 ? frequency_hz : 1.0;
+            const double f1 = sweep_end_hz > f0 ? sweep_end_hz : f0;
+            const double frequency = f0 * pow(f1 / f0, t);
+            value = sin(bridge->generator_phase) * amplitude;
+            bridge->generator_phase += 2.0 * FV1_APPLE_PI * frequency / sample_rate;
+            if (bridge->generator_phase >= 2.0 * FV1_APPLE_PI) {
+                bridge->generator_phase = fmod(
+                    bridge->generator_phase,
+                    2.0 * FV1_APPLE_PI);
+            }
+            break;
+        }
+
+        case FV1_APPLE_TEST_SIGNAL_WHITE_NOISE:
+            value = (double)fast_random_bipolar(&bridge->generator_rng) * amplitude;
+            break;
+
+        case FV1_APPLE_TEST_SIGNAL_PINK_NOISE: {
+            const double white = (double)fast_random_bipolar(&bridge->generator_rng);
+            bridge->generator_pink0 =
+                0.99765 * bridge->generator_pink0 + white * 0.0990460;
+            bridge->generator_pink1 =
+                0.96300 * bridge->generator_pink1 + white * 0.2965164;
+            bridge->generator_pink2 =
+                0.57000 * bridge->generator_pink2 + white * 1.0526913;
+
+            double pink = (
+                bridge->generator_pink0 +
+                bridge->generator_pink1 +
+                bridge->generator_pink2 +
+                white * 0.1848) * 0.05;
+
+            if (pink < -1.0) pink = -1.0;
+            if (pink > 1.0) pink = 1.0;
+            value = pink * amplitude;
+            break;
+        }
+
+        case FV1_APPLE_TEST_SIGNAL_IMPULSE: {
+            uint64_t period = (uint64_t)llround(
+                impulse_period_seconds * sample_rate);
+            if (period < 1u) period = 1u;
+            value = (bridge->generator_sample_index % period == 0u)
+                ? amplitude
+                : 0.0;
+            break;
+        }
+
+        case FV1_APPLE_TEST_SIGNAL_SINE:
+        default:
+            value = sin(bridge->generator_phase) * amplitude;
+            bridge->generator_phase +=
+                2.0 * FV1_APPLE_PI * frequency_hz / sample_rate;
+            if (bridge->generator_phase >= 2.0 * FV1_APPLE_PI) {
+                bridge->generator_phase = fmod(
+                    bridge->generator_phase,
+                    2.0 * FV1_APPLE_PI);
+            }
+            break;
+        }
+
+        const float sample = (float)value;
+        const fv1_sdk_result result = feed_input_resampler(
+            bridge,
+            sample,
+            sample);
+        if (result != FV1_SDK_OK) return result;
+    }
+
+    atomic_fetch_add_explicit(
+        &bridge->input_frames,
+        (uint64_t)frames,
+        memory_order_relaxed);
+    return FV1_SDK_OK;
 }
 
 fv1_sdk_result fv1_apple_realtime_process_planar_input(fv1_apple_realtime* bridge,

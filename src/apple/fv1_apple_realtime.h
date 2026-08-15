@@ -23,6 +23,15 @@ extern "C" {
 
 typedef struct fv1_apple_realtime fv1_apple_realtime;
 
+/* Values intentionally match the Linux TestSignalKind ordering. */
+enum {
+    FV1_APPLE_TEST_SIGNAL_SINE = 0u,
+    FV1_APPLE_TEST_SIGNAL_SWEEP = 1u,
+    FV1_APPLE_TEST_SIGNAL_WHITE_NOISE = 2u,
+    FV1_APPLE_TEST_SIGNAL_PINK_NOISE = 3u,
+    FV1_APPLE_TEST_SIGNAL_IMPULSE = 4u
+};
+
 typedef struct fv1_apple_realtime_stats_v1 {
     uint32_t struct_size;
     uint32_t reserved0;
@@ -66,6 +75,27 @@ void fv1_apple_realtime_set_pots(fv1_apple_realtime* bridge,
                                   float pot0,
                                   float pot1,
                                   float pot2);
+
+/*
+ * Built-in test generator.  Configuration writes are atomic and may come from
+ * the main/UI thread while audio is running.  Generation itself occurs only
+ * from the audio callback and does not allocate, lock, access files, or log.
+ *
+ * Defaults mirror the Linux FV-1 Lab test generator:
+ *   Sine, 440 Hz, amplitude 0.25, sweep end 12 kHz / 5 s,
+ *   impulse period 1 s, deterministic noise seed 0x465631.
+ */
+void fv1_apple_realtime_set_test_generator(fv1_apple_realtime* bridge,
+                                            uint32_t kind,
+                                            double frequency_hz,
+                                            double amplitude,
+                                            double sweep_end_hz,
+                                            double sweep_seconds,
+                                            double impulse_period_seconds);
+
+fv1_sdk_result fv1_apple_realtime_process_test_generator(
+    fv1_apple_realtime* bridge,
+    size_t frames);
 
 /*
  * Input is non-interleaved Float32 as provided by AVAudioPCMBuffer.  Mono input

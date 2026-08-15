@@ -3,6 +3,32 @@ import AudioToolbox
 import Combine
 import Foundation
 
+enum AppleAudioSourceMode: String, CaseIterable, Identifiable {
+    case testGenerator = "Test Generator"
+    case audioInterface = "Audio Interface"
+
+    var id: String { rawValue }
+}
+
+enum AppleTestSignalKind: String, CaseIterable, Identifiable {
+    case sine = "Sine"
+    case sweep = "Sweep"
+    case whiteNoise = "White Noise"
+    case pinkNoise = "Pink Noise"
+    case impulse = "Impulse"
+
+    var id: String { rawValue }
+
+    var bridgeValue: UInt32 {
+        switch self {
+        case .sine: return 0
+        case .sweep: return 1
+        case .whiteNoise: return 2
+        case .pinkNoise: return 3
+        case .impulse: return 4
+        }
+    }
+}
 
 @MainActor
 final class AppleAudioController: ObservableObject {
@@ -17,6 +43,29 @@ final class AppleAudioController: ObservableObject {
     @Published private(set) var lastError = ""
     @Published private(set) var scopeLeft: [Float] = []
     @Published private(set) var scopeRight: [Float] = []
+
+    @Published var sourceMode: AppleAudioSourceMode = .testGenerator {
+        didSet { sourceModeDidChange() }
+    }
+    @Published var generatorKind: AppleTestSignalKind = .sine {
+        didSet { syncGeneratorSettings() }
+    }
+    @Published var generatorFrequency = 440.0 {
+        didSet { syncGeneratorSettings() }
+    }
+    @Published var generatorAmplitude = 0.25 {
+        didSet { syncGeneratorSettings() }
+    }
+    @Published var generatorSweepEnd = 12_000.0 {
+        didSet { syncGeneratorSettings() }
+    }
+    @Published var generatorSweepSeconds = 5.0 {
+        didSet { syncGeneratorSettings() }
+    }
+    @Published var generatorImpulsePeriod = 1.0 {
+        didSet { syncGeneratorSettings() }
+    }
+
     #if os(iOS)
     @Published private(set) var availableInputs: [AVAudioSessionPortDescription] = []
     #endif
@@ -37,10 +86,12 @@ final class AppleAudioController: ObservableObject {
         } catch {
             fatalError("FV-1 realtime bridge could not be created: \(error)")
         }
+        syncGeneratorSettings()
         #if os(iOS)
         refreshAvailableInputs()
         #endif
         registerConfigurationObservers()
+        updateRouteDescription()
     }
 
     func setProgram(_ program: Data) throws {
@@ -81,67 +132,161 @@ final class AppleAudioController: ObservableObject {
 
         engine.stop()
         engine.reset()
-        let inputNode = engine.inputNode
+
         let outputNode = engine.outputNode
-        let inputHardware = inputNode.outputFormat(forBus: 0)
         let outputHardware = outputNode.inputFormat(forBus: 0)
-        guard inputHardware.sampleRate > 0, inputHardware.channelCount > 0,
-              outputHardware.sampleRate > 0, outputHardware.channelCount > 0 else {
-            throw FV1EngineError.sdk(fv1_sdk_result(FV1_SDK_ERROR_BAD_STATE), "No usable Apple audio input/output route")
+
+        guard outputHardware.sampleRate > 0,
+              outputHardware.channelCount > 0 else {
+            throw FV1EngineError.sdk(
+                fv1_sdk_result(FV1_SDK_ERROR_BAD_STATE),
+                "No usable Apple audio output route"
+            )
         }
 
-        let inputChannels = AVAudioChannelCount(min(2, Int(inputHardware.channelCount)))
-        guard let inputFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
-                                              sampleRate: inputHardware.sampleRate,
-                                              channels: inputChannels,
-                                              interleaved: false),
-              let renderFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
-                                               sampleRate: outputHardware.sampleRate,
-                                               channels: 2,
-                                               interleaved: false) else {
-            throw FV1EngineError.sdk(fv1_sdk_result(FV1_SDK_ERROR_UNSUPPORTED), "Unable to create canonical Float32 Apple audio formats")
+        guard let renderFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: outputHardware.sampleRate,
+            channels: 2,
+            interleaved: false
+        ) else {
+            throw FV1EngineError.sdk(
+                fv1_sdk_result(FV1_SDK_ERROR_UNSUPPORTED),
+                "Unable to create canonical Float32 Apple output format"
+            )
         }
 
-        try realtime.configureAndPrime(inputRate: inputFormat.sampleRate,
-                                       outputRate: renderFormat.sampleRate,
-                                       primeFrames: 256)
+        var inputNode: AVAudioInputNode?
+        var inputFormat: AVAudioFormat?
+        var bridgeInputRate = renderFormat.sampleRate
+
+        if sourceMode == .audioInterface {
+            let liveInput = engine.inputNode
+            let inputHardware = liveInput.outputFormat(forBus: 0)
+
+            guard inputHardware.sampleRate > 0,
+                  inputHardware.channelCount > 0 else {
+                throw FV1EngineError.sdk(
+                    fv1_sdk_result(FV1_SDK_ERROR_BAD_STATE),
+                    "No usable Apple audio input route"
+                )
+            }
+
+            let inputChannels = AVAudioChannelCount(
+                min(2, Int(inputHardware.channelCount))
+            )
+
+            guard let canonicalInput = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: inputHardware.sampleRate,
+                channels: inputChannels,
+                interleaved: false
+            ) else {
+                throw FV1EngineError.sdk(
+                    fv1_sdk_result(FV1_SDK_ERROR_UNSUPPORTED),
+                    "Unable to create canonical Float32 Apple input format"
+                )
+            }
+
+            inputNode = liveInput
+            inputFormat = canonicalInput
+            bridgeInputRate = canonicalInput.sampleRate
+        }
+
+        try realtime.configureAndPrime(
+            inputRate: bridgeInputRate,
+            outputRate: renderFormat.sampleRate,
+            primeFrames: 256
+        )
         realtime.setPots(pots)
+        syncGeneratorSettings()
 
         let bridge = realtime
-        let source = AVAudioSourceNode(format: renderFormat) { _, _, frameCount, outputData in
+        let useTestGenerator = sourceMode == .testGenerator
+
+        let renderBlock: AVAudioSourceNodeRenderBlock = {
+            @Sendable [bridge] _, _, frameCount, outputData in
+
             let buffers = UnsafeMutableAudioBufferListPointer(outputData)
             guard buffers.count >= 2,
                   let leftData = buffers[0].mData,
-                  let rightData = buffers[1].mData else { return kAudio_ParamError }
-            let left = leftData.bindMemory(to: Float.self, capacity: Int(frameCount))
-            let right = rightData.bindMemory(to: Float.self, capacity: Int(frameCount))
-            bridge.render(left: left, right: right, frames: Int(frameCount))
+                  let rightData = buffers[1].mData else {
+                return kAudio_ParamError
+            }
+
+            let left = leftData.bindMemory(
+                to: Float.self,
+                capacity: Int(frameCount)
+            )
+            let right = rightData.bindMemory(
+                to: Float.self,
+                capacity: Int(frameCount)
+            )
+
+            if useTestGenerator {
+                bridge.processTestGenerator(frames: Int(frameCount))
+            }
+
+            bridge.render(
+                left: left,
+                right: right,
+                frames: Int(frameCount)
+            )
             return noErr
         }
+
+        let source = AVAudioSourceNode(
+            format: renderFormat,
+            renderBlock: renderBlock
+        )
         sourceNode = source
         engine.attach(source)
         engine.connect(source, to: engine.mainMixerNode, format: renderFormat)
 
-        inputNode.installTap(onBus: 0, bufferSize: 512, format: inputFormat) { buffer, _ in
-            guard let channels = buffer.floatChannelData, buffer.frameLength > 0 else { return }
-            let left = UnsafePointer(channels[0])
-            let right = UnsafePointer(channels[Int(min(1, inputFormat.channelCount - 1))])
-            bridge.process(left: left, right: right, frames: Int(buffer.frameLength))
+        if let inputNode, let inputFormat {
+            let inputChannelCount = Int(inputFormat.channelCount)
+            let inputTap: AVAudioNodeTapBlock = {
+                @Sendable [bridge, inputChannelCount] buffer, _ in
+
+                guard let channels = buffer.floatChannelData,
+                      buffer.frameLength > 0 else {
+                    return
+                }
+
+                let left = UnsafePointer(channels[0])
+                let rightIndex = min(1, inputChannelCount - 1)
+                let right = UnsafePointer(channels[rightIndex])
+
+                bridge.process(
+                    left: left,
+                    right: right,
+                    frames: Int(buffer.frameLength)
+                )
+            }
+
+            inputNode.installTap(
+                onBus: 0,
+                bufferSize: 512,
+                format: inputFormat,
+                block: inputTap
+            )
+            inputTapInstalled = true
         }
-        inputTapInstalled = true
 
         engine.prepare()
         do {
             try engine.start()
         } catch {
-            inputNode.removeTap(onBus: 0)
-            inputTapInstalled = false
+            if inputTapInstalled {
+                inputNode?.removeTap(onBus: 0)
+                inputTapInstalled = false
+            }
             engine.detach(source)
             sourceNode = nil
             throw error
         }
 
-        inputSampleRate = inputFormat.sampleRate
+        inputSampleRate = bridgeInputRate
         outputSampleRate = renderFormat.sampleRate
         isRunning = true
         lastError = ""
@@ -175,6 +320,7 @@ final class AppleAudioController: ObservableObject {
         do {
             let session = AVAudioSession.sharedInstance()
             guard let port = session.availableInputs?.first(where: { $0.uid == uid }) else { return }
+            sourceMode = .audioInterface
             try session.setPreferredInput(port)
             refreshAvailableInputs()
             if isRunning { stop(); try start() }
@@ -236,23 +382,72 @@ final class AppleAudioController: ObservableObject {
     private func configurePlatformAudioSession() throws {
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .measurement,
-                                options: [.allowBluetooth, .allowAirPlay])
+
+        if sourceMode == .audioInterface {
+            try session.setCategory(
+                .playAndRecord,
+                mode: .measurement,
+                options: [.allowBluetooth, .allowAirPlay]
+            )
+        } else {
+            try session.setCategory(
+                .playback,
+                mode: .measurement,
+                options: [.allowAirPlay]
+            )
+        }
+
         try session.setPreferredSampleRate(48_000)
         try session.setPreferredIOBufferDuration(0.005)
         try session.setActive(true)
-        refreshAvailableInputs()
+
+        if sourceMode == .audioInterface {
+            refreshAvailableInputs()
+        }
         #endif
     }
 
     private func updateRouteDescription() {
         #if os(iOS)
         let route = AVAudioSession.sharedInstance().currentRoute
-        let input = route.inputs.first?.portName ?? "No input"
         let output = route.outputs.first?.portName ?? "No output"
-        routeDescription = "\(input) → \(output)"
+        if sourceMode == .testGenerator {
+            routeDescription = "Test Generator → \(output)"
+        } else {
+            let input = route.inputs.first?.portName ?? "No input"
+            routeDescription = "\(input) → \(output)"
+        }
         #else
-        routeDescription = "System default input → output"
+        if sourceMode == .testGenerator {
+            routeDescription = "Test Generator → system default output"
+        } else {
+            routeDescription = "System default input → output"
+        }
         #endif
+    }
+
+    private func syncGeneratorSettings() {
+        realtime.configureTestGenerator(
+            kind: generatorKind.bridgeValue,
+            frequency: max(0.0, generatorFrequency),
+            amplitude: min(1.0, max(0.0, generatorAmplitude)),
+            sweepEnd: max(1.0, generatorSweepEnd),
+            sweepSeconds: max(0.001, generatorSweepSeconds),
+            impulsePeriod: max(0.001, generatorImpulsePeriod)
+        )
+    }
+
+    private func sourceModeDidChange() {
+        updateRouteDescription()
+
+        guard isRunning else { return }
+
+        stop()
+        do {
+            try start()
+        } catch {
+            lastError = "Audio source change failed: \(error.localizedDescription)"
+            stop()
+        }
     }
 }

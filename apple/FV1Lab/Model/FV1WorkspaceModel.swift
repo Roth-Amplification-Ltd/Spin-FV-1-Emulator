@@ -12,12 +12,30 @@ final class FV1WorkspaceModel: ObservableObject {
     @Published private(set) var resources: FV1ResourceSummary?
     @Published private(set) var loadedProgram: Data?
 
-    let audio = AppleAudioController()
+    // Mutable so SwiftUI can form writable bindings to the nested
+    // AppleAudioController properties used by the source/generator controls.
+    //
+    // FV1WorkspaceModel remains the root ObservableObject for WorkspaceView,
+    // so forward the nested controller's objectWillChange notifications as
+    // well. This keeps Start/Stop state, telemetry, source selection, scope
+    // state, route information, and generator controls live in the dashboard.
+    var audio = AppleAudioController()
+
+    private var audioObservation: AnyCancellable?
     private let inspection: FV1Engine
 
     init() {
-        do { inspection = try FV1Engine() }
-        catch { fatalError("FV-1 inspection engine could not be created: \(error)") }
+        do {
+            inspection = try FV1Engine()
+        } catch {
+            fatalError(
+                "FV-1 inspection engine could not be created: \(error)"
+            )
+        }
+
+        audioObservation = audio.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
     }
 
     func compileAndLoad(source: String) {
@@ -63,6 +81,10 @@ final class FV1WorkspaceModel: ObservableObject {
             snapshot = try inspection.snapshot()
             resources = try inspection.resources()
         } catch { append(error.localizedDescription) }
+    }
+
+    func reportExternalError(_ message: String) {
+        append(message)
     }
 
     private var currentPots: [Float] { [Float(pot0), Float(pot1), Float(pot2)] }
