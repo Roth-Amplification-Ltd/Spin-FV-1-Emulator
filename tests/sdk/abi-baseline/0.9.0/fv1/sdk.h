@@ -11,8 +11,8 @@ extern "C" {
 /*
  * FV1SDK public C ABI candidate.
  *
- * Phase 6C is the release-candidate/freeze-gate phase. ABI major 1 is
- * intentionally being exercised from C, C++, Swift, Objective-C, Rust and Python-style FFI
+ * Phase 6B is the stabilization/review phase. ABI major 1 is intentionally
+ * being exercised from C, C++, Swift, Objective-C, Rust and Python-style FFI
  * hosts before it is declared frozen. The implementation behind these opaque
  * handles remains private C++ and may change freely.
  */

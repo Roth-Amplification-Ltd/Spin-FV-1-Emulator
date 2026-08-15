@@ -45,6 +45,7 @@ private:
     void show_audio_settings();
     void show_generator_settings();
     void show_loop_region_settings();
+    void show_about();
     void choose_program();
     void paste_spinasm();
     bool install_program_image(const QByteArray& bytes, const QString& display_name, const QString& source_path = {});

@@ -6,8 +6,8 @@ Prove that the Phase-6A SDK extraction is usable as a real module outside FV-1 L
 capability gaps that are clearly required by native Windows/macOS applications, a future IDE, or
 third-party hosts.
 
-**Phase 6B is still pre-freeze.** Breaking candidate changes are allowed here. The freeze gate remains
-after Phase 6C release hardening.
+**Phase 6B is complete and remains pre-freeze.** Its reviewed ABI candidate is now the baseline
+carried into Phase 6C. The compatibility promise is still deferred until the Phase-6C ratification gate.
 
 ## Implemented
 
@@ -64,3 +64,13 @@ requirements, and exposes the FV-1 architectural register map to debugger client
 as pre-freeze corrections rather than deferred compatibility work.
 
 See also [`SDK-ABI-CANDIDATE.md`](SDK-ABI-CANDIDATE.md).
+
+
+## Post-commit portability result
+
+The first Phase-6B remote SDK Portability run passed Linux shared/static, macOS shared/static and
+Windows static. Windows shared built successfully and passed C/C++/layout tests, but its Python
+`ctypes` probe could not load the MinGW-built DLL because the Git Bash/Ninja configure selected a
+MinGW toolchain whose runtime DLLs were outside Python's dependency search path. Phase 6C therefore
+proves the Windows binary contract with the native Visual Studio/MSVC generator and carries the
+selected multi-config build type through install/external-host tests.

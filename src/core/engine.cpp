@@ -92,6 +92,11 @@ inline int32_t mul_q23(int32_t a, int32_t b) {
 }
 
 inline int32_t float_to_q23(float x) {
+    // Host audio is not supposed to contain NaN/Inf, but a public emulator SDK
+    // must not feed non-finite values into llround(). Define deterministic
+    // behavior instead: NaN becomes digital silence and infinities saturate.
+    if (std::isnan(x)) return 0;
+    if (std::isinf(x)) return x > 0.0f ? Q23_MAX : Q23_MIN;
     const double c = std::clamp(static_cast<double>(x), -1.0, std::nextafter(1.0, 0.0));
     return sat24(static_cast<int64_t>(std::llround(c * static_cast<double>(Q23_ONE))));
 }
@@ -101,6 +106,8 @@ inline float q23_to_float(int32_t x) {
 }
 
 inline int32_t quantize_pot(float x) {
+    if (std::isnan(x)) x = 0.0f;
+    else if (std::isinf(x)) x = x > 0.0f ? 1.0f : 0.0f;
     const float c = std::clamp(x, 0.0f, 1.0f);
     const int code = std::clamp(static_cast<int>(std::lround(c * 511.0f)), 0, 511);
     return code << 14; // code / 512 in Q1.23, max = 0.998046875
@@ -674,9 +681,14 @@ fv1_result fv1_get_program_words(const fv1_engine* e, uint32_t* words, size_t co
 
 void fv1_set_pots(fv1_engine* e, float pot0, float pot1, float pot2) {
     if (!e) return;
-    e->pot[0] = std::clamp(pot0, 0.0f, 1.0f);
-    e->pot[1] = std::clamp(pot1, 0.0f, 1.0f);
-    e->pot[2] = std::clamp(pot2, 0.0f, 1.0f);
+    const auto sanitize = [](float value) noexcept {
+        if (std::isnan(value)) return 0.0f;
+        if (std::isinf(value)) return value > 0.0f ? 1.0f : 0.0f;
+        return std::clamp(value, 0.0f, 1.0f);
+    };
+    e->pot[0] = sanitize(pot0);
+    e->pot[1] = sanitize(pot1);
+    e->pot[2] = sanitize(pot2);
 }
 
 fv1_result fv1_debug_begin_sample(fv1_engine* e, float in_l, float in_r) {

@@ -1,0 +1,94 @@
+name: Release Hardening
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  headless-compilers:
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang cmake ninja-build python3
+      - name: Configure
+        shell: bash
+        run: |
+          if [[ "${{ matrix.compiler }}" == clang ]]; then
+            export CC=clang CXX=clang++
+          else
+            export CC=gcc CXX=g++
+          fi
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DFV1_BUILD_GUI=OFF \
+            -DFV1_ENABLE_LIVE_AUDIO=OFF
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  sanitizers:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build python3
+      - name: Configure ASan + UBSan
+        run: >-
+          env CC=clang CXX=clang++ cmake -S . -B build-sanitize -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DFV1_BUILD_GUI=OFF
+          -DFV1_ENABLE_LIVE_AUDIO=OFF
+          -DFV1_SDK_BUILD_SHARED=OFF
+          -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+      - name: Build
+        run: cmake --build build-sanitize --parallel 2
+      - name: Test under sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build-sanitize --output-on-failure
+
+  fuzz-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build
+      - name: Configure fuzzers
+        run: >-
+          env CC=clang CXX=clang++ cmake -S . -B build-fuzz -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DFV1_BUILD_GUI=OFF
+          -DFV1_ENABLE_LIVE_AUDIO=OFF
+          -DFV1_BUILD_TESTS=OFF
+          -DFV1_BUILD_FUZZERS=ON
+      - name: Build fuzzers
+        run: >-
+          cmake --build build-fuzz --parallel 2 --target
+          fv1-conformance-fuzzer fv1-spinasm-fuzzer fv1-sdk-fuzzer
+      - name: Fuzz smoke
+        run: |
+          mkdir -p fuzz-corpus/conformance fuzz-corpus/spinasm
+          python3 - <<'PY'
+          from pathlib import Path
+          Path("fuzz-corpus/conformance/zero.bin").write_bytes(bytes(512))
+          PY
+          printf 'RDAX ADCL, 1.0\nWRAX DACL, 0\n' > fuzz-corpus/spinasm/passthrough.spn
+          ./build-fuzz/fv1-conformance-fuzzer -runs=1000 -max_len=521 fuzz-corpus/conformance
+          ./build-fuzz/fv1-spinasm-fuzzer -runs=1000 -max_len=65536 fuzz-corpus/spinasm
+          ./build-fuzz/fv1-sdk-fuzzer -runs=1000 -max_len=4096

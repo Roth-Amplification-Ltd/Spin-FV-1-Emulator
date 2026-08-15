@@ -7,8 +7,13 @@ file(MAKE_DIRECTORY "${TEST_ROOT}")
 set(prefix "${TEST_ROOT}/prefix")
 set(host_build "${TEST_ROOT}/host-build")
 
+set(config_args)
+if(DEFINED SDK_BUILD_CONFIG AND NOT SDK_BUILD_CONFIG STREQUAL "")
+    set(config_args --config "${SDK_BUILD_CONFIG}")
+endif()
+
 execute_process(
-    COMMAND "${CMAKE_COMMAND}" --install "${PROJECT_BINARY_DIR}" --prefix "${prefix}"
+    COMMAND "${CMAKE_COMMAND}" --install "${PROJECT_BINARY_DIR}" ${config_args} --prefix "${prefix}"
     RESULT_VARIABLE install_result
     OUTPUT_VARIABLE install_stdout
     ERROR_VARIABLE install_stderr)
@@ -43,7 +48,7 @@ if(NOT configure_result EQUAL 0)
 endif()
 
 execute_process(
-    COMMAND "${CMAKE_COMMAND}" --build "${host_build}"
+    COMMAND "${CMAKE_COMMAND}" --build "${host_build}" ${config_args}
     RESULT_VARIABLE build_result
     OUTPUT_VARIABLE build_stdout
     ERROR_VARIABLE build_stderr)

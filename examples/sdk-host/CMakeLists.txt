@@ -3,7 +3,7 @@ project(FV1SDKHost LANGUAGES C)
 
 option(FV1SDK_HOST_STATIC "Link against a static FV1 SDK package" OFF)
 
-find_package(FV1SDK CONFIG REQUIRED)
+find_package(FV1SDK 1.0 CONFIG REQUIRED)
 
 add_executable(fv1-sdk-host main.c)
 target_link_libraries(fv1-sdk-host PRIVATE FV1SDK::sdk)

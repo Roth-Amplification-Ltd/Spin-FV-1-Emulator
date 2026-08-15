@@ -44,3 +44,12 @@ A portable ABI is itself an observable hardware/software interface contract. Pha
 the installed virtual-device boundary from unrelated language/toolchain observers rather than relying
 only on the Linux application's in-tree C++ view. The same principle applies as hardware conformance:
 judge the declared boundary from what an external observer can actually call and observe.
+
+
+## Phase 6C release-contract verification
+
+The external SDK boundary is treated as a compatibility contract in the same spirit as the hardware
+emulation observer contract. Phase 6C therefore preserves a copy of the prior public headers, tests
+old-header/new-library linkage, records symbol/layout fixtures, attacks malformed inputs and API
+state transitions, and requires independent platform toolchains before ratification. Agreement on one
+Linux build is not considered proof of cross-platform ABI compatibility.

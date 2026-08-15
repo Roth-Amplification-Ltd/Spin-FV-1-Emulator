@@ -1,9 +1,10 @@
 # FV-1 SDK ABI v1 Candidate Snapshot
 
-Status: **Phase 6B candidate — NOT FROZEN**.
+Status: **Phase 6C / 1.0.0-rc1 freeze candidate — NOT YET FROZEN**.
 
-This file records the concrete ABI surface under review before Phase 6C. Changes are still allowed,
-but they must be deliberate and accompanied by updates to the ABI regression fixtures.
+This file records the concrete ABI surface being taken through the Phase-6C ratification gate.
+Breaking changes are no longer expected; any discovered need for one cancels ratification and returns
+the SDK to candidate review rather than silently mutating ABI v1.
 
 ## Binary conventions
 
@@ -70,6 +71,16 @@ fv1_sdk_state_digest_v1_init
 fv1_sdk_trace_v1_init
 fv1_sdk_version_info_v1_init
 ```
+
+## Backward-compatibility fixture
+
+`tests/sdk/abi-baseline/0.9.0/` contains an exact copy of the reviewed Phase-6B public headers.
+`fv1-sdk-abi-backcompat-0_9-tests` compiles an external C consumer against those old headers and links
+it to the current RC SDK. This catches accidental symbol, calling-convention, record-layout or basic
+semantic breakage before ABI v1 is ratified.
+
+The implementation/release version is `1.0.0-rc1`; the ABI identifier reported by
+`fv1_sdk_get_abi_version()` remains `1.0`.
 
 ## Evolution rule
 

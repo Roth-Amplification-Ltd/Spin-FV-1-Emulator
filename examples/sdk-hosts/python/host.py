@@ -3,6 +3,9 @@ import ctypes
 import os
 import sys
 
+dll_dir_cookie = None
+if os.name == "nt" and os.environ.get("FV1_SDK_DLL_DIR") and hasattr(os, "add_dll_directory"):
+    dll_dir_cookie = os.add_dll_directory(os.environ["FV1_SDK_DLL_DIR"])
 lib = ctypes.CDLL(os.environ["FV1_SDK_LIBRARY"])
 
 FV1_SDK_OK = 0

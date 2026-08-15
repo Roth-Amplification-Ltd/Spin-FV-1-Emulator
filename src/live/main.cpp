@@ -24,6 +24,10 @@
 
 namespace fs = std::filesystem;
 
+#ifndef FV1_PRODUCT_VERSION_STRING
+#define FV1_PRODUCT_VERSION_STRING "1.0.0-rc1"
+#endif
+
 
 
 namespace {
@@ -311,6 +315,10 @@ int main(int argc, char** argv) {
         for (int i = 1; i < argc; ++i) args.v.emplace_back(argv[i]);
         if (args.v[0] == "devices") return cmd_devices();
         if (args.v[0] == "run") return cmd_run(args);
+        if (args.v[0] == "version" || args.v[0] == "--version") {
+            std::cout << "Spin FV-1 Emulator " << FV1_PRODUCT_VERSION_STRING << "\n";
+            return 0;
+        }
         if (args.v[0] == "help" || args.v[0] == "--help" || args.v[0] == "-h") { usage(); return 0; }
         throw Error("unknown command: " + args.v[0]);
     } catch (const std::exception& e) {

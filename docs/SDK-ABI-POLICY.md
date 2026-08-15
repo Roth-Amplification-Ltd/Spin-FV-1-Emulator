@@ -2,12 +2,13 @@
 
 ## Status
 
-**Phase 6B: ABI candidate under cross-language stabilization — NOT FROZEN.**
+**Phase 6C / 1.0.0-rc1: ABI-v1 freeze candidate — NOT YET FROZEN.**
 
 The names and shapes in `fv1/sdk.h` and `fv1/sdk_debug.h` are being exercised as candidate
-cross-platform embedding contracts. Phase 6B makes breaking candidate changes while they are still
-cheap; the freeze is deferred until Phase 6C hardening and final review.
-No downstream port should treat Phase-6A source compatibility as a permanent guarantee yet.
+cross-platform embedding contracts. Phase 6B made the deliberate breaking candidate corrections while they were cheap. Phase 6C now
+locks the reviewed shape under compatibility/torture tests, but the permanent compatibility promise
+is deferred until the committed RC candidate passes Rosie plus the Linux/macOS/Windows remote gates.
+No downstream port should treat this pre-ratification RC as a permanent binary guarantee yet.
 
 ## Freeze principle
 
@@ -47,8 +48,8 @@ to be rebuilt for unrelated internal refactors.
 - the implementation/release version returned by `fv1_sdk_get_version_string()` is separate from
   the ABI version.
 
-During Phase 6B the major remains encoded as `1` to exercise realistic version handling, but this
-is **candidate ABI 1**, not the declaration that ABI 1 has been frozen.
+During Phase 6C the ABI major remains encoded as `1` and the implementation version is
+`1.0.0-rc1`. This is **candidate ABI 1**, not the declaration that ABI 1 has been frozen.
 
 ## Function evolution
 
@@ -69,10 +70,10 @@ offsets or the explicit C calling convention after freeze.
 For a function documented realtime-safe, removing that guarantee is an ABI/API compatibility break
 even if the C signature is unchanged. The behavioral contract matters as much as symbol layout.
 
-For the Phase-6B candidate, `fv1_sdk_engine_process_planar_f32()` and
+For the Phase-6C freeze candidate, `fv1_sdk_engine_process_planar_f32()` and
 `fv1_sdk_engine_process_interleaved_f32()` are the realtime processing boundary after setup.
 
-## Phase-6B freeze checklist
+## Phase-6C ratification checklist
 
 Before declaring v1 frozen:
 
@@ -89,7 +90,11 @@ Before declaring v1 frozen:
 - record exported symbols as a release artifact;
 - document the exact v1 compatibility promise.
 
-Only after that checklist passes should documentation say **FV-1 SDK ABI v1 FROZEN**.
+Phase 6C additionally requires successful compile/link against the exact 0.9.0 public-header
+baseline, SDK abuse/malformed-input tests, sanitizer/fuzzer gates, product-install smoke, Rosie Qt
+acceptance, and green six-way Linux/macOS/Windows shared/static portability CI.
+
+Only after those checks pass on the committed RC should documentation say **FV-1 SDK ABI v1 FROZEN**.
 
 ## Capability discovery
 

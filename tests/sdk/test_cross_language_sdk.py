@@ -64,6 +64,7 @@ def main() -> int:
     ap.add_argument("--project-binary", required=True)
     ap.add_argument("--source", required=True)
     ap.add_argument("--test-root", required=True)
+    ap.add_argument("--config", default="")
     args = ap.parse_args()
 
     project_binary = Path(args.project_binary).resolve()
@@ -74,7 +75,11 @@ def main() -> int:
         shutil.rmtree(root)
     root.mkdir(parents=True)
 
-    run(["cmake", "--install", project_binary, "--prefix", prefix])
+    install_cmd = ["cmake", "--install", project_binary]
+    if args.config:
+        install_cmd += ["--config", args.config]
+    install_cmd += ["--prefix", prefix]
+    run(install_cmd)
     env = runtime_env(prefix)
     library = find_library(prefix)
 
@@ -82,12 +87,17 @@ def main() -> int:
     cpp_build = root / "cpp-build"
     run(["cmake", "-S", source / "examples/sdk-hosts/cpp", "-B", cpp_build,
          f"-DCMAKE_PREFIX_PATH={prefix}"])
-    run(["cmake", "--build", cpp_build])
+    build_cmd = ["cmake", "--build", cpp_build]
+    if args.config:
+        build_cmd += ["--config", args.config]
+    run(build_cmd)
     run([executable(cpp_build, "fv1-sdk-cpp-host")], env=env)
 
     # Python: direct dynamic-library FFI with no extension module.
     py_env = env.copy()
     py_env["FV1_SDK_LIBRARY"] = str(library)
+    if os.name == "nt":
+        py_env["FV1_SDK_DLL_DIR"] = str(library.parent)
     run([sys.executable, source / "examples/sdk-hosts/python/host.py"], env=py_env)
 
     # Swift: real Clang-module import and execution when Swift is installed.

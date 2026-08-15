@@ -6,18 +6,19 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <new>
 #include <string>
 
 #ifndef FV1_SDK_VERSION_STRING
-#define FV1_SDK_VERSION_STRING "0.9.0"
+#define FV1_SDK_VERSION_STRING "1.0.0-rc1"
 #endif
 #ifndef FV1_SDK_VERSION_MAJOR_VALUE
-#define FV1_SDK_VERSION_MAJOR_VALUE 0
+#define FV1_SDK_VERSION_MAJOR_VALUE 1
 #endif
 #ifndef FV1_SDK_VERSION_MINOR_VALUE
-#define FV1_SDK_VERSION_MINOR_VALUE 9
+#define FV1_SDK_VERSION_MINOR_VALUE 0
 #endif
 #ifndef FV1_SDK_VERSION_PATCH_VALUE
 #define FV1_SDK_VERSION_PATCH_VALUE 0
@@ -149,7 +150,8 @@ fv1_sdk_result fv1_sdk_engine_create_v1(const fv1_sdk_engine_config_v1* config,
     if (!valid_v1_header(config->struct_size, config->abi_version, sizeof(*config))) {
         return FV1_SDK_ERROR_UNSUPPORTED;
     }
-    if (!(config->virtual_sample_rate > 0.0)) return FV1_SDK_ERROR_INVALID_ARGUMENT;
+    if (!std::isfinite(config->virtual_sample_rate) || !(config->virtual_sample_rate > 0.0))
+        return FV1_SDK_ERROR_INVALID_ARGUMENT;
     if (config->delay_model > FV1_SDK_DELAY_FULL_24) return FV1_SDK_ERROR_INVALID_ARGUMENT;
 
     auto* wrapper = new (std::nothrow) fv1_sdk_engine{};
@@ -209,19 +211,21 @@ fv1_sdk_result fv1_sdk_engine_get_program(const fv1_sdk_engine* engine,
 fv1_sdk_result fv1_sdk_engine_set_pot(fv1_sdk_engine* engine,
                                        uint32_t index,
                                        float value) {
-    if (!engine || !engine->core || index > 2u) return FV1_SDK_ERROR_INVALID_ARGUMENT;
-    engine->pots[index] = value;
+    if (!engine || !engine->core || index > 2u || !std::isfinite(value))
+        return FV1_SDK_ERROR_INVALID_ARGUMENT;
+    engine->pots[index] = std::clamp(value, 0.0f, 1.0f);
     fv1_set_pots(engine->core, engine->pots[0], engine->pots[1], engine->pots[2]);
     return FV1_SDK_OK;
 }
 
 fv1_sdk_result fv1_sdk_engine_set_pots(fv1_sdk_engine* engine,
                                         float pot0, float pot1, float pot2) {
-    if (!engine || !engine->core) return FV1_SDK_ERROR_INVALID_ARGUMENT;
-    engine->pots[0] = pot0;
-    engine->pots[1] = pot1;
-    engine->pots[2] = pot2;
-    fv1_set_pots(engine->core, pot0, pot1, pot2);
+    if (!engine || !engine->core || !std::isfinite(pot0) || !std::isfinite(pot1) || !std::isfinite(pot2))
+        return FV1_SDK_ERROR_INVALID_ARGUMENT;
+    engine->pots[0] = std::clamp(pot0, 0.0f, 1.0f);
+    engine->pots[1] = std::clamp(pot1, 0.0f, 1.0f);
+    engine->pots[2] = std::clamp(pot2, 0.0f, 1.0f);
+    fv1_set_pots(engine->core, engine->pots[0], engine->pots[1], engine->pots[2]);
     return FV1_SDK_OK;
 }
 
@@ -240,10 +244,10 @@ fv1_sdk_result fv1_sdk_engine_process_planar_f32(fv1_sdk_engine* engine,
                                                   float* output_left,
                                                   float* output_right,
                                                   size_t frames) {
-    if (!engine || !engine->core || (!input_left && frames) || (!input_right && frames) ||
-        (!output_left && frames) || (!output_right && frames)) {
+    if (!engine || !engine->core) return FV1_SDK_ERROR_INVALID_ARGUMENT;
+    if (frames == 0) return FV1_SDK_OK;
+    if (!input_left || !input_right || !output_left || !output_right)
         return FV1_SDK_ERROR_INVALID_ARGUMENT;
-    }
     return map_result(fv1_process_block(engine->core, input_left, input_right, output_left, output_right, frames));
 }
 
@@ -251,9 +255,10 @@ fv1_sdk_result fv1_sdk_engine_process_interleaved_f32(fv1_sdk_engine* engine,
                                                        const float* input_stereo,
                                                        float* output_stereo,
                                                        size_t frames) {
-    if (!engine || !engine->core || (!input_stereo && frames) || (!output_stereo && frames)) {
+    if (!engine || !engine->core) return FV1_SDK_ERROR_INVALID_ARGUMENT;
+    if (frames == 0) return FV1_SDK_OK;
+    if (!input_stereo || !output_stereo || frames > (SIZE_MAX / 2u))
         return FV1_SDK_ERROR_INVALID_ARGUMENT;
-    }
     for (size_t i = 0; i < frames; ++i) {
         const fv1_sdk_result result = fv1_sdk_engine_process_sample_f32(
             engine, input_stereo[i * 2u], input_stereo[i * 2u + 1u],

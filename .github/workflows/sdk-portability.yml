@@ -13,7 +13,7 @@ jobs:
         shared: [ON, OFF]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Linux cross-language tools
         if: runner.os == 'Linux'
@@ -21,7 +21,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build cmake python3 clang rustc
 
-      - name: Configure SDK-only
+      - name: Configure SDK-only (POSIX)
+        if: runner.os != 'Windows'
         shell: bash
         run: >-
           cmake -S . -B build-sdk -G Ninja
@@ -32,14 +33,44 @@ jobs:
           -DFV1_SDK_BUILD_SHARED=${{ matrix.shared }}
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
 
-      - name: Build SDK-only
+      # Use the native Visual Studio/MSVC generator on Windows. Phase 6B's
+      # first portability run configured under Git Bash + Ninja, which selected
+      # MinGW and made a Python ctypes smoke host depend on MinGW runtime DLL
+      # search behavior. The shipping Windows SDK contract is proven with MSVC.
+      - name: Configure SDK-only (Windows/MSVC)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >-
+          cmake -S . -B build-sdk
+          -DFV1_SDK_ONLY=ON
+          -DFV1_BUILD_TESTS=ON
+          -DFV1_BUILD_GUI=OFF
+          -DFV1_ENABLE_LIVE_AUDIO=OFF
+          -DFV1_SDK_BUILD_SHARED=${{ matrix.shared }}
+
+      - name: Build SDK-only (POSIX)
+        if: runner.os != 'Windows'
         run: cmake --build build-sdk --parallel 2
 
-      - name: Test installed SDK and language consumers
+      - name: Build SDK-only (Windows)
+        if: runner.os == 'Windows'
+        run: cmake --build build-sdk --config RelWithDebInfo --parallel 2
+
+      - name: Test installed SDK and language consumers (POSIX)
+        if: runner.os != 'Windows'
         run: ctest --test-dir build-sdk --output-on-failure
 
-      - name: Stage SDK package
+      - name: Test installed SDK and language consumers (Windows)
+        if: runner.os == 'Windows'
+        run: ctest --test-dir build-sdk -C RelWithDebInfo --output-on-failure
+
+      - name: Stage SDK package (POSIX)
+        if: runner.os != 'Windows'
         run: cmake --install build-sdk --prefix stage-sdk
+
+      - name: Stage SDK package (Windows)
+        if: runner.os == 'Windows'
+        run: cmake --install build-sdk --config RelWithDebInfo --prefix stage-sdk
 
       - name: Verify narrow development surface (POSIX)
         if: runner.os != 'Windows'
@@ -59,5 +90,8 @@ jobs:
         run: |
           if (!(Test-Path stage-sdk/include/fv1/sdk.h)) { throw 'sdk.h missing' }
           if (!(Test-Path stage-sdk/include/fv1/sdk_debug.h)) { throw 'sdk_debug.h missing' }
+          if (!(Test-Path stage-sdk/include/fv1/sdk.hpp)) { throw 'sdk.hpp missing' }
+          if (!(Test-Path stage-sdk/include/fv1/module.modulemap)) { throw 'module map missing' }
           if (Test-Path stage-sdk/include/fv1/fv1.h) { throw 'internal fv1.h leaked into SDK package' }
           if (Test-Path stage-sdk/include/fv1/runtime.hpp) { throw 'internal runtime.hpp leaked into SDK package' }
+          if (Test-Path stage-sdk/include/fv1/validation.hpp) { throw 'internal validation.hpp leaked into SDK package' }

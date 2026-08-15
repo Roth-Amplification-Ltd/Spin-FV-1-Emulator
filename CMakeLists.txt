@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
-project(SpinFV1Emulator VERSION 0.9.0 LANGUAGES C CXX)
+project(SpinFV1Emulator VERSION 1.0.0 LANGUAGES C CXX)
+
+set(FV1_RELEASE_CHANNEL "rc1" CACHE STRING "Release channel suffix (for example rc1; empty for final)")
+if(FV1_RELEASE_CHANNEL STREQUAL "")
+    set(FV1_RELEASE_STRING "${PROJECT_VERSION}")
+else()
+    set(FV1_RELEASE_STRING "${PROJECT_VERSION}-${FV1_RELEASE_CHANNEL}")
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -62,7 +69,7 @@ set_target_properties(fv1-core PROPERTIES
 # The Qt application, CLI and realtime host consume the native compiler directly
 # so installed builds no longer shell out to Python.  The public SDK is a small,
 # versioned C ABI over opaque handles; internal C++ implementation remains free
-# to evolve until the Phase-6B ABI freeze.
+# to evolve until ABI v1 is explicitly ratified after the Phase-6C gate.
 # -----------------------------------------------------------------------------
 add_library(fv1-spinasm STATIC src/spinasm/spinasm.cpp)
 add_library(FV1::spinasm ALIAS fv1-spinasm)
@@ -91,7 +98,7 @@ target_include_directories(fv1-sdk PUBLIC
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 target_compile_definitions(fv1-sdk PRIVATE
     FV1_SDK_BUILDING=1
-    FV1_SDK_VERSION_STRING="${PROJECT_VERSION}"
+    FV1_SDK_VERSION_STRING="${FV1_RELEASE_STRING}"
     FV1_SDK_VERSION_MAJOR_VALUE=${PROJECT_VERSION_MAJOR}
     FV1_SDK_VERSION_MINOR_VALUE=${PROJECT_VERSION_MINOR}
     FV1_SDK_VERSION_PATCH_VALUE=${PROJECT_VERSION_PATCH}
@@ -176,6 +183,21 @@ function(fv1_add_sdk_tests)
     endif()
     add_test(NAME fv1-sdk-abi-layout-tests COMMAND fv1-sdk-abi-layout-tests)
 
+    # Compile an external consumer against the exact Phase-6B/0.9.0 public
+    # headers and link it to the current SDK. This is a practical ABI
+    # compatibility tripwire before ABI v1 is ratified.
+    add_executable(fv1-sdk-abi-backcompat-0_9-tests tests/sdk/test_sdk_c.c)
+    target_include_directories(fv1-sdk-abi-backcompat-0_9-tests BEFORE PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/sdk/abi-baseline/0.9.0)
+    target_link_libraries(fv1-sdk-abi-backcompat-0_9-tests PRIVATE FV1::sdk)
+    fv1_strict_warnings(fv1-sdk-abi-backcompat-0_9-tests)
+    add_test(NAME fv1-sdk-abi-backcompat-0_9-tests COMMAND fv1-sdk-abi-backcompat-0_9-tests)
+
+    add_executable(fv1-sdk-abuse-tests tests/sdk/test_sdk_abuse.c)
+    target_link_libraries(fv1-sdk-abuse-tests PRIVATE FV1::sdk)
+    fv1_strict_warnings(fv1-sdk-abuse-tests)
+    add_test(NAME fv1-sdk-abuse-tests COMMAND fv1-sdk-abuse-tests)
+
     if(FV1_SDK_BUILD_SHARED AND UNIX AND NOT APPLE AND CMAKE_NM)
         add_test(NAME sdk-export-surface
             COMMAND ${CMAKE_COMMAND}
@@ -195,6 +217,7 @@ function(fv1_add_sdk_tests)
             "-DSDK_C_FLAGS=${CMAKE_C_FLAGS}"
             "-DSDK_CXX_FLAGS=${CMAKE_CXX_FLAGS}"
             -DCMAKE_GENERATOR_NAME=${CMAKE_GENERATOR}
+            -DSDK_BUILD_CONFIG=$<CONFIG>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sdk/test_installed_sdk.cmake)
     set_tests_properties(installed-sdk-consumer PROPERTIES TIMEOUT 90)
 
@@ -213,7 +236,8 @@ function(fv1_add_sdk_tests)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sdk/test_cross_language_sdk.py
                 --project-binary ${CMAKE_CURRENT_BINARY_DIR}
                 --source ${CMAKE_CURRENT_SOURCE_DIR}
-                --test-root ${CMAKE_CURRENT_BINARY_DIR}/sdk-cross-language)
+                --test-root ${CMAKE_CURRENT_BINARY_DIR}/sdk-cross-language
+                --config $<CONFIG>)
         set_tests_properties(sdk-cross-language-consumers PROPERTIES TIMEOUT 180)
     endif()
 endfunction()
@@ -331,10 +355,12 @@ fv1_strict_warnings(fv1-audio)
 # Command-line tools
 # -----------------------------------------------------------------------------
 add_executable(fv1-cli src/cli/main.cpp)
+target_compile_definitions(fv1-cli PRIVATE FV1_PRODUCT_VERSION_STRING=\"${FV1_RELEASE_STRING}\")
 target_link_libraries(fv1-cli PRIVATE FV1::core FV1::reference FV1::conformance FV1::runtime FV1::validation FV1::spinasm)
 fv1_strict_warnings(fv1-cli)
 
 add_executable(fv1-live src/live/main.cpp)
+target_compile_definitions(fv1-live PRIVATE FV1_PRODUCT_VERSION_STRING=\"${FV1_RELEASE_STRING}\")
 target_link_libraries(fv1-live PRIVATE FV1::audio FV1::analysis FV1::runtime FV1::core FV1::spinasm)
 fv1_strict_warnings(fv1-live)
 
@@ -354,6 +380,7 @@ if(FV1_BUILD_GUI)
         target_link_libraries(fv1-lab PRIVATE
             Qt6::Widgets FV1::audio FV1::analysis FV1::validation FV1::runtime FV1::debugger FV1::core FV1::spinasm)
         target_include_directories(fv1-lab PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_compile_definitions(fv1-lab PRIVATE FV1_PRODUCT_VERSION_STRING=\"${FV1_RELEASE_STRING}\")
         fv1_strict_warnings(fv1-lab)
         message(STATUS "Phase 5B hardware-validation/testbench GUI: Qt ${Qt6_VERSION} enabled")
     else()
@@ -466,14 +493,43 @@ if(FV1_BUILD_TESTS)
                 $<TARGET_FILE:fv1-cli> ${CMAKE_CURRENT_SOURCE_DIR}/examples/steal-this-dsp-programs)
     set_tests_properties(phase5c-demo-bank-conformance PROPERTIES TIMEOUT 90)
 
+    add_test(NAME phase6c-malformed-inputs
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_malformed_inputs.py
+                $<TARGET_FILE:fv1-cli>
+                ${CMAKE_CURRENT_SOURCE_DIR}/examples/steal-this-dsp-programs/00_55_gallon_saint.spn
+                ${CMAKE_CURRENT_BINARY_DIR}/phase6c-malformed-inputs)
+    set_tests_properties(phase6c-malformed-inputs PROPERTIES TIMEOUT 45)
+
+    add_test(NAME phase6c-differential-stress
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_phase6c_differential_stress.py
+                $<TARGET_FILE:fv1-cli> ${CMAKE_CURRENT_SOURCE_DIR}/examples/steal-this-dsp-programs)
+    set_tests_properties(phase6c-differential-stress PROPERTIES TIMEOUT 120)
+
+    add_test(NAME phase6c-product-install
+        COMMAND ${CMAKE_COMMAND}
+            -DPROJECT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+            -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/phase6c-product-install
+            -DBUILD_CONFIG=$<CONFIG>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_product_install.cmake)
+    set_tests_properties(phase6c-product-install PROPERTIES TIMEOUT 60)
+
     if(TARGET fv1-lab)
         add_test(NAME fv1-lab-smoke COMMAND fv1-lab --smoke)
         set_tests_properties(fv1-lab-smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        add_test(NAME fv1-lab-hidpi-smoke COMMAND fv1-lab --smoke)
+        set_tests_properties(fv1-lab-hidpi-smoke PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=2")
+        add_test(NAME fv1-lab-splash-background-smoke COMMAND fv1-lab --smoke-splash)
+        set_tests_properties(fv1-lab-splash-background-smoke PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        add_test(NAME fv1-lab-about-smoke COMMAND fv1-lab --smoke-about)
+        set_tests_properties(fv1-lab-about-smoke PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()
 endif()
 
 # -----------------------------------------------------------------------------
-# Optional Phase-6 hardening fuzzing.  These targets are intentionally opt-in because
+# Optional Phase-6C release-hardening fuzzing.  These targets are intentionally opt-in because
 # libFuzzer is a Clang runtime and is not required for normal developer builds.
 # -----------------------------------------------------------------------------
 if(FV1_BUILD_FUZZERS)
@@ -507,6 +563,26 @@ if(FV1_BUILD_FUZZERS)
         -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
     target_link_options(fv1-spinasm-fuzzer PRIVATE
         -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
+
+    # Public-ABI operation-sequence fuzzer. Build directly from SDK/core/compiler
+    # sources so arbitrary create/load/control/process/debug sequences are fully
+    # instrumented without changing normal SDK packaging.
+    add_executable(fv1-sdk-fuzzer
+        tests/fuzz/fuzz_sdk.cpp
+        src/sdk/sdk.cpp
+        src/core/engine.cpp
+        src/spinasm/spinasm.cpp)
+    target_include_directories(fv1-sdk-fuzzer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_definitions(fv1-sdk-fuzzer PRIVATE
+        FV1_SDK_BUILDING=1
+        FV1_SDK_VERSION_STRING=\"${FV1_RELEASE_STRING}\"
+        FV1_SDK_VERSION_MAJOR_VALUE=${PROJECT_VERSION_MAJOR}
+        FV1_SDK_VERSION_MINOR_VALUE=${PROJECT_VERSION_MINOR}
+        FV1_SDK_VERSION_PATCH_VALUE=${PROJECT_VERSION_PATCH})
+    target_compile_options(fv1-sdk-fuzzer PRIVATE
+        -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
+    target_link_options(fv1-sdk-fuzzer PRIVATE
+        -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
 endif()
 
 # -----------------------------------------------------------------------------
@@ -526,6 +602,7 @@ install(TARGETS ${FV1_INSTALL_TARGETS}
 
 install(DIRECTORY assets/icons/ DESTINATION share/spin-fv1-emulator/icons
         PATTERN "hicolor" EXCLUDE)
+install(DIRECTORY assets/splash/ DESTINATION share/spin-fv1-emulator/splash)
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/roth-fv1-emulator.desktop")
     install(FILES packaging/linux/roth-fv1-emulator.desktop DESTINATION share/applications)
 endif()

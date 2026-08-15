@@ -7,6 +7,7 @@
 #include <fv1/audio_source.hpp>
 #include <fv1/fv1.h>
 #include <fv1/gui/instrument_plot.hpp>
+#include <fv1/gui/startup_splash.hpp>
 #include <fv1/gui/theme_manager.hpp>
 #include <fv1/gui/validation_panel.hpp>
 #include <fv1/runtime.hpp>
@@ -539,6 +540,27 @@ void MainWindow::build_menus() {
         icon_group->addAction(action);
         connect(action, &QAction::triggered, this, [this, name]{ set_app_icon(name); });
     }
+
+    auto* help = menuBar()->addMenu(QStringLiteral("&Help"));
+    auto* about = help->addAction(QStringLiteral("About FV-1 Lab…"));
+    about->setObjectName(QStringLiteral("aboutFv1LabAction"));
+    connect(about, &QAction::triggered, this, [this]{ show_about(); });
+}
+
+void MainWindow::show_about() {
+    if (auto* existing = findChild<StartupSplash*>(QStringLiteral("fv1AboutWindow"))) {
+        existing->show();
+        existing->raise();
+        existing->activateWindow();
+        return;
+    }
+
+    auto* about = new StartupSplash(accent_name_, this, StartupSplash::Mode::About);
+    about->setObjectName(QStringLiteral("fv1AboutWindow"));
+    about->setAttribute(Qt::WA_DeleteOnClose, true);
+    about->show();
+    about->raise();
+    about->activateWindow();
 }
 
 void MainWindow::build_toolbar() {

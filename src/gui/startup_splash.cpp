@@ -1,6 +1,9 @@
 #include <fv1/gui/startup_splash.hpp>
 
 #include <QApplication>
+#include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QFont>
 #include <QImage>
 #include <QLinearGradient>
@@ -9,12 +12,34 @@
 #include <QPaintEvent>
 #include <QScreen>
 #include <QString>
+#include <QStringList>
 
 #include <algorithm>
 #include <cmath>
 
 namespace fv1::gui {
 namespace {
+
+constexpr auto kSplashBackgroundFile = "FV1LabSplashImagebase.png";
+
+QImage load_default_splash_background() {
+    const QString file = QString::fromLatin1(kSplashBackgroundFile);
+    const QStringList candidates{
+        QDir::current().filePath(QStringLiteral("assets/splash/") + file),
+        QDir(QCoreApplication::applicationDirPath()).filePath(
+            QStringLiteral("../share/spin-fv1-emulator/splash/") + file),
+        QDir(QCoreApplication::applicationDirPath()).filePath(
+            QStringLiteral("../assets/splash/") + file)
+    };
+
+    for (const QString& candidate : candidates) {
+        const QString clean = QDir::cleanPath(candidate);
+        if (!QFileInfo(clean).isFile()) continue;
+        QImage image(clean);
+        if (!image.isNull()) return image;
+    }
+    return {};
+}
 
 QColor accent_color(const QString& name) {
     if (name.compare(QStringLiteral("Blue"), Qt::CaseInsensitive) == 0) return QColor(70, 145, 255);
@@ -122,35 +147,44 @@ void draw_scope(QPainter& p, const QRectF& scope, const QColor& accent) {
 QImage tinted_monochrome_background(const QImage& source, const QColor& accent) {
     if (source.isNull()) return {};
 
-    QImage gray = source.convertToFormat(QImage::Format_Grayscale8);
-    QImage tinted(gray.size(), QImage::Format_ARGB32_Premultiplied);
-    tinted.fill(Qt::transparent);
-
+    // Preserve the photographic luminance instead of replacing it with a flat
+    // accent silhouette. A low-alpha SourceAtop wash lets each application
+    // accent gently color the black-and-white base photograph while keeping
+    // pedals, keys, cables and guitar detail recognizable.
+    const QImage gray8 = source.convertToFormat(QImage::Format_Grayscale8);
+    QImage tinted = gray8.convertToFormat(QImage::Format_ARGB32_Premultiplied);
     QPainter tp(&tinted);
-    tp.drawImage(0, 0, gray);
-    tp.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    tp.setCompositionMode(QPainter::CompositionMode_SourceAtop);
     QColor tint = accent;
-    tint.setAlpha(255);
+    tint.setAlpha(62);
     tp.fillRect(tinted.rect(), tint);
     tp.end();
-
-    // Keep luminance from the original image while allowing the accent to tint
-    // it. The later dark overlay keeps foreground typography readable.
-    QPainter gp(&tinted);
-    gp.setCompositionMode(QPainter::CompositionMode_DestinationIn);
-    gp.drawImage(0, 0, gray);
-    gp.end();
     return tinted;
 }
 
 } // namespace
 
-StartupSplash::StartupSplash(const QString& accent_name, QWidget* parent)
-    : QWidget(parent), status_(QStringLiteral("Initializing application…")), accent_name_(accent_name) {
-    setWindowFlags(Qt::SplashScreen | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
-    setAttribute(Qt::WA_TranslucentBackground, true);
+StartupSplash::StartupSplash(const QString& accent_name, QWidget* parent, Mode mode)
+    : QWidget(parent),
+      status_(QStringLiteral("Initializing application…")),
+      accent_name_(accent_name),
+      background_image_(load_default_splash_background()),
+      mode_(mode) {
+    if (mode_ == Mode::Startup) {
+        setWindowFlags(Qt::SplashScreen | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+        setAttribute(Qt::WA_TranslucentBackground, true);
+    } else {
+        // About is a conventional owned dialog so it behaves like a native
+        // desktop About window while reusing the exact branded splash artwork.
+        setWindowFlags(Qt::Dialog | Qt::WindowTitleHint | Qt::WindowCloseButtonHint);
+        setWindowModality(Qt::WindowModal);
+        setWindowTitle(QStringLiteral("About FV-1 Lab"));
+    }
     setFixedSize(960, 540);
-    if (QScreen* screen = QApplication::primaryScreen()) {
+    if (parent && mode_ == Mode::About) {
+        const QPoint center = parent->frameGeometry().center();
+        move(center - rect().center());
+    } else if (QScreen* screen = QApplication::primaryScreen()) {
         const QRect area = screen->availableGeometry();
         move(area.center() - rect().center());
     }
@@ -176,6 +210,11 @@ void StartupSplash::clear_background_image() {
 void StartupSplash::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
     QPainter p(this);
+    if (mode_ == Mode::About) {
+        // Normal decorated dialogs are opaque; explicitly paint the content
+        // background outside the rounded artwork panel as well.
+        p.fillRect(rect(), QColor(4, 7, 9));
+    }
     p.setRenderHint(QPainter::Antialiasing, true);
     p.setRenderHint(QPainter::TextAntialiasing, true);
     p.setRenderHint(QPainter::SmoothPixmapTransform, true);
@@ -191,9 +230,8 @@ void StartupSplash::paintEvent(QPaintEvent* event) {
                           20 + i * 0.2, 20 + i * 0.2);
     }
 
-    // Blank/dark background for now. The optional image layer below is the
-    // deliberate future hook for the user's black-and-white collage. Until an
-    // image is explicitly supplied, there is no placeholder artwork.
+    // The gradient is both the fallback when the packaged photo is unavailable
+    // and the dark foundation beneath the normal photographic background.
     QLinearGradient bg(panel.topLeft(), panel.bottomRight());
     bg.setColorAt(0.0, QColor(24, 30, 35));
     bg.setColorAt(0.50, QColor(9, 15, 20));
@@ -214,14 +252,14 @@ void StartupSplash::paintEvent(QPaintEvent* event) {
                                             Qt::SmoothTransformation);
         const QPointF origin(panel.center().x() - scaled.width() * 0.5,
                              panel.center().y() - scaled.height() * 0.5);
-        p.setOpacity(0.34);
+        p.setOpacity(0.68);
         p.drawImage(origin, scaled);
         p.setOpacity(1.0);
-        p.fillRect(panel, QColor(2, 6, 9, 145));
+        p.fillRect(panel, QColor(2, 6, 9, 112));
     }
 
     // Subtle brushed/engineering texture remains software-drawn and works on
-    // both the blank background and the future photo layer.
+    // both the fallback gradient and the photographic background layer.
     for (int y = 28; y < height() - 28; y += 3) {
         const int mod = (y * 37) % 23;
         p.setPen(QColor(255, 255, 255, 3 + mod / 6));
@@ -253,37 +291,67 @@ void StartupSplash::paintEvent(QPaintEvent* event) {
                        QStringLiteral("Virtual DSP Testbench for Spin FV-1"),
                        12.5, QColor(170, 178, 185), QFont::Normal);
 
-    // Progress UI remains at the bottom and reports actual startup milestones.
-    const QRectF track(66, 425, width() - 132.0, 12);
-    p.setBrush(QColor(3, 7, 9, 210));
-    p.setPen(QPen(QColor(75, 85, 92), 1.0));
-    p.drawRoundedRect(track, 6, 6);
-    const QRectF fill(track.left() + 2, track.top() + 2,
-                      std::max<qreal>(0.0, (track.width() - 4) * static_cast<qreal>(progress_) / 100.0),
-                      track.height() - 4);
-    p.setPen(Qt::NoPen);
-    p.setBrush(accent);
-    p.drawRoundedRect(fill, 4, 4);
+    const QString app_version = QCoreApplication::applicationVersion().isEmpty()
+        ? QStringLiteral("development build")
+        : QCoreApplication::applicationVersion();
 
-    QFont small = p.font();
-    small.setPointSizeF(9.5);
-    p.setFont(small);
-    p.setPen(QColor(175, 183, 190));
-    p.drawText(QRectF(66, 445, 720, 26), Qt::AlignLeft | Qt::AlignVCenter, status_);
-    QFont pct = p.font();
-    pct.setPointSizeF(12.0);
-    pct.setWeight(QFont::Medium);
-    p.setFont(pct);
-    p.setPen(accent);
-    p.drawText(QRectF(width() - 150, 442, 84, 28), Qt::AlignRight | Qt::AlignVCenter,
-               QStringLiteral("%1%").arg(progress_));
+    if (mode_ == Mode::Startup) {
+        // Progress UI reports actual startup milestones.
+        const QRectF track(66, 414, width() - 132.0, 12);
+        p.setBrush(QColor(3, 7, 9, 210));
+        p.setPen(QPen(QColor(75, 85, 92), 1.0));
+        p.drawRoundedRect(track, 6, 6);
+        const QRectF fill(track.left() + 2, track.top() + 2,
+                          std::max<qreal>(0.0, (track.width() - 4) * static_cast<qreal>(progress_) / 100.0),
+                          track.height() - 4);
+        p.setPen(Qt::NoPen);
+        p.setBrush(accent);
+        p.drawRoundedRect(fill, 4, 4);
 
-    p.setPen(QPen(QColor(90, 100, 108), 0.8));
-    p.drawLine(QPointF(55, 493), QPointF(340, 493));
-    p.drawLine(QPointF(620, 493), QPointF(width() - 55, 493));
-    draw_centered_text(p, QRectF(340, 476, 280, 34),
-                       QStringLiteral("© 2026 Roth Amplification LTD"),
-                       9.5, QColor(115, 124, 132), QFont::Normal);
+        QFont small = p.font();
+        small.setPointSizeF(9.5);
+        p.setFont(small);
+        p.setPen(QColor(175, 183, 190));
+        p.drawText(QRectF(66, 433, 720, 24), Qt::AlignLeft | Qt::AlignVCenter, status_);
+        QFont pct = p.font();
+        pct.setPointSizeF(12.0);
+        pct.setWeight(QFont::Medium);
+        p.setFont(pct);
+        p.setPen(accent);
+        p.drawText(QRectF(width() - 150, 430, 84, 28), Qt::AlignRight | Qt::AlignVCenter,
+                   QStringLiteral("%1%").arg(progress_));
+
+        draw_centered_text(p, QRectF(250, 462, 460, 22),
+                           QStringLiteral("Created & engineered by Adam Vadala-Roth"),
+                           9.5, QColor(158, 166, 173), QFont::Medium);
+        p.setPen(QPen(QColor(90, 100, 108), 0.8));
+        p.drawLine(QPointF(55, 508), QPointF(285, 508));
+        p.drawLine(QPointF(675, 508), QPointF(width() - 55, 508));
+        draw_centered_text(p, QRectF(285, 486, 390, 34),
+                           QStringLiteral("© 2026 Roth Amplification LTD  •  MPL-2.0  •  %1").arg(app_version),
+                           8.8, QColor(115, 124, 132), QFont::Normal);
+    } else {
+        // The on-demand About presentation replaces startup progress with the
+        // credits/version block while preserving the same branded composition.
+        draw_centered_text(p, QRectF(175, 404, 610, 26),
+                           QStringLiteral("Created & engineered by Adam Vadala-Roth"),
+                           11.5, QColor(205, 211, 216), QFont::Medium);
+        draw_centered_text(p, QRectF(175, 432, 610, 24),
+                           QStringLiteral("Roth Amplification LTD"),
+                           10.5, accent, QFont::Medium);
+        draw_centered_text(p, QRectF(145, 458, 670, 22),
+                           QStringLiteral("Spin FV-1 Emulator / FV-1 Lab  •  Version %1").arg(app_version),
+                           9.5, QColor(166, 174, 181), QFont::Normal);
+        draw_centered_text(p, QRectF(145, 481, 670, 22),
+                           QStringLiteral("Open-source software licensed under the Mozilla Public License 2.0"),
+                           8.8, QColor(132, 141, 149), QFont::Normal);
+        p.setPen(QPen(QColor(90, 100, 108), 0.8));
+        p.drawLine(QPointF(55, 510), QPointF(330, 510));
+        p.drawLine(QPointF(630, 510), QPointF(width() - 55, 510));
+        draw_centered_text(p, QRectF(330, 497, 300, 26),
+                           QStringLiteral("© 2026 Roth Amplification LTD"),
+                           8.8, QColor(110, 119, 127), QFont::Normal);
+    }
 }
 
 } // namespace fv1::gui

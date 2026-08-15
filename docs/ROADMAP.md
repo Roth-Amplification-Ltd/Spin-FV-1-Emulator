@@ -111,8 +111,9 @@ Phase 5B completed the software/UI preparation needed before physical captures:
 - deterministic multi-file hardware-validation packs plus machine-readable manifests;
 - `fv1-cli validation-pack` and matching GUI generation workflow;
 - File → **Paste SpinASM…** scratchpad through the same assembler/program-image path;
-- software-rendered startup splash with dedicated FV-1/waveform/DIP foreground and a future
-  theme-tinted monochrome background-image hook;
+- software-rendered startup splash with dedicated FV-1/waveform/DIP foreground and a
+  theme-tinted monochrome background-image hook (populated in Phase 6C by
+  `assets/splash/FV1LabSplashImagebase.png`);
 - Linux application identity/icon/menu polish;
 - Pop!_OS/Ubuntu 22.04+ bootstrap compatibility, including pinned miniaudio fallback handling.
 
@@ -165,45 +166,58 @@ per-effect compatibility hacks.
 
 ## Phase 6A — FV-1 SDK extraction — COMPLETE
 
-Phase 6A established the first installable `FV1SDK::sdk` C ABI candidate, native SpinASM compiler,
-shared/static packaging, exported-symbol boundary, and external pure-C installed-consumer test. The
-Linux runtime was routed through the public engine boundary so FV-1 Lab dogfoods the candidate.
+Established the installable `FV1SDK::sdk` C ABI candidate, native SpinASM compiler, shared/static
+packaging, narrow exported-symbol boundary, external pure-C installed-consumer test, and Linux runtime
+dogfooding through the public engine boundary.
 
-Commit/acceptance status: completed and accepted on Rosie before Phase 6B.
+## Phase 6B — Cross-language SDK review and stabilization — COMPLETE
 
-## Phase 6B — Cross-language SDK review and stabilization — CURRENT
+Completed the pre-freeze consumer audit and cross-language surface:
 
-The two priorities are cross-language usability first and consumer completeness second. Current work:
+- `FV1_SDK_ONLY=ON` with no application/audio/UI dependency discovery;
+- self-contained shared/static package and narrow installed headers;
+- version/capability discovery, readback, processing and optional debug/introspection APIs;
+- C, C++, Python, Swift, Rust and Objective-C proving hosts;
+- fixed-width public scalar ABI, explicit Windows `cdecl`, layout fixture and exact symbol manifest;
+- Linux/macOS/Windows SDK portability workflow.
 
-- `FV1_SDK_ONLY=ON` build that avoids application/audio/UI dependencies;
-- self-contained shared/static SDK package with no exported private core/compiler link targets;
-- intentionally narrow installed development headers;
-- C ABI capability/version discovery;
-- program readback plus single-POT/single-sample helpers;
-- optional `sdk_debug.h` instruction stepping, trace and state-digest API;
-- installed C++ RAII convenience wrapper and Clang module map;
-- external C/C++/Python/Swift/Rust/Objective-C proving hosts;
-- Linux/macOS/Windows SDK-only portability CI;
-- explicit consumer-needs audit covering native Windows, native macOS, future IDE and third-party hosts.
+The Phase-6B commit intentionally left ABI major 1 as a candidate. Its first remote portability run
+proved five of six matrix combinations. The only failure was the Windows shared Python `ctypes` probe
+after the workflow accidentally selected MinGW under Git Bash/Ninja; the DLL itself and C/C++/ABI
+tests passed. Phase 6C changes the shipping Windows proof to native Visual Studio/MSVC.
 
-Phase 6B still calls ABI major 1 a **candidate**. It does not freeze private C++ libraries, Qt,
-platform audio, analysis/validation UI, or private engine-state serialization. See
-`SDK-CONSUMER-REQUIREMENTS.md`, `SDK-CROSS-LANGUAGE.md`, and `PHASE6B-SDK-STABILIZATION.md`.
+## Phase 6C — Linux 1.0.0-rc1 hardening / ABI-v1 ratification gate — CURRENT
 
-Only after Phase 6C hardening and final symbol/layout review may the project declare
-**FV-1 SDK ABI v1 FROZEN**.
+No product feature work belongs here. The objective is to make the existing SDK/application fail in
+controlled tests before committing to binary compatibility.
 
-## Phase 6C — Linux 1.0 release candidate / torture testing — AFTER 6B
+Implemented in the RC candidate:
 
-- extended sanitizer/fuzzer soak and malformed-input testing;
-- warning-clean GCC + Clang builds;
-- fresh-install and audio-device failure/hot-plug checks on supported Linux targets;
-- package/version/About/release metadata cleanup;
-- high-DPI and application-data/configuration-path acceptance;
-- release-candidate test report against the final SDK ABI candidate.
+- `1.0.0-rc1` product/SDK implementation version metadata;
+- exact Phase-6B/0.9.0 public-header compatibility compile/link regression;
+- SDK misuse, bad-structure, bad-state, non-finite-input and zero-frame boundary tests;
+- malformed external file/source regressions;
+- deterministic multi-seed differential stress across all eight demo programs;
+- product staging/install smoke and installed CLI version check;
+- GCC and Clang warning-clean headless gates;
+- Clang ASan/UBSan gate;
+- conformance, SpinASM and public-SDK libFuzzer targets;
+- normal + HiDPI Qt smoke checks;
+- Linux release-hardening workflow and heavyweight `tools/run-release-gate.sh`;
+- Windows SDK CI switched to native MSVC for both static and shared package tests.
 
-After Phase 6C, Windows and macOS frontends should be independent native clients of the same frozen
-SDK rather than ports of the Qt application's internal architecture.
+**ABI v1 ratification sequence:**
+
+1. Rosie must build/test/run the exact Phase-6C overlay successfully.
+2. Commit/push the RC candidate.
+3. Linux CI, Release Hardening CI, and all six SDK Portability matrix jobs must be green.
+4. Reconfirm the exact exported-symbol manifest and 64-bit structure-layout fixture are unchanged from
+   the reviewed candidate.
+5. Only then change documentation/status from **ABI v1 freeze candidate** to **ABI v1 FROZEN**.
+
+The freeze applies to the documented C ABI/semantics only. Private C++, Qt, host audio/SRC, reference
+models and future frontend implementations remain replaceable. Physical FV-1 silicon closure also
+remains a separate deferred fidelity gate.
 
 ## Future dedicated FV-1 IDE — SEPARATE APPLICATION
 

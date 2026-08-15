@@ -38,10 +38,10 @@ This is not a project editor and does not replace the future dedicated FV-1 IDE.
 
 The startup splash is rendered by Qt rather than stored as a full-screen bitmap. Qt paints the
 panel, standalone FV-1 typography, waveform, DIP package, product wording, status text and progress
-bar. The application icon is deliberately **not** reused as the splash hero artwork. The background
-is intentionally blank/dark for now. `StartupSplash` exposes an optional background-image hook so a
-future black-and-white collage can be scaled, accent-tinted and darkened behind the same foreground
-composition without redesigning the splash. Progress values come from real initialization milestones;
+bar. The application icon is deliberately **not** reused as the splash hero artwork. Phase 5B introduced
+the optional background-image hook; Phase 6C now supplies `assets/splash/FV1LabSplashImagebase.png` as
+the default black-and-white photograph. It is full-bleed scaled/cropped, accent-tinted and darkened behind
+the same foreground composition without redesigning the splash. Progress values come from real initialization milestones;
 a short minimum display interval prevents the splash from flashing by on fast systems.
 
 Menu-bar entries and dropdown menu rows use the active application accent color for their standard

@@ -16,7 +16,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-## Phase 6B SDK-only build/install
+## Phase 6C SDK-only compatibility build/install
 
 Use the SDK-only configure when testing the embeddable module. It intentionally avoids Linux product
 dependencies and builds the public package plus SDK-facing tests only:
@@ -72,19 +72,20 @@ Contract, not a claim of physical-silicon equivalence.
 ```bash
 cmake -S . -B build-san -G Ninja \
   -DFV1_BUILD_GUI=OFF \
+  -DFV1_SDK_BUILD_SHARED=OFF \
   -DCMAKE_C_COMPILER=clang \
   -DCMAKE_CXX_COMPILER=clang++ \
   -DCMAKE_C_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' \
-  -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-sanitize=vptr -fno-omit-frame-pointer' \
+  -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' \
   -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined' \
   -DCMAKE_SHARED_LINKER_FLAGS='-fsanitize=address,undefined'
 cmake --build build-san
 ctest --test-dir build-san --output-on-failure
 ```
 
-`vptr` is excluded from this cross-language shared-library sanitizer configuration so an
-instrumented SDK can still be linked and exercised by the C-only external-host smoke test using the
-C sanitizer runtime. AddressSanitizer and the remaining UndefinedBehaviorSanitizer checks stay active.
+For the Phase-6C sanitizer gate, prefer `-DFV1_SDK_BUILD_SHARED=OFF`. The production shared-library
+ABI is tested independently in normal portability builds, while a static instrumented SDK keeps the
+C/C++ sanitizer runtime consistent for all test executables.
 
 ## libFuzzer hardening targets
 
@@ -105,4 +106,14 @@ printf 'RDAX ADCL, 1.0\nWRAX DACL, 0\n' > /tmp/fv1-spinasm-fuzz-corpus/passthrou
 ./build-fuzz/fv1-spinasm-fuzzer -runs=10000 -max_len=65536 /tmp/fv1-spinasm-fuzz-corpus
 ```
 
-See `PHASE5C-MODEL-HARDENING.md` for differential-model testing and `PHASE6B-SDK-STABILIZATION.md` for the current SDK boundary.
+The Phase-6C public-ABI fuzzer is `fv1-sdk-fuzzer`. For the complete release-candidate gate, use:
+
+```bash
+FV1_FUZZ_RUNS=5000 ./tools/run-release-gate.sh
+```
+
+This creates isolated GCC, SDK shared/static, Clang ASan/UBSan and fuzz builds under
+`build-release-gate/`; it also runs an optional Valgrind SDK-abuse smoke when Valgrind is installed.
+
+See `PHASE5C-MODEL-HARDENING.md`, `PHASE6B-SDK-STABILIZATION.md`, and
+`PHASE6C-RELEASE-HARDENING.md`.

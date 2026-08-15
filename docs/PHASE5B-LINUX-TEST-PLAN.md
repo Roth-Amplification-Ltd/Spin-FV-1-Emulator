@@ -10,8 +10,8 @@ Qt `fv1-lab-smoke` test. Headless builds contain 14 tests; a Qt-enabled workstat
 
 1. Start `fv1-lab`. Confirm the software-rendered splash remains visible briefly, advances through
    meaningful status messages, reaches 100%, then reveals the main window. Confirm the splash uses
-   standalone FV-1/waveform/DIP artwork rather than a large application-icon badge, and that the
-   background remains the intentional dark/blank surface until a future collage is supplied.
+   standalone FV-1/waveform/DIP artwork rather than a large application-icon badge. On current builds,
+   confirm `FV1LabSplashImagebase.png` appears behind it as a darkened, accent-tinted full-bleed photo.
 2. Open each menu from the menu bar and move the pointer across top-level and dropdown items. Confirm
    hovered/selected entries use the currently selected application accent color with readable
    contrasting text; change the accent and confirm the menu highlight follows it immediately.
