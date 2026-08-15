@@ -1,0 +1,51 @@
+name: Native Apple Frontend
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  macos-ipados:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify Apple public-SDK boundary
+        run: python3 tools/check_apple_frontend_boundary.py
+
+      - name: Verify Xcode project is reproducible
+        run: |
+          python3 tools/generate_apple_xcodeproj.py
+          git diff --exit-code -- apple/FV1Lab.xcodeproj
+
+      - name: Build Apple realtime bridge regression
+        run: |
+          cmake -S . -B build-apple-host -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DFV1_BUILD_TESTS=ON \
+            -DFV1_BUILD_GUI=OFF \
+            -DFV1_ENABLE_LIVE_AUDIO=OFF \
+            -DFV1_BUILD_WINDOWS_FRONTEND=OFF
+          cmake --build build-apple-host --parallel --target fv1-apple-realtime-bridge-tests
+          ctest --test-dir build-apple-host --output-on-failure -R '^(fv1-apple-realtime-bridge-tests|phase8-apple-frontend-boundary)$'
+
+      - name: Inspect Xcode schemes
+        run: xcodebuild -project apple/FV1Lab.xcodeproj -list
+
+      - name: Build native macOS app
+        run: >-
+          xcodebuild -project apple/FV1Lab.xcodeproj
+          -scheme "FV1 Lab macOS"
+          -configuration Release
+          -destination 'platform=macOS'
+          CODE_SIGNING_ALLOWED=NO
+          build
+
+      - name: Build native iPadOS simulator app
+        run: >-
+          xcodebuild -project apple/FV1Lab.xcodeproj
+          -scheme "FV1 Lab iPadOS"
+          -configuration Release
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+          build

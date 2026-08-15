@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleDisplayName</key><string>FV-1 Lab</string>
+<key>CFBundleName</key><string>FV-1 Lab</string>
+<key>CFBundleShortVersionString</key><string>1.0.0</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>NSHumanReadableCopyright</key><string>Copyright © 2026 Roth Amplification LTD. Created &amp; engineered by Adam Vadala-Roth.</string>
+<key>NSMicrophoneUsageDescription</key><string>FV-1 Lab uses audio input to process live audio through the virtual Spin FV-1.</string>
+<key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+<key>CFBundleDocumentTypes</key><array><dict>
+<key>CFBundleTypeName</key><string>SpinASM Source</string>
+<key>CFBundleTypeRole</key><string>Editor</string>
+<key>LSHandlerRank</key><string>Owner</string>
+<key>LSItemContentTypes</key><array><string>com.rothamplification.fv1.spinasm</string></array>
+</dict></array>
+<key>UTExportedTypeDeclarations</key><array><dict>
+<key>UTTypeIdentifier</key><string>com.rothamplification.fv1.spinasm</string>
+<key>UTTypeConformsTo</key><array><string>public.plain-text</string></array>
+<key>UTTypeDescription</key><string>Spin FV-1 SpinASM Source</string>
+<key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>spn</string></array></dict>
+</dict></array>
+</dict></plist>

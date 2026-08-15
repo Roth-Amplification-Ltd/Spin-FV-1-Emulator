@@ -1,0 +1,326 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AAD120CBBD23BB84B02FD9AD /* FV1LabApp.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = A3679B3680C78F7E07611898 /* FV1LabApp.swift */; };
+		EEF8683BC4AA000C06BEBA39 /* AppleAudioController.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = DA5F8CAB8E0741DC06EACD65 /* AppleAudioController.swift */; };
+		CE94C1C11FA08F2E4B4A33F5 /* FV1Document.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = 02D95D5D9893CB09FA826664 /* FV1Document.swift */; };
+		3703E501AFBA8D660345AD36 /* FV1WorkspaceModel.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = FEC3113590E959E0CF15560E /* FV1WorkspaceModel.swift */; };
+		D77CCA00DFBD9B46D286C70C /* MacAboutPresenter.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = F9C85DC0EBAA96F8AC38EDF4 /* MacAboutPresenter.swift */; };
+		71B97EC2FA92EC3A30872390 /* FV1Engine.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = 2A9AC5DD32F29FBFCBF4EE0E /* FV1Engine.swift */; };
+		7F900BEAD4554AED9243A018 /* FV1RealtimeBridge.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = F63C9DF937626E9922CD9B75 /* FV1RealtimeBridge.swift */; };
+		03CD08FF04C54E300FAEF769 /* ScopeView.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = 97B05E32F437EFCC74C9BDA1 /* ScopeView.swift */; };
+		EC878D7675A2073C748CC451 /* ControlsView.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = 27A57C6686800FF83BF6065E /* ControlsView.swift */; };
+		B19D71C669A13CC0D93F7F0C /* InspectionView.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = FCBA238CFE46398BB7BE8E90 /* InspectionView.swift */; };
+		BC9808CB0D12B787F38E0D21 /* WorkspaceView.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = D03BB50A2930EB8C682595C7 /* WorkspaceView.swift */; };
+		E741D8877515CDBC149026C9 /* sdk.cpp in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = DD16F9DCD25FBEE7BC5564F7 /* sdk.cpp */; };
+		3FDB9D7307991190EAE8F68B /* engine.cpp in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = D1BE57206E7E8C8355330BC7 /* engine.cpp */; };
+		702415B63ADD523EA862BD42 /* spinasm.cpp in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = 954294CD5FF1124C8523AA38 /* spinasm.cpp */; };
+		9922B5DB2E9FA1DD9BE2090A /* fv1_apple_realtime.c in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = 53F364FD20EB40EFD7221AC4 /* fv1_apple_realtime.c */; };
+		D944AE9DB9B0653560D0FADD /* Assets.xcassets in Resources (macOS) */ = {isa = PBXBuildFile; fileRef = 517B29B6B7323BCD196D1B0C /* Assets.xcassets */; };
+		A77AC878706B69EA302634DF /* FV1LabApp.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = A3679B3680C78F7E07611898 /* FV1LabApp.swift */; };
+		451E68F291D1607112F573B1 /* AppleAudioController.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = DA5F8CAB8E0741DC06EACD65 /* AppleAudioController.swift */; };
+		38709ECA9FB49A620F72E98C /* FV1Document.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = 02D95D5D9893CB09FA826664 /* FV1Document.swift */; };
+		6CDE27A65A83A3F6C3C5EFA2 /* FV1WorkspaceModel.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = FEC3113590E959E0CF15560E /* FV1WorkspaceModel.swift */; };
+		46FE12969B9963208E4DFF9F /* MacAboutPresenter.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = F9C85DC0EBAA96F8AC38EDF4 /* MacAboutPresenter.swift */; };
+		D1E7162ACAECB04A0AD7D3F3 /* FV1Engine.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = 2A9AC5DD32F29FBFCBF4EE0E /* FV1Engine.swift */; };
+		C1C83F682DEF4179B35D62D6 /* FV1RealtimeBridge.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = F63C9DF937626E9922CD9B75 /* FV1RealtimeBridge.swift */; };
+		8F0E720D6CF202A9426ABC39 /* ScopeView.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = 97B05E32F437EFCC74C9BDA1 /* ScopeView.swift */; };
+		8D785615FC02D54BA0B67414 /* ControlsView.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = 27A57C6686800FF83BF6065E /* ControlsView.swift */; };
+		3163C7F1211883BB560B1873 /* InspectionView.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = FCBA238CFE46398BB7BE8E90 /* InspectionView.swift */; };
+		126AD1E0B63861511FF53335 /* WorkspaceView.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = D03BB50A2930EB8C682595C7 /* WorkspaceView.swift */; };
+		D2E0BC907763FA4478F3FA38 /* sdk.cpp in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = DD16F9DCD25FBEE7BC5564F7 /* sdk.cpp */; };
+		AD077B11A2BC71B6587B4A40 /* engine.cpp in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = D1BE57206E7E8C8355330BC7 /* engine.cpp */; };
+		A5A61D0717604BA04ADB1F0F /* spinasm.cpp in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = 954294CD5FF1124C8523AA38 /* spinasm.cpp */; };
+		8163919C7DAB693F67FCCEF7 /* fv1_apple_realtime.c in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = 53F364FD20EB40EFD7221AC4 /* fv1_apple_realtime.c */; };
+		51F16540C2DE26CA9A861F8C /* Assets.xcassets in Resources (iPadOS) */ = {isa = PBXBuildFile; fileRef = 517B29B6B7323BCD196D1B0C /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		312B597B66C089DF3C99776A /* FV-1 Lab.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "FV-1 Lab.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		55DCB52116628156C4422ABE /* FV-1 Lab iPad.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "FV-1 Lab iPad.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A3679B3680C78F7E07611898 /* FV1LabApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/App/FV1LabApp.swift"; sourceTree = SOURCE_ROOT; };
+		DA5F8CAB8E0741DC06EACD65 /* AppleAudioController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Audio/AppleAudioController.swift"; sourceTree = SOURCE_ROOT; };
+		02D95D5D9893CB09FA826664 /* FV1Document.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Model/FV1Document.swift"; sourceTree = SOURCE_ROOT; };
+		FEC3113590E959E0CF15560E /* FV1WorkspaceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Model/FV1WorkspaceModel.swift"; sourceTree = SOURCE_ROOT; };
+		F9C85DC0EBAA96F8AC38EDF4 /* MacAboutPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Platform/macOS/MacAboutPresenter.swift"; sourceTree = SOURCE_ROOT; };
+		2A9AC5DD32F29FBFCBF4EE0E /* FV1Engine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/SDK/FV1Engine.swift"; sourceTree = SOURCE_ROOT; };
+		F63C9DF937626E9922CD9B75 /* FV1RealtimeBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/SDK/FV1RealtimeBridge.swift"; sourceTree = SOURCE_ROOT; };
+		97B05E32F437EFCC74C9BDA1 /* ScopeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Views/ScopeView.swift"; sourceTree = SOURCE_ROOT; };
+		27A57C6686800FF83BF6065E /* ControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Views/ControlsView.swift"; sourceTree = SOURCE_ROOT; };
+		FCBA238CFE46398BB7BE8E90 /* InspectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Views/InspectionView.swift"; sourceTree = SOURCE_ROOT; };
+		D03BB50A2930EB8C682595C7 /* WorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Views/WorkspaceView.swift"; sourceTree = SOURCE_ROOT; };
+		DD16F9DCD25FBEE7BC5564F7 /* sdk.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = "../src/sdk/sdk.cpp"; sourceTree = SOURCE_ROOT; };
+		D1BE57206E7E8C8355330BC7 /* engine.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = "../src/core/engine.cpp"; sourceTree = SOURCE_ROOT; };
+		954294CD5FF1124C8523AA38 /* spinasm.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = "../src/spinasm/spinasm.cpp"; sourceTree = SOURCE_ROOT; };
+		53F364FD20EB40EFD7221AC4 /* fv1_apple_realtime.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "../src/apple/fv1_apple_realtime.c"; sourceTree = SOURCE_ROOT; };
+		517B29B6B7323BCD196D1B0C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "FV1Lab/Resources/Assets.xcassets"; sourceTree = SOURCE_ROOT; };
+		43CF24550BB02AD1746176A4 /* FV1Lab-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "FV1Lab/Support/FV1Lab-Bridging-Header.h"; sourceTree = SOURCE_ROOT; };
+		3FEC3391285714C5AEC6DD06 /* macOS-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "FV1Lab/Resources/macOS-Info.plist"; sourceTree = SOURCE_ROOT; };
+		AD9295820D71DCC1C96136C1 /* iPadOS-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "FV1Lab/Resources/iPadOS-Info.plist"; sourceTree = SOURCE_ROOT; };
+		9B1A2D6EEE7F4042204B23C1 /* macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "FV1Lab/Resources/macOS.entitlements"; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		0CF709CD236C61FC285BA57E /* Frameworks (macOS) */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		2E28337311E2EFD20CBB7D51 /* Frameworks (iPadOS) */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		870B3294C0CBD48AF6BBCC1B = {isa = PBXGroup; children = (8309DD304D804F9D7F6302F5, DD9383857FEF17DC74FE4893, 50F0FC3AFD5FBC981B5A0DDD, 615B463D1028E4E24B674CF7); sourceTree = "<group>"; };
+		8309DD304D804F9D7F6302F5 /* Apple SwiftUI */ = {isa = PBXGroup; children = (A3679B3680C78F7E07611898, DA5F8CAB8E0741DC06EACD65, 02D95D5D9893CB09FA826664, FEC3113590E959E0CF15560E, F9C85DC0EBAA96F8AC38EDF4, 2A9AC5DD32F29FBFCBF4EE0E, F63C9DF937626E9922CD9B75, 97B05E32F437EFCC74C9BDA1, 27A57C6686800FF83BF6065E, FCBA238CFE46398BB7BE8E90, D03BB50A2930EB8C682595C7); name = "Apple SwiftUI"; sourceTree = "<group>"; };
+		DD9383857FEF17DC74FE4893 /* SDK implementation */ = {isa = PBXGroup; children = (DD16F9DCD25FBEE7BC5564F7, D1BE57206E7E8C8355330BC7, 954294CD5FF1124C8523AA38, 53F364FD20EB40EFD7221AC4); name = "SDK implementation"; sourceTree = "<group>"; };
+		50F0FC3AFD5FBC981B5A0DDD /* Resources and support */ = {isa = PBXGroup; children = (517B29B6B7323BCD196D1B0C, 43CF24550BB02AD1746176A4, 3FEC3391285714C5AEC6DD06, AD9295820D71DCC1C96136C1, 9B1A2D6EEE7F4042204B23C1); name = "Resources and Support"; sourceTree = "<group>"; };
+		615B463D1028E4E24B674CF7 /* Products */ = {isa = PBXGroup; children = (312B597B66C089DF3C99776A, 55DCB52116628156C4422ABE); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		3E40B71A5C90864A98F6DEA9 /* FV1 Lab macOS */ = {
+            isa = PBXNativeTarget;
+            buildConfigurationList = 020AD9657978CB6942EC49A2;
+            buildPhases = (DD823B4E40F33A3436587EBD, 0CF709CD236C61FC285BA57E, 8C3C832655C1507F705426CD);
+            buildRules = ();
+            dependencies = ();
+            name = "FV1 Lab macOS";
+            productName = "FV-1 Lab";
+            productReference = 312B597B66C089DF3C99776A;
+            productType = "com.apple.product-type.application";
+        };
+		B94AC4CCF649CA6E91F94A0F /* FV1 Lab iPadOS */ = {
+            isa = PBXNativeTarget;
+            buildConfigurationList = 025CB916A89DB736753A9A8D;
+            buildPhases = (5CAB48D73E1871378194CF62, 2E28337311E2EFD20CBB7D51, 450282DDDEB4ABD2DBEB3F3B);
+            buildRules = ();
+            dependencies = ();
+            name = "FV1 Lab iPadOS";
+            productName = "FV-1 Lab iPad";
+            productReference = 55DCB52116628156C4422ABE;
+            productType = "com.apple.product-type.application";
+        };
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		98F54143AB4E86B28C3AFEE0 /* Project object */ = {
+            isa = PBXProject;
+            attributes = {
+                BuildIndependentTargetsInParallel = 1;
+                LastSwiftUpdateCheck = 1600;
+                LastUpgradeCheck = 1600;
+                TargetAttributes = {
+                    3E40B71A5C90864A98F6DEA9 = {CreatedOnToolsVersion = 16.0; };
+                    B94AC4CCF649CA6E91F94A0F = {CreatedOnToolsVersion = 16.0; };
+                };
+            };
+            buildConfigurationList = 3ECEDC1D48F60586160C9438;
+            compatibilityVersion = "Xcode 14.0";
+            developmentRegion = en;
+            hasScannedForEncodings = 0;
+            knownRegions = (en, Base);
+            mainGroup = 870B3294C0CBD48AF6BBCC1B;
+            productRefGroup = 615B463D1028E4E24B674CF7;
+            projectDirPath = "";
+            projectRoot = "";
+            targets = (3E40B71A5C90864A98F6DEA9, B94AC4CCF649CA6E91F94A0F);
+        };
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		8C3C832655C1507F705426CD /* Resources (macOS) */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (D944AE9DB9B0653560D0FADD); runOnlyForDeploymentPostprocessing = 0; };
+		450282DDDEB4ABD2DBEB3F3B /* Resources (iPadOS) */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (51F16540C2DE26CA9A861F8C); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		DD823B4E40F33A3436587EBD /* Sources (macOS) */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (AAD120CBBD23BB84B02FD9AD, EEF8683BC4AA000C06BEBA39, CE94C1C11FA08F2E4B4A33F5, 3703E501AFBA8D660345AD36, D77CCA00DFBD9B46D286C70C, 71B97EC2FA92EC3A30872390, 7F900BEAD4554AED9243A018, 03CD08FF04C54E300FAEF769, EC878D7675A2073C748CC451, B19D71C669A13CC0D93F7F0C, BC9808CB0D12B787F38E0D21, E741D8877515CDBC149026C9, 3FDB9D7307991190EAE8F68B, 702415B63ADD523EA862BD42, 9922B5DB2E9FA1DD9BE2090A); runOnlyForDeploymentPostprocessing = 0; };
+		5CAB48D73E1871378194CF62 /* Sources (iPadOS) */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A77AC878706B69EA302634DF, 451E68F291D1607112F573B1, 38709ECA9FB49A620F72E98C, 6CDE27A65A83A3F6C3C5EFA2, 46FE12969B9963208E4DFF9F, D1E7162ACAECB04A0AD7D3F3, C1C83F682DEF4179B35D62D6, 8F0E720D6CF202A9426ABC39, 8D785615FC02D54BA0B67414, 3163C7F1211883BB560B1873, 126AD1E0B63861511FF53335, D2E0BC907763FA4478F3FA38, AD077B11A2BC71B6587B4A40, A5A61D0717604BA04ADB1F0F, 8163919C7DAB693F67FCCEF7); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		67ACD701F2BF4C72E8F71467 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+                ALWAYS_SEARCH_USER_PATHS = NO;
+                CLANG_ANALYZER_NONNULL = YES;
+                CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+                CLANG_ENABLE_OBJC_ARC = YES;
+                CLANG_WARN_BOOL_CONVERSION = YES;
+                CLANG_WARN_CONSTANT_CONVERSION = YES;
+                CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+                CLANG_WARN_EMPTY_BODY = YES;
+                CLANG_WARN_ENUM_CONVERSION = YES;
+                CLANG_WARN_INFINITE_RECURSION = YES;
+                CLANG_WARN_INT_CONVERSION = YES;
+                CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+                CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+                CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+                CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+                CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+                CLANG_WARN_STRICT_PROTOTYPES = YES;
+                CLANG_WARN_SUSPICIOUS_MOVE = YES;
+                CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+                CLANG_WARN_UNREACHABLE_CODE = YES;
+                COPY_PHASE_STRIP = NO;
+                ENABLE_STRICT_OBJC_MSGSEND = YES;
+                ENABLE_TESTABILITY = YES;
+                GCC_C_LANGUAGE_STANDARD = c11;
+                GCC_NO_COMMON_BLOCKS = YES;
+                GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+                GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+                GCC_WARN_UNDECLARED_SELECTOR = YES;
+                GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+                GCC_WARN_UNUSED_FUNCTION = YES;
+                GCC_WARN_UNUSED_VARIABLE = YES;
+                ONLY_ACTIVE_ARCH = YES;
+            }; name = Debug; };
+		56DC6A7D9CA664987D41141A /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+                ALWAYS_SEARCH_USER_PATHS = NO;
+                CLANG_ANALYZER_NONNULL = YES;
+                CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+                CLANG_ENABLE_OBJC_ARC = YES;
+                CLANG_WARN_BOOL_CONVERSION = YES;
+                CLANG_WARN_CONSTANT_CONVERSION = YES;
+                CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+                CLANG_WARN_EMPTY_BODY = YES;
+                CLANG_WARN_ENUM_CONVERSION = YES;
+                CLANG_WARN_INFINITE_RECURSION = YES;
+                CLANG_WARN_INT_CONVERSION = YES;
+                CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+                CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+                CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+                CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+                CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+                CLANG_WARN_STRICT_PROTOTYPES = YES;
+                CLANG_WARN_SUSPICIOUS_MOVE = YES;
+                CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+                CLANG_WARN_UNREACHABLE_CODE = YES;
+                COPY_PHASE_STRIP = YES;
+                ENABLE_STRICT_OBJC_MSGSEND = YES;
+                ENABLE_NS_ASSERTIONS = NO;
+                GCC_C_LANGUAGE_STANDARD = c11;
+                GCC_NO_COMMON_BLOCKS = YES;
+                GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+                GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+                GCC_WARN_UNDECLARED_SELECTOR = YES;
+                GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+                GCC_WARN_UNUSED_FUNCTION = YES;
+                GCC_WARN_UNUSED_VARIABLE = YES;
+                
+            }; name = Release; };
+		8749A867C9A89DF54B6FEC66 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
+				CLANG_C_LANGUAGE_STANDARD = c11;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = "FV1Lab/Resources/macOS.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("$(inherited)", "FV1_SDK_BUILDING=1", "FV1_SDK_VERSION_STRING=\"1.0.0-rc1\"", "FV1_SDK_VERSION_MAJOR_VALUE=1", "FV1_SDK_VERSION_MINOR_VALUE=0", "FV1_SDK_VERSION_PATCH_VALUE=0");
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../include", "$(SRCROOT)/../src/apple");
+				INFOPLIST_FILE = "FV1Lab/Resources/macOS-Info.plist";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rothamplification.fv1lab.macos;
+				PRODUCT_NAME = "FV-1 Lab";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_OBJC_BRIDGING_HEADER = "FV1Lab/Support/FV1Lab-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			}; name = Debug; };
+		6A4996EA62483E9F87149300 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
+				CLANG_C_LANGUAGE_STANDARD = c11;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = "FV1Lab/Resources/macOS.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = ("$(inherited)", "FV1_SDK_BUILDING=1", "FV1_SDK_VERSION_STRING=\"1.0.0-rc1\"", "FV1_SDK_VERSION_MAJOR_VALUE=1", "FV1_SDK_VERSION_MINOR_VALUE=0", "FV1_SDK_VERSION_PATCH_VALUE=0");
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../include", "$(SRCROOT)/../src/apple");
+				INFOPLIST_FILE = "FV1Lab/Resources/macOS-Info.plist";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rothamplification.fv1lab.macos;
+				PRODUCT_NAME = "FV-1 Lab";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OBJC_BRIDGING_HEADER = "FV1Lab/Support/FV1Lab-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			}; name = Release; };
+		9A5E4BB3065795506CE1515A /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
+				CLANG_C_LANGUAGE_STANDARD = c11;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("$(inherited)", "FV1_SDK_BUILDING=1", "FV1_SDK_VERSION_STRING=\"1.0.0-rc1\"", "FV1_SDK_VERSION_MAJOR_VALUE=1", "FV1_SDK_VERSION_MINOR_VALUE=0", "FV1_SDK_VERSION_PATCH_VALUE=0");
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../include", "$(SRCROOT)/../src/apple");
+				INFOPLIST_FILE = "FV1Lab/Resources/iPadOS-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rothamplification.fv1lab.ipados;
+				PRODUCT_NAME = "FV-1 Lab";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = "FV1Lab/Support/FV1Lab-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 2;
+			}; name = Debug; };
+		823A8EA1D34EDA29F6714BBC /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
+				CLANG_C_LANGUAGE_STANDARD = c11;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = ("$(inherited)", "FV1_SDK_BUILDING=1", "FV1_SDK_VERSION_STRING=\"1.0.0-rc1\"", "FV1_SDK_VERSION_MAJOR_VALUE=1", "FV1_SDK_VERSION_MINOR_VALUE=0", "FV1_SDK_VERSION_PATCH_VALUE=0");
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../include", "$(SRCROOT)/../src/apple");
+				INFOPLIST_FILE = "FV1Lab/Resources/iPadOS-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rothamplification.fv1lab.ipados;
+				PRODUCT_NAME = "FV-1 Lab";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OBJC_BRIDGING_HEADER = "FV1Lab/Support/FV1Lab-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 2;
+			}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3ECEDC1D48F60586160C9438 = {isa = XCConfigurationList; buildConfigurations = (67ACD701F2BF4C72E8F71467, 56DC6A7D9CA664987D41141A); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		020AD9657978CB6942EC49A2 = {isa = XCConfigurationList; buildConfigurations = (8749A867C9A89DF54B6FEC66, 6A4996EA62483E9F87149300); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		025CB916A89DB736753A9A8D = {isa = XCConfigurationList; buildConfigurations = (9A5E4BB3065795506CE1515A, 823A8EA1D34EDA29F6714BBC); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+
+	};
+	rootObject = 98F54143AB4E86B28C3AFEE0 /* Project object */;
+}

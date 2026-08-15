@@ -270,6 +270,18 @@ if(FV1_SDK_ONLY)
 endif()
 
 # -----------------------------------------------------------------------------
+# Phase 8: Apple frontend realtime bridge.  This C11 target is intentionally
+# platform-neutral so Linux CI can exercise the macOS/iPadOS audio bridge logic
+# while proving that it consumes only the public FV-1 SDK boundary.
+# -----------------------------------------------------------------------------
+add_library(fv1-apple-realtime-bridge STATIC
+    src/apple/fv1_apple_realtime.c)
+target_include_directories(fv1-apple-realtime-bridge PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/apple)
+target_link_libraries(fv1-apple-realtime-bridge PUBLIC FV1::sdk)
+fv1_strict_warnings(fv1-apple-realtime-bridge)
+
+# -----------------------------------------------------------------------------
 # Phase 7: native Windows frontend SDK boundary.  The session wrapper is kept
 # platform-neutral so Linux CI can continuously prove it uses only the public
 # SDK.  The actual Win32 shell is added later under WIN32.
@@ -519,6 +531,18 @@ if(FV1_BUILD_TESTS)
         COMMAND fv1-native-frontend-realtime-tests)
     add_test(NAME phase7-windows-frontend-boundary
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_windows_frontend_boundary.py)
+
+    add_executable(fv1-apple-realtime-bridge-tests
+        tests/apple/test_apple_realtime_bridge.c)
+    target_link_libraries(fv1-apple-realtime-bridge-tests PRIVATE
+        fv1-apple-realtime-bridge
+        FV1::sdk)
+    set_target_properties(fv1-apple-realtime-bridge-tests PROPERTIES LINKER_LANGUAGE CXX)
+    fv1_strict_warnings(fv1-apple-realtime-bridge-tests)
+    add_test(NAME fv1-apple-realtime-bridge-tests
+        COMMAND fv1-apple-realtime-bridge-tests)
+    add_test(NAME phase8-apple-frontend-boundary
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_apple_frontend_boundary.py)
 
     add_test(NAME native-spinasm-python-equivalence
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_native_spinasm_equivalence.py
