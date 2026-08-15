@@ -1,3 +1,4 @@
+; SPDX-License-Identifier: MPL-2.0
 ; Minimal stereo FV-1 passthrough used for bring-up.
 RDAX ADCL, 1.0
 WRAX DACL, 0.0
