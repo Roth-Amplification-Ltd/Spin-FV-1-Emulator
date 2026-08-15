@@ -410,3 +410,22 @@ Current GUI refinements include:
 See [`docs/PHASE3-GUI.md`](docs/PHASE3-GUI.md) and [`docs/PHASE3-ACCEPTANCE.md`](docs/PHASE3-ACCEPTANCE.md).
 
 See also [`docs/SDK-ABI-CANDIDATE.md`](docs/SDK-ABI-CANDIDATE.md).
+
+## Native Windows frontend (Phase 7A preview)
+
+Phase 7A begins a native Win32 FV-1 Lab client that consumes only the installed/public FV-1 SDK
+boundary. On Windows with Visual Studio/MSVC:
+
+```powershell
+cmake -S . -B build-win32 `
+  -DFV1_BUILD_GUI=OFF `
+  -DFV1_ENABLE_LIVE_AUDIO=OFF `
+  -DFV1_BUILD_WINDOWS_FRONTEND=ON
+cmake --build build-win32 --config RelWithDebInfo --target fv1-lab-win32
+.\build-win32\RelWithDebInfo\fv1-lab-win32.exe
+```
+
+The Phase 7A shell provides native source/program loading, SDK compilation/control, virtual-chip
+telemetry, a deterministic output scope, and WASAPI endpoint probing. Event-driven full-duplex WASAPI
+streaming and Windows host↔FV-1 sample-rate conversion are intentionally reserved for Phase 7B.
+See `docs/PHASE7A-WINDOWS-FRONTEND.md`.

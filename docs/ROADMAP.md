@@ -238,3 +238,21 @@ After the SDK v1 boundary is frozen and the Linux release candidate is accepted:
 
 DAW/VST/AU/CLAP plugins are **not part of this standalone application project**. If desired later,
 they should be separate consumers of the emulator libraries.
+
+## Phase 7A — Native Windows frontend foundation — IN DEVELOPMENT
+
+Phase 7A starts the first native non-Linux product client while preserving the Phase-6 SDK boundary.
+It is gated on final Phase-6C ABI-v1 ratification and does not change the machine model or public ABI.
+
+Initial deliverables:
+
+- Unicode Win32 FV-1 Lab shell with the accepted wide engineering-dashboard direction;
+- public `FV1::sdk` as the **only** emulator dependency;
+- native SpinASM/program loading, compile/load, POT controls, reset, snapshot/resource instrumentation;
+- deterministic virtual-input/output scope so the shell is operational before device streaming;
+- native WASAPI default-endpoint and mix-format discovery;
+- MSVC shared/static frontend CI;
+- no Qt/miniaudio/Linux-runtime/private-core coupling.
+
+Phase 7B should add event-driven full-duplex WASAPI streaming, explicit host↔virtual-FV-1 SRC,
+device selection/recovery, clock/xrun telemetry and soak testing. The SDK ABI should not need to change.

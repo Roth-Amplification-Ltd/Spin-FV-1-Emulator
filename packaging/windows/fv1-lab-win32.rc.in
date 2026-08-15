@@ -1,0 +1,3 @@
+#include "@CMAKE_CURRENT_SOURCE_DIR@/src/windows/resource.h"
+
+IDI_FV1_APP ICON "@CMAKE_CURRENT_SOURCE_DIR@/packaging/windows/fv1-emulator-blue.ico"

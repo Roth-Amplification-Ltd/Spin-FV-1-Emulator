@@ -1,0 +1,32 @@
+name: Native Windows Frontend
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  win32-msvc:
+    strategy:
+      fail-fast: false
+      matrix:
+        shared: [ON, OFF]
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure native Windows frontend
+        shell: pwsh
+        run: >-
+          cmake -S . -B build-win32
+          -DFV1_BUILD_TESTS=ON
+          -DFV1_BUILD_GUI=OFF
+          -DFV1_ENABLE_LIVE_AUDIO=OFF
+          -DFV1_BUILD_WINDOWS_FRONTEND=ON
+          -DFV1_SDK_BUILD_SHARED=${{ matrix.shared }}
+      - name: Build native shell and SDK-boundary smoke test
+        run: >-
+          cmake --build build-win32 --config RelWithDebInfo --parallel 2
+          --target fv1-lab-win32 fv1-native-frontend-session-tests
+      - name: Run native frontend SDK-boundary smoke test
+        run: >-
+          ctest --test-dir build-win32 -C RelWithDebInfo --output-on-failure
+          -R "^fv1-native-frontend-session-tests$"

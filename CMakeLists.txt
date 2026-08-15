@@ -8,6 +8,10 @@ else()
     set(FV1_RELEASE_STRING "${PROJECT_VERSION}-${FV1_RELEASE_CHANNEL}")
 endif()
 
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -19,6 +23,13 @@ option(FV1_BUILD_TESTS "Build emulator tests" ON)
 option(FV1_ENABLE_WARNINGS "Enable strict compiler warnings" ON)
 option(FV1_ENABLE_LIVE_AUDIO "Build Linux realtime audio host when miniaudio is available" ON)
 option(FV1_BUILD_GUI "Build the Qt FV-1 emulator/testbench application" ON)
+if(WIN32)
+    set(FV1_WINDOWS_FRONTEND_DEFAULT ON)
+else()
+    set(FV1_WINDOWS_FRONTEND_DEFAULT OFF)
+endif()
+option(FV1_BUILD_WINDOWS_FRONTEND "Build the native Win32 FV-1 Lab frontend on Windows" ${FV1_WINDOWS_FRONTEND_DEFAULT})
+unset(FV1_WINDOWS_FRONTEND_DEFAULT)
 option(FV1_BUILD_FUZZERS "Build Clang/libFuzzer hardening targets" OFF)
 option(FV1_SDK_BUILD_SHARED "Build the embeddable FV-1 SDK as a shared library" ON)
 option(FV1_SDK_ONLY "Build/install only the embeddable FV-1 SDK and SDK-facing tests" OFF)
@@ -259,6 +270,18 @@ if(FV1_SDK_ONLY)
 endif()
 
 # -----------------------------------------------------------------------------
+# Phase 7A: native Windows frontend SDK boundary.  The session wrapper is kept
+# platform-neutral so Linux CI can continuously prove it uses only the public
+# SDK.  The actual Win32 shell is added later under WIN32.
+# -----------------------------------------------------------------------------
+add_library(fv1-windows-frontend-session STATIC
+    src/windows/fv1_session.cpp)
+target_include_directories(fv1-windows-frontend-session PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/windows)
+target_link_libraries(fv1-windows-frontend-session PUBLIC FV1::sdk)
+fv1_strict_warnings(fv1-windows-frontend-session)
+
+# -----------------------------------------------------------------------------
 # Phase 5C: independent golden/reference model.  This target intentionally does
 # not link FV1::core so differential tests do not execute the production model
 # twice through shared implementation code.
@@ -365,6 +388,40 @@ target_link_libraries(fv1-live PRIVATE FV1::audio FV1::analysis FV1::runtime FV1
 fv1_strict_warnings(fv1-live)
 
 # -----------------------------------------------------------------------------
+# Phase 7A: native Windows product frontend.  This target deliberately links
+# only the public SDK wrapper plus Windows system libraries; it does not reuse
+# Qt, the Linux runtime/audio stack, or private emulator libraries.
+# -----------------------------------------------------------------------------
+if(WIN32 AND FV1_BUILD_WINDOWS_FRONTEND)
+    configure_file(
+        packaging/windows/fv1-lab-win32.rc.in
+        ${CMAKE_CURRENT_BINARY_DIR}/fv1-lab-win32.rc
+        @ONLY)
+    add_executable(fv1-lab-win32 WIN32
+        src/windows/main.cpp
+        src/windows/wasapi_probe.cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/fv1-lab-win32.rc)
+    target_include_directories(fv1-lab-win32 PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/windows
+        ${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows)
+    target_compile_definitions(fv1-lab-win32 PRIVATE
+        UNICODE
+        _UNICODE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+        FV1_PRODUCT_VERSION_STRING=\"${FV1_RELEASE_STRING}\")
+    target_link_libraries(fv1-lab-win32 PRIVATE
+        fv1-windows-frontend-session
+        FV1::sdk
+        comctl32
+        comdlg32
+        ole32
+        uuid)
+    fv1_strict_warnings(fv1-lab-win32)
+    message(STATUS "Phase 7A native Windows frontend enabled")
+endif()
+
+# -----------------------------------------------------------------------------
 # Qt FV-1 emulator/testbench application (Linux product frontend)
 # -----------------------------------------------------------------------------
 if(FV1_BUILD_GUI)
@@ -439,6 +496,17 @@ if(FV1_BUILD_TESTS)
     add_test(NAME fv1-spinasm-tests COMMAND fv1-spinasm-tests)
 
     fv1_add_sdk_tests()
+
+    add_executable(fv1-native-frontend-session-tests
+        tests/windows/test_windows_frontend_sdk.cpp)
+    target_link_libraries(fv1-native-frontend-session-tests PRIVATE
+        fv1-windows-frontend-session
+        FV1::sdk)
+    fv1_strict_warnings(fv1-native-frontend-session-tests)
+    add_test(NAME fv1-native-frontend-session-tests
+        COMMAND fv1-native-frontend-session-tests)
+    add_test(NAME phase7a-windows-frontend-boundary
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_windows_frontend_boundary.py)
 
     add_test(NAME native-spinasm-python-equivalence
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_native_spinasm_equivalence.py
@@ -596,6 +664,9 @@ fv1_install_sdk()
 set(FV1_INSTALL_TARGETS fv1-cli fv1-live)
 if(TARGET fv1-lab)
     list(APPEND FV1_INSTALL_TARGETS fv1-lab)
+endif()
+if(TARGET fv1-lab-win32)
+    list(APPEND FV1_INSTALL_TARGETS fv1-lab-win32)
 endif()
 install(TARGETS ${FV1_INSTALL_TARGETS}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
