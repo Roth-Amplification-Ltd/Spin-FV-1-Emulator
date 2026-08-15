@@ -58,7 +58,7 @@ final class FV1Engine {
         config.virtual_sample_rate = Self.virtualSampleRate
         var created: OpaquePointer?
         try Self.check(fv1_sdk_engine_create_v1(&config, &created))
-        guard created != nil else { throw FV1EngineError.sdk(FV1_SDK_ERROR_INTERNAL, "SDK returned a null engine") }
+        guard created != nil else { throw FV1EngineError.sdk(fv1_sdk_result(FV1_SDK_ERROR_INTERNAL), "SDK returned a null engine") }
         handle = created
     }
 
@@ -98,14 +98,14 @@ final class FV1Engine {
     func load(program: Data) throws {
         guard program.count == Int(FV1_SDK_PROGRAM_BYTES) else { throw FV1EngineError.invalidProgramSize(program.count) }
         let result = program.withUnsafeBytes { bytes -> fv1_sdk_result in
-            guard let base = bytes.bindMemory(to: UInt8.self).baseAddress else { return FV1_SDK_ERROR_INVALID_ARGUMENT }
+            guard let base = bytes.bindMemory(to: UInt8.self).baseAddress else { return fv1_sdk_result(FV1_SDK_ERROR_INVALID_ARGUMENT) }
             return fv1_sdk_engine_load_program(handle, base, program.count)
         }
         try Self.check(result)
     }
 
     func setPots(_ values: [Float]) throws {
-        guard values.count == 3 else { throw FV1EngineError.sdk(FV1_SDK_ERROR_INVALID_ARGUMENT, "Three POT values are required") }
+        guard values.count == 3 else { throw FV1EngineError.sdk(fv1_sdk_result(FV1_SDK_ERROR_INVALID_ARGUMENT), "Three POT values are required") }
         try Self.check(fv1_sdk_engine_set_pots(handle, values[0], values[1], values[2]))
     }
 

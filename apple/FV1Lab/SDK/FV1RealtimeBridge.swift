@@ -22,7 +22,7 @@ final class FV1RealtimeBridge: @unchecked Sendable {
     func load(program: Data) throws {
         guard program.count == Int(FV1_SDK_PROGRAM_BYTES) else { throw FV1EngineError.invalidProgramSize(program.count) }
         let result = program.withUnsafeBytes { bytes -> fv1_sdk_result in
-            guard let base = bytes.bindMemory(to: UInt8.self).baseAddress else { return FV1_SDK_ERROR_INVALID_ARGUMENT }
+            guard let base = bytes.bindMemory(to: UInt8.self).baseAddress else { return fv1_sdk_result(FV1_SDK_ERROR_INVALID_ARGUMENT) }
             return fv1_apple_realtime_load_program(handle, base, bytes.count)
         }
         if result != FV1_SDK_OK { throw FV1EngineError.sdk(result, "Unable to load realtime program") }

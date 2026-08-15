@@ -108,7 +108,7 @@ def build_settings(platform: str, debug: bool) -> str:
         "CURRENT_PROJECT_VERSION": "1",
         "DEVELOPMENT_TEAM": '""',
         "ENABLE_PREVIEWS": "YES",
-        "GCC_PREPROCESSOR_DEFINITIONS": '("$(inherited)", "FV1_SDK_BUILDING=1", "FV1_SDK_VERSION_STRING=\\\"1.0.0-rc1\\\"", "FV1_SDK_VERSION_MAJOR_VALUE=1", "FV1_SDK_VERSION_MINOR_VALUE=0", "FV1_SDK_VERSION_PATCH_VALUE=0")',
+        "GCC_PREPROCESSOR_DEFINITIONS": '("$(inherited)", "FV1_SDK_BUILDING=1", "FV1_SDK_VERSION_MAJOR_VALUE=1", "FV1_SDK_VERSION_MINOR_VALUE=0", "FV1_SDK_VERSION_PATCH_VALUE=0")',
         "HEADER_SEARCH_PATHS": '("$(inherited)", "$(SRCROOT)/../include", "$(SRCROOT)/../src/apple")',
         "MARKETING_VERSION": "1.0.0",
         "PRODUCT_NAME": '"FV-1 Lab"',

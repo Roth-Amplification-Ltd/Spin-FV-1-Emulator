@@ -87,7 +87,7 @@ final class AppleAudioController: ObservableObject {
         let outputHardware = outputNode.inputFormat(forBus: 0)
         guard inputHardware.sampleRate > 0, inputHardware.channelCount > 0,
               outputHardware.sampleRate > 0, outputHardware.channelCount > 0 else {
-            throw FV1EngineError.sdk(FV1_SDK_ERROR_BAD_STATE, "No usable Apple audio input/output route")
+            throw FV1EngineError.sdk(fv1_sdk_result(FV1_SDK_ERROR_BAD_STATE), "No usable Apple audio input/output route")
         }
 
         let inputChannels = AVAudioChannelCount(min(2, Int(inputHardware.channelCount)))
@@ -99,7 +99,7 @@ final class AppleAudioController: ObservableObject {
                                                sampleRate: outputHardware.sampleRate,
                                                channels: 2,
                                                interleaved: false) else {
-            throw FV1EngineError.sdk(FV1_SDK_ERROR_UNSUPPORTED, "Unable to create canonical Float32 Apple audio formats")
+            throw FV1EngineError.sdk(fv1_sdk_result(FV1_SDK_ERROR_UNSUPPORTED), "Unable to create canonical Float32 Apple audio formats")
         }
 
         try realtime.configureAndPrime(inputRate: inputFormat.sampleRate,
@@ -237,7 +237,7 @@ final class AppleAudioController: ObservableObject {
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .measurement,
-                                options: [.allowBluetoothHFP, .allowAirPlay])
+                                options: [.allowBluetooth, .allowAirPlay])
         try session.setPreferredSampleRate(48_000)
         try session.setPreferredIOBufferDuration(0.005)
         try session.setActive(true)
