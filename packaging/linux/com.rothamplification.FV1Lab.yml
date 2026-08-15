@@ -1,0 +1,59 @@
+app-id: com.rothamplification.FV1Lab
+runtime: org.kde.Platform
+runtime-version: '6.10'
+sdk: org.kde.Sdk
+command: fv1-lab
+appstream-compose: false
+
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --device=dri
+  - --filesystem=xdg-documents
+  - --filesystem=xdg-download
+  - --filesystem=xdg-music
+
+rename-desktop-file: roth-fv1-emulator.desktop
+rename-icon: roth-fv1-emulator
+
+cleanup:
+  - /include
+  - /lib/cmake
+  - /lib/pkgconfig
+  - /lib/*.a
+  - /share/doc
+  - /share/man
+
+modules:
+  # FV-1 Lab's realtime Linux host uses the single-header miniaudio backend.
+  # Keep the exact version already pinned by bootstrap-dev.sh.
+  - name: miniaudio
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 miniaudio.h /app/include/miniaudio.h
+    sources:
+      - type: git
+        url: https://github.com/mackron/miniaudio.git
+        commit: 4a5b74bef029b3592c54b6048650ee5f972c1a48
+
+  - name: fv1-lab
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - -DCMAKE_INSTALL_PREFIX=/app
+      - -DFV1_BUILD_GUI=ON
+      - -DFV1_ENABLE_LIVE_AUDIO=ON
+      - -DFV1_BUILD_TESTS=OFF
+      - -DFV1_BUILD_WINDOWS_FRONTEND=OFF
+      - -DFV1_SDK_BUILD_SHARED=OFF
+      - -DMINIAUDIO_INCLUDE_DIR=/app/include
+    post-install:
+      - install -Dm644 packaging/linux/com.rothamplification.FV1Lab.metainfo.xml /app/share/metainfo/com.rothamplification.FV1Lab.metainfo.xml
+    sources:
+      # linux.sh resolves this placeholder in a generated manifest that sits
+      # beside a clean snapshot of the current working tree. Do not point a
+      # type: dir source at the live repo: the builder state also lives there.
+      - type: dir
+        path: __FV1_LOCAL_SOURCE__

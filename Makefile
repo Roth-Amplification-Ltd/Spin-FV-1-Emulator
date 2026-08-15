@@ -1,7 +1,7 @@
 BUILD_DIR ?= build
 BUILD_TYPE ?= RelWithDebInfo
 
-.PHONY: all configure build test clean
+.PHONY: all configure build test clean linux-run linux-packages
 all: build
 
 configure:
@@ -15,3 +15,10 @@ test: build
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+
+linux-run:
+	./linux.sh run
+
+linux-packages:
+	./linux.sh package all

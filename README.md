@@ -6,7 +6,7 @@ Linux-first, open-source tools for emulating, measuring and inspecting the Spin 
 
 The product is intentionally a polished virtual FV-1 and DSP lab instrument, not a full source-code IDE. Lightweight development/debug conveniences are welcome when they directly support emulation, while the underlying libraries remain reusable by a future dedicated IDE and other applications.
 
-The project is intentionally layered so the virtual FV-1 is not tied to a GUI toolkit, audio-device framework, or operating system. Linux remains the primary development host; the native Windows FV-1 Lab is now implemented behind the same public SDK boundary, while the native macOS frontend remains later work.
+The project is intentionally layered so the virtual FV-1 is not tied to a GUI toolkit, audio-device framework, or operating system. Linux is the only supported/tested host during the initial implementation. Windows and macOS front ends come later, after the core/runtime APIs are stable.
 
 ## Phase 1 status
 
@@ -61,7 +61,22 @@ Implemented in the current Linux bring-up:
 - automated 48 kHz host -> 32.768 kHz virtual FV-1 clock-domain regression
 - fractional virtual-clock preservation for crystal-derived rates such as 46.6084 kHz
 
-The audio-device backend is Linux-first. Generator and file-loop playback, production SpeexDSP clock bridging, analyzer telemetry, and real miniaudio playback have been accepted on Cortana. External capture/duplex-interface validation remains explicitly deferred until suitable hardware is available. The native Windows application now owns its Win32/WASAPI integration behind the public SDK boundary; native macOS application work remains later.
+The audio-device backend is Linux-first. Generator and file-loop playback, production SpeexDSP clock bridging, analyzer telemetry, and real miniaudio playback have been accepted on Cortana. External capture/duplex-interface validation remains explicitly deferred until suitable hardware is available. Windows and native macOS application work remains intentionally deferred until the Linux runtime and GUI APIs are stable.
+
+## Easy Linux build, launch and packages
+
+The finished Linux FV-1 Lab can be built, launched and packaged through one helper:
+
+```bash
+./linux.sh deps          # first-time prerequisites
+./linux.sh run           # build + launch native app
+./linux.sh test          # full regression suite
+./linux.sh package all   # .deb + AppImage + Flatpak -> dist/
+```
+
+Individual packages are available with `./linux.sh package deb`,
+`./linux.sh package appimage`, and `./linux.sh package flatpak`. See
+[`docs/LINUX-PACKAGING.md`](docs/LINUX-PACKAGING.md) for details.
 
 ## Build on Linux
 
@@ -411,24 +426,21 @@ See [`docs/PHASE3-GUI.md`](docs/PHASE3-GUI.md) and [`docs/PHASE3-ACCEPTANCE.md`]
 
 See also [`docs/SDK-ABI-CANDIDATE.md`](docs/SDK-ABI-CANDIDATE.md).
 
-## Native Windows frontend (Phase 7)
+## Native Windows frontend (Phase 7A preview)
 
-Phase 7 provides a native Win32 FV-1 Lab client that consumes only the public FV-1 SDK boundary.
-It includes source/program loading, POT/reset control, offline chip inspection, event-driven shared-mode
-WASAPI full-duplex audio, actual realtime output scope data, stream/xrun/recovery telemetry, and
-automatic recovery from default-device changes or endpoint invalidation. Windows performs shared-mode
-endpoint format/rate conversion around the virtual chip's native 32.768 kHz stereo float stream.
-
-Build with Visual Studio/MSVC:
+Phase 7A begins a native Win32 FV-1 Lab client that consumes only the installed/public FV-1 SDK
+boundary. On Windows with Visual Studio/MSVC:
 
 ```powershell
 cmake -S . -B build-win32 `
-  -DFV1_BUILD_TESTS=ON `
   -DFV1_BUILD_GUI=OFF `
   -DFV1_ENABLE_LIVE_AUDIO=OFF `
   -DFV1_BUILD_WINDOWS_FRONTEND=ON
-cmake --build build-win32 --config RelWithDebInfo --parallel
-ctest --test-dir build-win32 -C RelWithDebInfo --output-on-failure
+cmake --build build-win32 --config RelWithDebInfo --target fv1-lab-win32
+.\build-win32\RelWithDebInfo\fv1-lab-win32.exe
 ```
 
-See `docs/PHASE7-WINDOWS-FRONTEND.md`.
+The Phase 7A shell provides native source/program loading, SDK compilation/control, virtual-chip
+telemetry, a deterministic output scope, and WASAPI endpoint probing. Event-driven full-duplex WASAPI
+streaming and Windows host↔FV-1 sample-rate conversion are intentionally reserved for Phase 7B.
+See `docs/PHASE7A-WINDOWS-FRONTEND.md`.

@@ -1,6 +1,11 @@
 /build/
 /build-*/
 /cmake-build-*/
+/dist/
+/.flatpak-builder/
+/flatpak-build/
+/flatpak-repo/
+/AppDir/
 *.wav
 *.bin
 *.hex

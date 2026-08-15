@@ -548,7 +548,7 @@ void MainWindow::build_menus() {
 }
 
 void MainWindow::show_about() {
-    if (auto* existing = findChild<StartupSplash*>(QStringLiteral("fv1AboutWindow"))) {
+    if (auto* existing = findChild<QWidget*>(QStringLiteral("fv1AboutWindow"))) {
         existing->show();
         existing->raise();
         existing->activateWindow();

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.rothamplification.FV1Lab</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MPL-2.0</project_license>
+  <name>FV-1 Lab</name>
+  <summary>Virtual Spin FV-1 DSP emulator and electronic testbench</summary>
+  <description>
+    <p>
+      FV-1 Lab emulates the Spin Semiconductor FV-1 DSP for SpinASM program
+      development, realtime audio processing, measurement, validation and
+      virtual-chip inspection.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.rothamplification.FV1Lab.desktop</launchable>
+  <url type="homepage">https://github.com/Roth-Amplification-Ltd/Spin-FV-1-Emulator</url>
+  <developer id="com.rothamplification">
+    <name>Roth Amplification LTD</name>
+  </developer>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Development</category>
+  </categories>
+  <provides>
+    <binary>fv1-lab</binary>
+  </provides>
+</component>
