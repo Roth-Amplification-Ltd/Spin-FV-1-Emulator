@@ -36,7 +36,7 @@ Options:
   --build-type TYPE    CMake build type (default: RelWithDebInfo).
   -h, --help           Show this help.
 
-Supported bootstrap hosts for Phase 5B:
+Supported bootstrap hosts for Phase 5C:
   Pop!_OS, Ubuntu, Debian, and apt-compatible derivatives.
 
 Examples:
@@ -110,7 +110,7 @@ printf '\n=== Spin FV-1 Emulator: developer bootstrap ===\n'
 printf 'Project:     %s\n' "$ROOT_DIR"
 printf 'Build type:  %s\n' "$BUILD_TYPE"
 printf 'Compiler:    %s\n' "$COMPILER"
-printf 'Platform:    Linux-first Phase 5B\n\n'
+printf 'Platform:    Linux-first Phase 5C\n\n'
 
 # Commands required for development. Package installation below supplies them.
 required_commands=(cmake python3 git pkg-config gdb valgrind curl)
@@ -175,7 +175,7 @@ if (( DO_INSTALL )); then
     if ((${#missing_commands[@]} || ${#missing_phase2[@]})); then
         if ! command -v apt-get >/dev/null 2>&1; then
             echo "error: missing development tools: ${missing_commands[*]}" >&2
-            echo "Phase 5B automatic installation currently supports apt-based Linux distributions." >&2
+            echo "Phase 5C automatic installation currently supports apt-based Linux distributions." >&2
             echo "Install a C/C++ compiler, CMake, Ninja, Python 3, Git, pkg-config, GDB, Valgrind, miniaudio headers, and SpeexDSP development files, then rerun." >&2
             exit 1
         fi

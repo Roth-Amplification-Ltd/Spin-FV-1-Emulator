@@ -75,7 +75,24 @@ typedef struct fv1_snapshot {
     uint32_t program_counter;
     uint8_t first_run;
     uint8_t debug_sample_active;
+
+    /* Phase-5C explicit simulated-time coordinates. sample_counter counts
+       completed virtual FV-1 samples. instruction_counter is the number of
+       instructions already executed in the currently active sample, or zero
+       between samples. */
+    uint64_t sample_counter;
+    uint32_t instruction_counter;
 } fv1_snapshot;
+
+typedef struct fv1_state_digest {
+    /* Canonical FNV-1a hashes used only for deterministic conformance/debug
+       comparisons. They are not cryptographic identities. architectural_hash
+       covers datapath/register/LFO/time state; delay_hash covers the semantic
+       24-bit values visible when reading all 32768 delay words. */
+    uint64_t architectural_hash;
+    uint64_t delay_hash;
+    uint64_t sample_counter;
+} fv1_state_digest;
 
 typedef struct fv1_trace {
     uint32_t pc_before;
@@ -88,6 +105,12 @@ typedef struct fv1_trace {
     int32_t lr_after;
     uint8_t skipped;
     uint8_t sample_finished;
+
+    /* Explicit virtual-time position of this instruction. sample_index is the
+       zero-based sample being executed; instruction_index is zero-based within
+       that sample and counts actually executed instructions, not PC values. */
+    uint64_t sample_index;
+    uint32_t instruction_index;
 } fv1_trace;
 
 typedef struct fv1_resource_report {
@@ -136,6 +159,10 @@ fv1_result fv1_debug_step_instruction(fv1_engine* engine, fv1_trace* trace);
 fv1_result fv1_debug_finish_sample(fv1_engine* engine, float* out_l, float* out_r);
 
 void fv1_get_snapshot(const fv1_engine* engine, fv1_snapshot* snapshot);
+
+/* Deterministic diagnostic digest of complete architectural state and delay
+   memory. Intended for differential/conformance testing, not persistence. */
+fv1_result fv1_get_state_digest(const fv1_engine* engine, fv1_state_digest* digest);
 
 /* Read one physical delay-RAM word by absolute 0..32767 address.  The value
    is returned in the same signed Q1.23 representation used by the datapath,

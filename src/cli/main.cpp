@@ -1,4 +1,5 @@
 #include <fv1/fv1.h>
+#include <fv1/conformance.hpp>
 #include <fv1/runtime.hpp>
 #include <fv1/validation.hpp>
 
@@ -187,6 +188,11 @@ unsigned get_uint(const Args& a, const std::string& key, unsigned fallback) {
     return s.empty() ? fallback : static_cast<unsigned>(std::stoul(s));
 }
 
+std::uint64_t get_u64(const Args& a, const std::string& key, std::uint64_t fallback) {
+    const auto s = a.get(key);
+    return s.empty() ? fallback : static_cast<std::uint64_t>(std::stoull(s, nullptr, 0));
+}
+
 fv1_engine* make_engine(const Args& args) {
     fv1_config config{};
     config.virtual_sample_rate = std::stod(args.get("--clock", "32768"));
@@ -329,10 +335,19 @@ Phase 5 validation:
   fv1-cli validation-pack <directory> [--host-rate 48000]
                    [--seconds 5 --level 0.25 --seed N]
 
+Phase 5C engine hardening:
+  fv1-cli conformance <program.spn|bin|hex> [--slot N]
+                   [--samples 256 --seed N] [--clock Hz]
+                   [--no-delay-digest] [--full-delay-24]
+
 Common options:
   --clock Hz            Virtual FV-1 sample/clock rate (default 32768)
   --resampler-quality N SpeexDSP SRC quality 0..10 (default 7)
   --full-delay-24       Diagnostic full-24-bit delay RAM instead of reference reduced precision
+
+Conformance compares the production FV-1 engine instruction-by-instruction
+against an independent slow reference model and reports the first divergent
+state field plus architectural/delay-memory hashes.
 
 Validation workflow:
   1. Generate one deterministic stimulus WAV.
@@ -496,6 +511,20 @@ int cmd_validation_pack(const Args& args) {
     return 0;
 }
 
+int cmd_conformance(const Args& args) {
+    if (args.values.size() < 2) throw Error("conformance requires a program path");
+    const auto image = load_program_image(args.values[1], get_uint(args, "--slot", 0));
+    fv1::ConformanceConfig cfg;
+    cfg.samples = get_uint(args, "--samples", 256);
+    cfg.seed = get_u64(args, "--seed", UINT64_C(0x4656315c2026));
+    cfg.virtual_sample_rate = std::stod(args.get("--clock", "32768"));
+    cfg.delay_model = args.has("--full-delay-24") ? FV1_DELAY_FULL_24 : FV1_DELAY_REFERENCE_16;
+    cfg.compare_delay_memory = !args.has("--no-delay-digest");
+    const auto report = fv1::run_conformance(image.data(), image.size(), cfg);
+    std::cout << fv1::format_conformance_report(report);
+    return report.passed ? 0 : 4;
+}
+
 int cmd_validate(const Args& args) {
     if (args.values.size() < 3) throw Error("validate requires reference.wav and capture.wav");
     fv1::ValidationAudio reference, capture;
@@ -563,6 +592,7 @@ int main(int argc, char** argv) {
         if (cmd == "stimulus") return cmd_stimulus(args);
         if (cmd == "validate") return cmd_validate(args);
         if (cmd == "validation-pack") return cmd_validation_pack(args);
+        if (cmd == "conformance") return cmd_conformance(args);
         if (cmd == "help" || cmd == "--help" || cmd == "-h") { print_usage(); return 0; }
         throw Error("unknown command: " + cmd);
     } catch (const std::exception& e) {

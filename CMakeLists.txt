@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(SpinFV1Emulator VERSION 0.6.0 LANGUAGES C CXX)
+project(SpinFV1Emulator VERSION 0.7.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -9,6 +9,7 @@ option(FV1_BUILD_TESTS "Build emulator tests" ON)
 option(FV1_ENABLE_WARNINGS "Enable strict compiler warnings" ON)
 option(FV1_ENABLE_LIVE_AUDIO "Build Linux realtime audio host when miniaudio is available" ON)
 option(FV1_BUILD_GUI "Build the Qt FV-1 emulator/testbench application" ON)
+option(FV1_BUILD_FUZZERS "Build Clang/libFuzzer hardening targets" OFF)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 find_package(Threads REQUIRED)
@@ -40,6 +41,26 @@ target_include_directories(fv1-core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 fv1_strict_warnings(fv1-core)
+
+# -----------------------------------------------------------------------------
+# Phase 5C: independent golden/reference model.  This target intentionally does
+# not link FV1::core so differential tests do not execute the production model
+# twice through shared implementation code.
+# -----------------------------------------------------------------------------
+add_library(fv1-reference STATIC src/reference/reference_model.cpp)
+add_library(FV1::reference ALIAS fv1-reference)
+target_include_directories(fv1-reference PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+fv1_strict_warnings(fv1-reference)
+
+add_library(fv1-conformance STATIC src/conformance/conformance.cpp)
+add_library(FV1::conformance ALIAS fv1-conformance)
+target_include_directories(fv1-conformance PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+target_link_libraries(fv1-conformance PUBLIC FV1::core FV1::reference)
+fv1_strict_warnings(fv1-conformance)
 
 # -----------------------------------------------------------------------------
 # Phase 2: host/FV-1 clock bridge and interchangeable audio sources
@@ -118,7 +139,7 @@ fv1_strict_warnings(fv1-audio)
 # Command-line tools
 # -----------------------------------------------------------------------------
 add_executable(fv1-cli src/cli/main.cpp)
-target_link_libraries(fv1-cli PRIVATE FV1::core FV1::runtime FV1::validation)
+target_link_libraries(fv1-cli PRIVATE FV1::core FV1::reference FV1::conformance FV1::runtime FV1::validation)
 target_compile_definitions(fv1-cli PRIVATE
     FV1_ASSEMBLER_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/tools/fv1_assembler.py")
 fv1_strict_warnings(fv1-cli)
@@ -161,6 +182,21 @@ if(FV1_BUILD_TESTS)
     add_executable(fv1-core-tests tests/test_core.cpp)
     target_link_libraries(fv1-core-tests PRIVATE FV1::core)
     add_test(NAME fv1-core-tests COMMAND fv1-core-tests)
+
+    add_executable(fv1-numeric-boundary-tests tests/test_numeric_boundaries.cpp)
+    target_link_libraries(fv1-numeric-boundary-tests PRIVATE FV1::core)
+    fv1_strict_warnings(fv1-numeric-boundary-tests)
+    add_test(NAME fv1-numeric-boundary-tests COMMAND fv1-numeric-boundary-tests)
+
+    add_executable(fv1-instruction-contract-tests tests/test_instruction_contract.cpp)
+    target_link_libraries(fv1-instruction-contract-tests PRIVATE FV1::core)
+    fv1_strict_warnings(fv1-instruction-contract-tests)
+    add_test(NAME fv1-instruction-contract-tests COMMAND fv1-instruction-contract-tests)
+
+    add_executable(fv1-conformance-tests tests/test_conformance.cpp)
+    target_link_libraries(fv1-conformance-tests PRIVATE FV1::conformance)
+    fv1_strict_warnings(fv1-conformance-tests)
+    add_test(NAME fv1-conformance-tests COMMAND fv1-conformance-tests)
 
     add_executable(fv1-phase2-tests tests/test_phase2.cpp)
     target_link_libraries(fv1-phase2-tests PRIVATE FV1::runtime FV1::analysis Threads::Threads)
@@ -222,6 +258,11 @@ if(FV1_BUILD_TESTS)
                 $<TARGET_FILE:fv1-cli> ${CMAKE_CURRENT_BINARY_DIR}/phase5b-validation-pack-cli)
     set_tests_properties(phase5b-validation-pack-cli PROPERTIES TIMEOUT 30)
 
+    add_test(NAME phase5c-demo-bank-conformance
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_conformance_examples.py
+                $<TARGET_FILE:fv1-cli> ${CMAKE_CURRENT_SOURCE_DIR}/examples/steal-this-dsp-programs)
+    set_tests_properties(phase5c-demo-bank-conformance PROPERTIES TIMEOUT 90)
+
     if(TARGET fv1-lab)
         add_test(NAME fv1-lab-smoke COMMAND fv1-lab --smoke)
         set_tests_properties(fv1-lab-smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -229,9 +270,34 @@ if(FV1_BUILD_TESTS)
 endif()
 
 # -----------------------------------------------------------------------------
+# Optional Phase-5C fuzzing.  These targets are intentionally opt-in because
+# libFuzzer is a Clang runtime and is not required for normal developer builds.
+# -----------------------------------------------------------------------------
+if(FV1_BUILD_FUZZERS)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "FV1_BUILD_FUZZERS requires Clang/libFuzzer")
+    endif()
+    foreach(target fv1-core fv1-reference fv1-conformance)
+        target_compile_options(${target} PRIVATE
+            -fsanitize=fuzzer-no-link,address,undefined -fno-omit-frame-pointer)
+        # The instrumented static libraries are also linked by normal helper
+        # executables in this build tree (for example fv1-cli).  Propagate the
+        # ASan/UBSan runtimes so an all-target fuzz build remains linkable.
+        target_link_options(${target} INTERFACE
+            -fsanitize=address,undefined -fno-omit-frame-pointer)
+    endforeach()
+    add_executable(fv1-conformance-fuzzer tests/fuzz/fuzz_conformance.cpp)
+    target_link_libraries(fv1-conformance-fuzzer PRIVATE FV1::conformance)
+    target_compile_options(fv1-conformance-fuzzer PRIVATE
+        -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
+    target_link_options(fv1-conformance-fuzzer PRIVATE
+        -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
+endif()
+
+# -----------------------------------------------------------------------------
 # Installation
 # -----------------------------------------------------------------------------
-set(FV1_INSTALL_TARGETS fv1-core fv1-runtime fv1-analysis fv1-validation fv1-debugger fv1-audio fv1-cli fv1-live)
+set(FV1_INSTALL_TARGETS fv1-core fv1-reference fv1-conformance fv1-runtime fv1-analysis fv1-validation fv1-debugger fv1-audio fv1-cli fv1-live)
 if(TARGET fv1-lab)
     list(APPEND FV1_INSTALL_TARGETS fv1-lab)
 endif()

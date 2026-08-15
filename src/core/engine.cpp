@@ -7,6 +7,7 @@
 #include <cstring>
 #include <limits>
 #include <new>
+#include <type_traits>
 
 namespace {
 
@@ -14,6 +15,23 @@ constexpr int32_t Q23_ONE = 1 << 23;
 constexpr int32_t Q23_MAX = Q23_ONE - 1;
 constexpr int32_t Q23_MIN = -Q23_ONE;
 constexpr uint32_t DELAY_MASK = FV1_DELAY_WORDS - 1;
+constexpr uint64_t FNV_OFFSET = UINT64_C(14695981039346656037);
+constexpr uint64_t FNV_PRIME  = UINT64_C(1099511628211);
+
+inline void hash_u8(uint64_t& h, uint8_t value) {
+    h ^= value;
+    h *= FNV_PRIME;
+}
+
+template <typename T>
+inline void hash_integer_le(uint64_t& h, T value) {
+    using U = std::make_unsigned_t<T>;
+    U u = static_cast<U>(value);
+    for (size_t i = 0; i < sizeof(U); ++i) {
+        hash_u8(h, static_cast<uint8_t>(u & static_cast<U>(0xffu)));
+        u >>= 8u;
+    }
+}
 
 constexpr uint8_t OP_RDA  = 0x00;
 constexpr uint8_t OP_RMPA = 0x01;
@@ -251,6 +269,8 @@ struct fv1_engine {
     bool debug_sample_active = false;
     bool debug_sample_finished = false;
     uint32_t debug_pc = 0;
+    uint64_t sample_counter = 0;
+    uint32_t instruction_counter = 0;
 
     int32_t read_delay(int32_t relative) {
         const uint32_t idx = (delay_ptr + static_cast<uint32_t>(relative)) & DELAY_MASK;
@@ -258,7 +278,7 @@ struct fv1_engine {
         if (config.delay_model == FV1_DELAY_FULL_24) {
             v = delay24[idx];
         } else {
-            v = static_cast<int32_t>(delay16[idx]) << 8;
+            v = static_cast<int32_t>(delay16[idx]) * 256;
         }
         lr = sat24(v);
         return lr;
@@ -283,6 +303,7 @@ struct fv1_engine {
         regs[FV1_REG_POT1] = quantize_pot(pot[1]);
         regs[FV1_REG_POT2] = quantize_pot(pot[2]);
         debug_pc = 0;
+        instruction_counter = 0;
         debug_sample_active = true;
         debug_sample_finished = false;
     }
@@ -294,8 +315,10 @@ struct fv1_engine {
         sine[1].tick(regs[FV1_REG_SIN1_RATE]);
         ramp[0].tick(regs[FV1_REG_RMP0_RATE], regs[FV1_REG_RMP0_RANGE]);
         ramp[1].tick(regs[FV1_REG_RMP1_RATE], regs[FV1_REG_RMP1_RANGE]);
+        ++sample_counter;
         debug_sample_finished = true;
         debug_sample_active = false;
+        instruction_counter = 0;
     }
 
     int32_t sine_wide(uint8_t idx, bool cosine) const {
@@ -419,7 +442,7 @@ struct fv1_engine {
                     y = std::log2(std::max(mag, std::numeric_limits<double>::min())) / 16.0;
                 }
                 const int32_t log_q = sat24(static_cast<int64_t>(std::llround(y * Q23_ONE)));
-                acc = sat24(static_cast<int64_t>(mul_q(log_q, d.a, 14)) + (static_cast<int64_t>(d.b) << 13));
+                acc = sat24(static_cast<int64_t>(mul_q(log_q, d.a, 14)) + (static_cast<int64_t>(d.b) * 8192));
                 break;
             }
             case OP_EXP: {
@@ -427,12 +450,12 @@ struct fv1_engine {
                 const double x = static_cast<double>(acc) / Q23_ONE;
                 const double e = x >= 0.0 ? 1.0 : std::exp2(x * 16.0);
                 const int32_t exp_q = sat24(static_cast<int64_t>(std::llround(std::min(e, std::nextafter(1.0, 0.0)) * Q23_ONE)));
-                acc = sat24(static_cast<int64_t>(mul_q(exp_q, d.a, 14)) + (static_cast<int64_t>(d.b) << 13));
+                acc = sat24(static_cast<int64_t>(mul_q(exp_q, d.a, 14)) + (static_cast<int64_t>(d.b) * 8192));
                 break;
             }
             case OP_SOF: {
                 acc_to_pacc();
-                acc = sat24(static_cast<int64_t>(mul_q(acc, d.a, 14)) + (static_cast<int64_t>(d.b) << 13));
+                acc = sat24(static_cast<int64_t>(mul_q(acc, d.a, 14)) + (static_cast<int64_t>(d.b) * 8192));
                 break;
             }
             case OP_AND: {
@@ -473,12 +496,12 @@ struct fv1_engine {
             case OP_WLDS: {
                 if (d.flags == 0) {
                     const uint8_t i = d.lfo & 1u;
-                    regs[i == 0 ? FV1_REG_SIN0_RATE : FV1_REG_SIN1_RATE] = sat24(static_cast<int64_t>(d.a) << 14);
-                    regs[i == 0 ? FV1_REG_SIN0_RANGE : FV1_REG_SIN1_RANGE] = sat24(static_cast<int64_t>(d.b) << 8);
+                    regs[i == 0 ? FV1_REG_SIN0_RATE : FV1_REG_SIN1_RATE] = sat24(static_cast<int64_t>(d.a) * 16384);
+                    regs[i == 0 ? FV1_REG_SIN0_RANGE : FV1_REG_SIN1_RANGE] = sat24(static_cast<int64_t>(d.b) * 256);
                     sine[i].jam();
                 } else {
                     const uint8_t i = d.lfo & 1u;
-                    regs[i == 0 ? FV1_REG_RMP0_RATE : FV1_REG_RMP1_RATE] = sat24(static_cast<int64_t>(d.a) << 8);
+                    regs[i == 0 ? FV1_REG_RMP0_RATE : FV1_REG_RMP1_RATE] = sat24(static_cast<int64_t>(d.a) * 256);
                     regs[i == 0 ? FV1_REG_RMP0_RANGE : FV1_REG_RMP1_RANGE] = static_cast<int32_t>((d.b & 0x3) << 21);
                     ramp[i].jam();
                 }
@@ -508,7 +531,7 @@ struct fv1_engine {
                     acc = sat24(static_cast<int64_t>(acc) + mul_q23(mem, coeff));
                 } else if (d.cho_type == CHO_TYPE_SOF) {
                     acc_to_pacc();
-                    const int32_t offset_q23 = sign_extend(d.u16, 16) << 8;
+                    const int32_t offset_q23 = sign_extend(d.u16, 16) * 256;
                     acc = sat24(static_cast<int64_t>(mul_q23(acc, coeff)) + offset_q23);
                 } else if (d.cho_type == CHO_TYPE_RDAL) {
                     acc_to_pacc();
@@ -517,7 +540,7 @@ struct fv1_engine {
                     } else {
                         const uint8_t i = static_cast<uint8_t>(d.lfo - 2u);
                         const int32_t range_reg = regs[i == 0 ? FV1_REG_RMP0_RANGE : FV1_REG_RMP1_RANGE];
-                        acc = sat24(static_cast<int64_t>(ramp[i].value(range_reg, false)) << 1);
+                        acc = sat24(static_cast<int64_t>(ramp[i].value(range_reg, false)) * 2);
                     }
                 }
                 break;
@@ -526,6 +549,55 @@ struct fv1_engine {
                 break;
         }
         ++pc;
+    }
+
+    fv1_result step_one(fv1_trace* trace) {
+        if (!debug_sample_active || debug_sample_finished) return FV1_ERROR_BAD_STATE;
+
+        if (trace) std::memset(trace, 0, sizeof(*trace));
+        if (debug_pc >= FV1_PROGRAM_WORDS) {
+            const uint64_t sample_index = sample_counter;
+            const uint32_t instruction_index = instruction_counter;
+            end_sample();
+            if (trace) {
+                trace->sample_finished = 1;
+                trace->sample_index = sample_index;
+                trace->instruction_index = instruction_index;
+            }
+            return FV1_OK;
+        }
+
+        const uint64_t sample_index = sample_counter;
+        const uint32_t instruction_index = instruction_counter;
+        const uint32_t pc_before = debug_pc;
+        const DecodedInstruction& d = program[pc_before];
+
+        if (trace) {
+            trace->pc_before = pc_before;
+            trace->raw_instruction = d.raw;
+            trace->opcode = d.opcode;
+            trace->acc_before = acc;
+            trace->sample_index = sample_index;
+            trace->instruction_index = instruction_index;
+        }
+
+        bool skipped = false;
+        execute_instruction(d, debug_pc, skipped);
+        ++instruction_counter;
+
+        if (trace) {
+            trace->pc_after = debug_pc;
+            trace->acc_after = acc;
+            trace->pacc_after = pacc;
+            trace->lr_after = lr;
+            trace->skipped = skipped ? 1 : 0;
+        }
+
+        if (debug_pc >= FV1_PROGRAM_WORDS) {
+            end_sample();
+            if (trace) trace->sample_finished = 1;
+        }
+        return FV1_OK;
     }
 };
 
@@ -561,6 +633,8 @@ void fv1_reset(fv1_engine* e, int clear_delay_ram) {
     e->debug_sample_active = false;
     e->debug_sample_finished = false;
     e->debug_pc = 0;
+    e->sample_counter = 0;
+    e->instruction_counter = 0;
     if (clear_delay_ram) {
         e->delay16.fill(0);
         e->delay24.fill(0);
@@ -615,36 +689,7 @@ fv1_result fv1_debug_begin_sample(fv1_engine* e, float in_l, float in_r) {
 
 fv1_result fv1_debug_step_instruction(fv1_engine* e, fv1_trace* trace) {
     if (!e || !trace) return FV1_ERROR_INVALID_ARGUMENT;
-    if (!e->debug_sample_active || e->debug_sample_finished) return FV1_ERROR_BAD_STATE;
-
-    std::memset(trace, 0, sizeof(*trace));
-    if (e->debug_pc >= FV1_PROGRAM_WORDS) {
-        e->end_sample();
-        trace->sample_finished = 1;
-        return FV1_OK;
-    }
-
-    const uint32_t pc_before = e->debug_pc;
-    const DecodedInstruction& d = e->program[pc_before];
-    trace->pc_before = pc_before;
-    trace->raw_instruction = d.raw;
-    trace->opcode = d.opcode;
-    trace->acc_before = e->acc;
-
-    bool skipped = false;
-    e->execute_instruction(d, e->debug_pc, skipped);
-
-    trace->pc_after = e->debug_pc;
-    trace->acc_after = e->acc;
-    trace->pacc_after = e->pacc;
-    trace->lr_after = e->lr;
-    trace->skipped = skipped ? 1 : 0;
-
-    if (e->debug_pc >= FV1_PROGRAM_WORDS) {
-        e->end_sample();
-        trace->sample_finished = 1;
-    }
-    return FV1_OK;
+    return e->step_one(trace);
 }
 
 fv1_result fv1_debug_finish_sample(fv1_engine* e, float* out_l, float* out_r) {
@@ -664,10 +709,8 @@ fv1_result fv1_process_sample(fv1_engine* e, float in_l, float in_r, float* out_
 
     e->begin_sample(in_l, in_r);
     while (e->debug_sample_active) {
-        uint32_t pc = e->debug_pc;
-        bool skipped = false;
-        e->execute_instruction(e->program[pc], e->debug_pc, skipped);
-        if (e->debug_pc >= FV1_PROGRAM_WORDS) e->end_sample();
+        const fv1_result step_result = e->step_one(nullptr);
+        if (step_result != FV1_OK) return step_result;
     }
     *out_l = q23_to_float(e->regs[FV1_REG_DACL]);
     *out_r = q23_to_float(e->regs[FV1_REG_DACR]);
@@ -704,6 +747,44 @@ void fv1_get_snapshot(const fv1_engine* e, fv1_snapshot* s) {
     s->program_counter = e->debug_pc;
     s->first_run = e->first_run ? 1 : 0;
     s->debug_sample_active = e->debug_sample_active ? 1 : 0;
+    s->sample_counter = e->sample_counter;
+    s->instruction_counter = e->instruction_counter;
+}
+
+fv1_result fv1_get_state_digest(const fv1_engine* e, fv1_state_digest* digest) {
+    if (!e || !digest) return FV1_ERROR_INVALID_ARGUMENT;
+
+    uint64_t arch = FNV_OFFSET;
+    hash_integer_le(arch, e->acc);
+    hash_integer_le(arch, e->pacc);
+    hash_integer_le(arch, e->lr);
+    for (const int32_t reg : e->regs) hash_integer_le(arch, reg);
+    hash_integer_le(arch, e->delay_ptr);
+    for (const auto& lfo : e->sine) {
+        hash_integer_le(arch, lfo.sin);
+        hash_integer_le(arch, lfo.cos);
+    }
+    for (const auto& lfo : e->ramp) hash_integer_le(arch, lfo.pos);
+    hash_u8(arch, e->first_run ? 1u : 0u);
+    hash_u8(arch, e->program_loaded ? 1u : 0u);
+    hash_u8(arch, e->debug_sample_active ? 1u : 0u);
+    hash_u8(arch, e->debug_sample_finished ? 1u : 0u);
+    hash_integer_le(arch, e->debug_pc);
+    hash_integer_le(arch, e->sample_counter);
+    hash_integer_le(arch, e->instruction_counter);
+
+    uint64_t delay = FNV_OFFSET;
+    for (uint32_t i = 0; i < FV1_DELAY_WORDS; ++i) {
+        const int32_t value = e->config.delay_model == FV1_DELAY_FULL_24
+            ? sat24(e->delay24[i])
+            : sat24(static_cast<int32_t>(e->delay16[i]) * 256);
+        hash_integer_le(delay, value);
+    }
+
+    digest->architectural_hash = arch;
+    digest->delay_hash = delay;
+    digest->sample_counter = e->sample_counter;
+    return FV1_OK;
 }
 
 fv1_result fv1_read_delay_word(const fv1_engine* e, uint32_t address, int32_t* value) {
@@ -711,7 +792,7 @@ fv1_result fv1_read_delay_word(const fv1_engine* e, uint32_t address, int32_t* v
     if (e->config.delay_model == FV1_DELAY_FULL_24)
         *value = sat24(e->delay24[address]);
     else
-        *value = sat24(static_cast<int32_t>(e->delay16[address]) << 8);
+        *value = sat24(static_cast<int32_t>(e->delay16[address]) * 256);
     return FV1_OK;
 }
 

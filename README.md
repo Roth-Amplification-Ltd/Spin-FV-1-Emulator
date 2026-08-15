@@ -72,11 +72,11 @@ Requirements:
 - GCC or Clang with C++20 support
 - Python 3 (SpinASM assembler bridge)
 - `libspeexdsp-dev` for production realtime SRC
-- `libminiaudio-dev` for Linux device I/O
+- a pinned miniaudio header installed automatically by `bootstrap-dev.sh` for Linux device I/O
 - Qt 6 Widgets development packages (`qt6-base-dev`, `qt6-base-dev-tools`) for `fv1-lab`
 
 ```bash
-sudo apt install build-essential cmake ninja-build python3 pkg-config libspeexdsp-dev libminiaudio-dev qt6-base-dev qt6-base-dev-tools
+sudo apt install build-essential cmake ninja-build python3 pkg-config curl libspeexdsp-dev qt6-base-dev qt6-base-dev-tools
 
 git clone https://github.com/Roth-Amplification-Ltd/Spin-FV-1-Emulator.git
 cd Spin-FV-1-Emulator
@@ -244,6 +244,31 @@ The physical FV-1 board and capture interface remain the final Phase-5B acceptan
 software does not claim silicon-equivalent accuracy until those measurements are performed.
 
 See [`docs/PHASE5B-HARDWARE-VALIDATION.md`](docs/PHASE5B-HARDWARE-VALIDATION.md) and [`docs/PHASE5B-LINUX-TEST-PLAN.md`](docs/PHASE5B-LINUX-TEST-PLAN.md).
+
+## Phase 5C model hardening and conformance
+
+Phase 5C leaves the finished Qt testbench alone and strengthens the virtual machine underneath it.
+The project now builds an intentionally independent `fv1-reference` implementation plus an
+`fv1-conformance` harness that runs the production and reference engines against identical
+deterministic inputs and compares state after every executed instruction.
+
+```bash
+./build/fv1-cli conformance \
+  examples/steal-this-dsp-programs/00_55_gallon_saint.spn \
+  --samples 256 --seed 0x4656315c2026
+```
+
+Phase 5C also adds explicit virtual sample/instruction coordinates, canonical state/delay digests,
+numeric/time/quantization boundary tests, randomized differential programs, all-eight-demo
+conformance, and an optional Clang/libFuzzer + ASan/UBSan target. The normal headless suite is now
+18 tests; a Qt-enabled build adds the FV-1 Lab smoke test.
+
+Differential agreement is deliberately described as **conformance to the current Hardware Emulation
+Contract**, not proof of undocumented silicon behavior. Physical FV-1 closure remains deferred.
+
+See [`docs/HARDWARE-EMULATION-CONTRACT.md`](docs/HARDWARE-EMULATION-CONTRACT.md),
+[`docs/PHASE5C-MODEL-HARDENING.md`](docs/PHASE5C-MODEL-HARDENING.md), and
+[`docs/FV1-INSTRUCTION-CONFORMANCE.md`](docs/FV1-INSTRUCTION-CONFORMANCE.md).
 
 ## Fidelity policy
 

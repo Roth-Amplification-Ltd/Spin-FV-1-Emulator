@@ -5,7 +5,7 @@
 The fundamental rule is that the virtual DSP never depends on an application framework.
 
 ```text
-frontends (future Qt / SwiftUI)
+frontends (Qt now; Windows/macOS later)
              |
              v
        fv1-runtime       source routing + host/FV-1 SRC
@@ -15,13 +15,36 @@ frontends (future Qt / SwiftUI)
              +----------> fv1-audio (miniaudio host)
              |
              v
-         fv1-core        zero GUI/audio/OS dependencies
+         fv1-core        production virtual FV-1
              ^
              |
        compiler/loader
+
+Verification-only dependency direction:
+
+      fv1-reference      independent readable Model A
+             \            /
+              \          /
+               fv1-conformance
+                     |
+                     +---- compares against fv1-core
 ```
 
 `fv1-core` contains no JUCE, Qt, GTK, miniaudio, PipeWire, CoreAudio or UI types.
+
+
+## Phase-5C reference/conformance boundary
+
+`fv1-reference` is intentionally independent of `fv1-core`: it does not link the production library
+and does not reuse its decoder or arithmetic helpers. `fv1-conformance` is the only layer that knows
+about both models and compares identical deterministic vectors instruction-by-instruction.
+
+Both engines expose explicit virtual sample/instruction coordinates and deterministic state digests.
+Normal production processing and debugger stepping share the same internal production stepper so the
+GUI/debug path cannot quietly acquire different DSP semantics from realtime/offline rendering.
+
+The reference model is an implementation-divergence oracle, **not** a substitute for physical FV-1
+evidence. See `HARDWARE-EMULATION-CONTRACT.md`.
 
 ## Phase-1 virtual sample
 

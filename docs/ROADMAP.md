@@ -104,25 +104,51 @@ Phase-5A exit test passed: identical reference/capture files produced zero delay
 and numerically silent residual; synthetic delayed/gain-scaled captures recovered their planted
 values; the software validation/report pipeline is accepted.
 
-## Phase 5B — Physical FV-1 silicon validation — CURRENT / SILICON MEASUREMENT PENDING
+## Phase 5B — Hardware-validation workflow and UI polish — COMPLETE / SILICON LEG DEFERRED
 
-The Phase-5B software-preparation pass adds the fixture workflow needed before physical captures:
+Phase 5B completed the software/UI preparation needed before physical captures:
 
 - deterministic multi-file hardware-validation packs plus machine-readable manifests;
 - `fv1-cli validation-pack` and matching GUI generation workflow;
-- File → **Paste SpinASM…** scratchpad that compiles through the same assembler/program-image path;
-- software-rendered startup splash with dedicated FV-1/waveform/DIP foreground, real startup milestones,
-  progress percentage, and an optional future theme-tinted monochrome background-image hook;
-- Linux application identity hardening and correctly transparent rounded-badge icon corners;
+- File → **Paste SpinASM…** scratchpad through the same assembler/program-image path;
+- software-rendered startup splash with dedicated FV-1/waveform/DIP foreground and a future
+  theme-tinted monochrome background-image hook;
+- Linux application identity/icon/menu polish;
 - Pop!_OS/Ubuntu 22.04+ bootstrap compatibility, including pinned miniaudio fallback handling.
 
-Actual silicon acceptance remains pending until an FV-1 board and capture interface are connected.
-At that point, use the generated pack unchanged for both virtual and physical runs.
+The physical-silicon leg remains intentionally deferred until an FV-1 board and capture interface are
+available. The generated deterministic packs remain the future hardware stimulus set.
 
-When the audio interface and FV-1 hardware rig are available, feed **the exact same deterministic
-stimulus** to the emulator and the physical board and capture both at one host sample rate.
+## Phase 5C — Model hardening and differential conformance — CURRENT
 
-Quantify and document:
+Strengthen the machine model before copying it into Windows/macOS products. This phase is independent
+of physical hardware and follows the project's Hardware Emulation research methodology.
+
+Implemented in the current hardening pass:
+
+- a written **Hardware Emulation Contract** with explicit observer, fidelity classes and oracle status;
+- independent `fv1-reference` Model A that does not link or reuse the `fv1-core` decoder/arithmetic;
+- reusable `fv1-conformance` differential harness;
+- one production instruction-step state machine shared by normal processing and debugger execution;
+- explicit virtual sample/instruction coordinates in snapshots and traces;
+- deterministic architectural and full delay-memory state digests;
+- instruction-by-instruction state comparison and first-divergence reporting;
+- opcode execution coverage accounting;
+- numeric/quantization/time/reset boundary regressions;
+- randomized differential program testing across both delay models;
+- conformance runs over all eight bundled Steal This DSP programs;
+- Clang/libFuzzer + ASan/UBSan differential fuzz target;
+- explicit documentation of `DOCUMENTED`, `SPEC-DERIVED`, `PROJECT ASSUMPTION` and
+  `SILICON-PENDING` behavior.
+
+Phase 5C must never turn reference/production agreement into a false silicon-equivalence claim.
+RMPA details, proprietary delay representation, LOG/EXP edge transfer, CHO/LFO internals, POT
+hysteresis and converter/analog behavior remain visible physical-validation targets.
+
+### Deferred physical FV-1 acceptance gate
+
+When hardware becomes available, feed the **same deterministic stimuli** to the emulator and physical
+board and quantify:
 
 - ADC/DAC and board latency;
 - waveform residual and correlation;
@@ -134,13 +160,25 @@ Quantify and document:
 - LOG/EXP and instruction edge cases;
 - crystal-derived rates including 46.6084 kHz behavior.
 
-Use measurements to tighten `libfv1-core`; unknown silicon behavior must remain explicitly labeled
-until measured rather than being replaced with invented precision.
+Measured discrepancies become minimal regression vectors and corrections to the machine model, never
+per-effect compatibility hacks.
+
+## Phase 6 — Linux 1.0 / shared-API freeze — NEXT AFTER 5C
+
+Before starting the Windows/macOS products:
+
+- extended sanitizer/fuzzer soak and malformed-input testing;
+- warning-clean GCC + Clang builds;
+- fresh-install and audio-device failure/hot-plug checks on supported Linux targets;
+- package/version/About/release metadata cleanup;
+- high-DPI and application-data/configuration-path acceptance;
+- freeze the reusable `fv1-core`, `fv1-reference`, `fv1-conformance`, `fv1-runtime`, `fv1-analysis`,
+  `fv1-audio`, `fv1-debugger`, `fv1-validation` and compiler/loader boundaries.
 
 ## Future dedicated FV-1 IDE — SEPARATE APPLICATION
 
 A future IDE may consume `fv1-core`, `fv1-runtime`, `fv1-analysis`, `fv1-audio`, `fv1-debugger`,
-`fv1-validation`, and the SpinASM compiler/loader boundary. Source editors, source-mapped
+`fv1-validation`, `fv1-reference`, `fv1-conformance`, and the SpinASM compiler/loader boundary. Source editors, source-mapped
 breakpoints, project management and EEPROM-bank authoring belong there rather than becoming the
 primary identity of this emulator/testbench.
 
