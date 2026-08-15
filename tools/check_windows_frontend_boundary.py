@@ -48,7 +48,7 @@ def main() -> int:
             print(f"FAIL: {failure}", file=sys.stderr)
         return 1
 
-    print(f"Phase 7A Windows frontend boundary OK: {len(files)} source/header files, public SDK only")
+    print(f"Phase 7 Windows frontend boundary OK: {len(files)} source/header files, public SDK only")
     return 0
 
 

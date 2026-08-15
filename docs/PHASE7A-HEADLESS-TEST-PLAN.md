@@ -1,5 +1,7 @@
 # Phase 7A headless test plan
 
+> Historical Phase 7A foundation note: this document records the first Windows-shell checkpoint. Current Windows work is consolidated under `docs/PHASE7-WINDOWS-FRONTEND.md` as **Phase 7**.
+
 1. Configure a clean non-Qt build.
 2. Build the full headless target set with GCC or Clang.
 3. Run the complete existing CTest suite plus `fv1-native-frontend-session-tests`.

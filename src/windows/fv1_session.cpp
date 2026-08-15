@@ -65,6 +65,7 @@ fv1_sdk_result Session::load_program(const std::uint8_t* bytes, std::size_t size
     const auto result = fv1_sdk_engine_load_program(engine_, bytes, size);
     if (result == FV1_SDK_OK) {
         program_loaded_ = true;
+        std::copy_n(bytes, program_image_.size(), program_image_.begin());
         probe_phase_ = 0.0;
         last_error_.clear();
     } else {
@@ -87,8 +88,10 @@ fv1_sdk_result Session::reset(bool clear_delay_ram) {
 
 fv1_sdk_result Session::set_pot(std::uint32_t index, float value) {
     if (!engine_) return FV1_SDK_ERROR_BAD_STATE;
+    if (index >= pot_values_.size()) return FV1_SDK_ERROR_INVALID_ARGUMENT;
     value = std::clamp(value, 0.0F, 1.0F);
     const auto result = fv1_sdk_engine_set_pot(engine_, index, value);
+    if (result == FV1_SDK_OK) pot_values_[index] = value;
     if (result != FV1_SDK_OK) remember_error(result, "set POT");
     return result;
 }

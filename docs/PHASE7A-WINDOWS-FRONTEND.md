@@ -1,5 +1,7 @@
 # Phase 7A — Native Windows frontend foundation
 
+> Historical Phase 7A foundation note: this document records the first Windows-shell checkpoint. Current Windows work is consolidated under `docs/PHASE7-WINDOWS-FRONTEND.md` as **Phase 7**.
+
 ## Objective
 
 Begin the first non-Linux product frontend **without cloning or weakening the emulator model**.
@@ -43,7 +45,7 @@ The frontend may use `fv1/sdk.h` and, in a later debugger increment, `fv1/sdk_de
 ## Audio scope
 
 Phase 7A **does not claim realtime Windows audio acceptance**. It probes the native WASAPI endpoint
-contract and keeps the emulator running against a deterministic virtual stimulus. Phase 7B should add
+contract and keeps the emulator running against a deterministic virtual stimulus. The consolidated Phase 7 adds
 full-duplex event-driven WASAPI streaming, explicit host↔virtual-chip sample-rate conversion, device
 selection/recovery, underrun/overrun telemetry, and realtime soak tests without changing the SDK ABI.
 
@@ -70,4 +72,4 @@ Windows/MSVC gate after push:
 - Phase 6C Linux, hardening, and SDK-portability gates remain green;
 - no public SDK symbol/layout change occurs.
 
-Only then should Phase 7B realtime WASAPI work begin.
+That gate is the handoff into the consolidated Phase 7 realtime WASAPI implementation.

@@ -28,6 +28,8 @@ public:
     [[nodiscard]] bool ready() const noexcept { return engine_ != nullptr; }
     [[nodiscard]] bool program_loaded() const noexcept { return program_loaded_; }
     [[nodiscard]] std::string_view last_error() const noexcept { return last_error_; }
+    [[nodiscard]] const std::array<std::uint8_t, FV1_SDK_PROGRAM_BYTES>& program_image() const noexcept { return program_image_; }
+    [[nodiscard]] const std::array<float, 3>& pot_values() const noexcept { return pot_values_; }
 
     CompileOutcome compile_and_load(std::string_view source_utf8);
     fv1_sdk_result load_program(const std::uint8_t* bytes, std::size_t size);
@@ -50,6 +52,8 @@ private:
     double probe_phase_{};
     double virtual_sample_rate_{32768.0};
     std::string last_error_;
+    std::array<std::uint8_t, FV1_SDK_PROGRAM_BYTES> program_image_{};
+    std::array<float, 3> pot_values_{0.5F, 0.5F, 0.5F};
 };
 
 } // namespace fv1::windows_frontend

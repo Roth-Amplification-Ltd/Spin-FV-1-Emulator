@@ -227,32 +227,32 @@ to the Linux GUI's private C++ architecture. Source editors, source-mapped break
 management and EEPROM-bank authoring belong there rather than becoming the primary identity of this
 emulator/testbench.
 
-## Later platform frontends
+## Later platform frontend
 
-After the SDK v1 boundary is frozen and the Linux release candidate is accepted:
-
-- Windows desktop frontend using native Windows UI/audio facilities;
-- native macOS shell using SwiftUI + Metal/MetalKit + CoreAudio/AVAudioEngine;
-- both consume the same platform-neutral `FV1SDK::sdk` C ABI while owning their platform UI/audio
-  integration independently.
+After the Windows milestone and SDK-v1 ratification gate are accepted, the next large platform
+frontend is a native macOS shell using SwiftUI + Metal/MetalKit + CoreAudio/AVAudioEngine. It should
+consume the same platform-neutral `FV1SDK::sdk` C ABI and own its platform UI/audio integration
+independently.
 
 DAW/VST/AU/CLAP plugins are **not part of this standalone application project**. If desired later,
 they should be separate consumers of the emulator libraries.
 
-## Phase 7A — Native Windows frontend foundation — IN DEVELOPMENT
+## Phase 7 — Native Windows frontend — CURRENT
 
-Phase 7A starts the first native non-Linux product client while preserving the Phase-6 SDK boundary.
-It is gated on final Phase-6C ABI-v1 ratification and does not change the machine model or public ABI.
+The Windows work is intentionally consolidated into one milestone rather than split into 7A/7B/7C.
+It consumes only the public FV-1 SDK and owns all Win32/WASAPI integration independently.
 
-Initial deliverables:
+Delivered in the Phase-7 candidate:
 
-- Unicode Win32 FV-1 Lab shell with the accepted wide engineering-dashboard direction;
-- public `FV1::sdk` as the **only** emulator dependency;
-- native SpinASM/program loading, compile/load, POT controls, reset, snapshot/resource instrumentation;
-- deterministic virtual-input/output scope so the shell is operational before device streaming;
-- native WASAPI default-endpoint and mix-format discovery;
-- MSVC shared/static frontend CI;
-- no Qt/miniaudio/Linux-runtime/private-core coupling.
+- native Unicode Win32 FV-1 Lab shell;
+- SpinASM/raw-program loading, POT/reset control and offline chip inspection;
+- event-driven full-duplex WASAPI at the virtual FV-1's 32.768 kHz stereo stream format;
+- Windows Audio Engine shared-mode conversion between endpoint format/rate and the virtual chip;
+- realtime output scope and stream/xrun/recovery telemetry;
+- default-device change and endpoint-invalidation recovery;
+- public-SDK-only realtime processing layer with deep snapshot/debug work kept off the audio thread;
+- MSVC shared/static product build, test, install and staging gates.
 
-Phase 7B should add event-driven full-duplex WASAPI streaming, explicit host↔virtual-FV-1 SRC,
-device selection/recovery, clock/xrun telemetry and soak testing. The SDK ABI should not need to change.
+Phase 7 closes when the Native Windows Frontend and SDK Portability Windows jobs are green on the
+combined candidate. The next large milestone is the native macOS frontend, not another Windows
+subphase.

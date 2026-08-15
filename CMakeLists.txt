@@ -270,12 +270,13 @@ if(FV1_SDK_ONLY)
 endif()
 
 # -----------------------------------------------------------------------------
-# Phase 7A: native Windows frontend SDK boundary.  The session wrapper is kept
+# Phase 7: native Windows frontend SDK boundary.  The session wrapper is kept
 # platform-neutral so Linux CI can continuously prove it uses only the public
 # SDK.  The actual Win32 shell is added later under WIN32.
 # -----------------------------------------------------------------------------
 add_library(fv1-windows-frontend-session STATIC
-    src/windows/fv1_session.cpp)
+    src/windows/fv1_session.cpp
+    src/windows/realtime_processor.cpp)
 target_include_directories(fv1-windows-frontend-session PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/windows)
 target_link_libraries(fv1-windows-frontend-session PUBLIC FV1::sdk)
@@ -388,7 +389,7 @@ target_link_libraries(fv1-live PRIVATE FV1::audio FV1::analysis FV1::runtime FV1
 fv1_strict_warnings(fv1-live)
 
 # -----------------------------------------------------------------------------
-# Phase 7A: native Windows product frontend.  This target deliberately links
+# Phase 7: complete native Windows product frontend.  This target deliberately links
 # only the public SDK wrapper plus Windows system libraries; it does not reuse
 # Qt, the Linux runtime/audio stack, or private emulator libraries.
 # -----------------------------------------------------------------------------
@@ -400,6 +401,7 @@ if(WIN32 AND FV1_BUILD_WINDOWS_FRONTEND)
     add_executable(fv1-lab-win32 WIN32
         src/windows/main.cpp
         src/windows/wasapi_probe.cpp
+        src/windows/wasapi_engine.cpp
         ${CMAKE_CURRENT_BINARY_DIR}/fv1-lab-win32.rc)
     target_include_directories(fv1-lab-win32 PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/windows
@@ -416,9 +418,10 @@ if(WIN32 AND FV1_BUILD_WINDOWS_FRONTEND)
         comctl32
         comdlg32
         ole32
-        uuid)
+        uuid
+        avrt)
     fv1_strict_warnings(fv1-lab-win32)
-    message(STATUS "Phase 7A native Windows frontend enabled")
+    message(STATUS "Phase 7 native Windows frontend enabled")
 endif()
 
 # -----------------------------------------------------------------------------
@@ -505,7 +508,16 @@ if(FV1_BUILD_TESTS)
     fv1_strict_warnings(fv1-native-frontend-session-tests)
     add_test(NAME fv1-native-frontend-session-tests
         COMMAND fv1-native-frontend-session-tests)
-    add_test(NAME phase7a-windows-frontend-boundary
+
+    add_executable(fv1-native-frontend-realtime-tests
+        tests/windows/test_windows_realtime_processor.cpp)
+    target_link_libraries(fv1-native-frontend-realtime-tests PRIVATE
+        fv1-windows-frontend-session
+        FV1::sdk)
+    fv1_strict_warnings(fv1-native-frontend-realtime-tests)
+    add_test(NAME fv1-native-frontend-realtime-tests
+        COMMAND fv1-native-frontend-realtime-tests)
+    add_test(NAME phase7-windows-frontend-boundary
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_windows_frontend_boundary.py)
 
     add_test(NAME native-spinasm-python-equivalence

@@ -1,10 +1,11 @@
 #include "fv1_session.hpp"
 #include "resource.h"
 #include "wasapi_probe.hpp"
+#include "wasapi_engine.hpp"
 
+#include <windows.h>
 #include <commctrl.h>
 #include <commdlg.h>
-#include <windows.h>
 
 #include <algorithm>
 #include <array>
@@ -27,7 +28,7 @@ namespace {
 using fv1::windows_frontend::Session;
 
 constexpr wchar_t kWindowClass[] = L"RothFV1LabNativeWindow";
-constexpr wchar_t kWindowTitle[] = L"FV-1 Lab — Native Windows Preview";
+constexpr wchar_t kWindowTitle[] = L"FV-1 Lab — Native Windows";
 constexpr UINT_PTR kProbeTimer = 1u;
 constexpr UINT kProbeIntervalMs = 80u;
 constexpr int kMargin = 10;
@@ -38,6 +39,7 @@ struct AppState {
     HWND source{};
     HWND compile_button{};
     HWND reset_button{};
+    HWND audio_button{};
     std::array<HWND, 3> pots{};
     HWND scope{};
     HWND resources{};
@@ -45,6 +47,7 @@ struct AppState {
     HWND console{};
     HWND status{};
     std::vector<float> scope_samples;
+    fv1::windows_frontend::WasapiAudioEngine audio;
 };
 
 std::wstring utf8_to_wide(std::string_view input) {
@@ -123,6 +126,41 @@ bool read_binary_file(const std::wstring& path, std::vector<std::uint8_t>& outpu
     return true;
 }
 
+void stop_realtime_audio(AppState& state) {
+    if (!state.audio.active()) return;
+    state.audio.stop();
+    if (state.audio_button) set_text(state.audio_button, L"Start Audio");
+    append_console(state, L"Realtime WASAPI stream stopped.");
+    set_text(state.status, L"READY • realtime audio stopped");
+}
+
+void start_realtime_audio(AppState& state) {
+    if (!state.session.program_loaded()) {
+        append_console(state, L"Load or compile an FV-1 program before starting realtime audio.");
+        return;
+    }
+    if (!state.audio.start(state.session.program_image(), state.session.pot_values())) {
+        append_console(state, L"Unable to start the realtime WASAPI worker.");
+        return;
+    }
+    if (state.audio_button) set_text(state.audio_button, L"Stop Audio");
+    append_console(state, L"Starting event-driven WASAPI capture → FV1SDK → render path at virtual 32.768 kHz.");
+    set_text(state.status, L"WASAPI STARTING • waiting for default capture/render endpoints");
+}
+
+void toggle_realtime_audio(AppState& state) {
+    if (state.audio.active()) stop_realtime_audio(state);
+    else start_realtime_audio(state);
+}
+
+void restart_realtime_audio_if_active(AppState& state) {
+    if (!state.audio.active()) return;
+    state.audio.stop();
+    (void)state.audio.start(state.session.program_image(), state.session.pot_values());
+    if (state.audio_button) set_text(state.audio_button, L"Stop Audio");
+    append_console(state, L"Realtime audio restarted with the newly loaded FV-1 program.");
+}
+
 void compile_source(AppState& state) {
     const std::string source = wide_to_utf8(get_text(state.source));
     const auto result = state.session.compile_and_load(source);
@@ -133,7 +171,8 @@ void compile_source(AppState& state) {
             message << L", highest static delay address " << result.report.highest_delay_address;
         }
         append_console(state, message.str());
-        set_text(state.status, L"PROGRAM LOADED • deterministic native probe active");
+        set_text(state.status, L"PROGRAM LOADED");
+        restart_realtime_audio_if_active(state);
     } else {
         std::wstring message = L"Compile/load failed: ";
         message += utf8_to_wide(fv1_sdk_result_string(result.result));
@@ -148,27 +187,56 @@ void compile_source(AppState& state) {
 
 void update_telemetry(AppState& state) {
     if (!state.session.program_loaded()) return;
-    if (state.session.run_probe(256u, state.scope_samples) == FV1_SDK_OK) {
-        InvalidateRect(state.scope, nullptr, FALSE);
-    }
 
-    fv1_sdk_snapshot_v1 snapshot{};
-    if (state.session.snapshot(snapshot) == FV1_SDK_OK) {
+    if (state.audio.active()) {
+        state.audio.copy_scope(state.scope_samples, 1024u);
+        InvalidateRect(state.scope, nullptr, FALSE);
+        const auto audio = state.audio.status();
         std::wostringstream text;
-        text << L"VIRTUAL CHIP\r\n"
-             << L"sample       " << snapshot.sample_counter << L"\r\n"
-             << L"PC           " << snapshot.program_counter << L"\r\n"
-             << L"instruction  " << snapshot.instruction_counter << L"\r\n"
-             << L"ACC          " << snapshot.acc << L"\r\n"
-             << L"PACC         " << snapshot.pacc << L"\r\n"
-             << L"LR           " << snapshot.lr << L"\r\n"
-             << L"ADDR_PTR     " << snapshot.delay_pointer << L"\r\n"
-             << L"DACL         " << snapshot.regs[FV1_SDK_REG_DACL] << L"\r\n"
-             << L"DACR         " << snapshot.regs[FV1_SDK_REG_DACR] << L"\r\n"
-             << L"POT0         " << snapshot.regs[FV1_SDK_REG_POT0] << L"\r\n"
-             << L"POT1         " << snapshot.regs[FV1_SDK_REG_POT1] << L"\r\n"
-             << L"POT2         " << snapshot.regs[FV1_SDK_REG_POT2];
+        text << L"REALTIME WINDOWS AUDIO\r\n"
+             << L"state        " << (audio.running ? L"RUNNING" : L"RECOVERING") << L"\r\n"
+             << L"stream rate  32768 Hz / stereo float\r\n"
+             << L"capture      " << (audio.capture_name.empty() ? L"<opening>" : audio.capture_name) << L"\r\n"
+             << L"render       " << (audio.render_name.empty() ? L"<opening>" : audio.render_name) << L"\r\n"
+             << L"capt frames  " << audio.capture_frames << L"\r\n"
+             << L"rend frames  " << audio.render_frames << L"\r\n"
+             << L"underflow f  " << audio.output_underruns << L"\r\n"
+             << L"overflow f   " << audio.output_overruns << L"\r\n"
+             << L"recoveries   " << audio.recoveries << L"\r\n\r\n"
+             << L"Deep register snapshot is paused while realtime audio is active so the WASAPI thread uses only the SDK's realtime-safe processing boundary.";
         set_text(state.snapshot, text.str());
+
+        std::wostringstream status;
+        status << (audio.running ? L"WASAPI LIVE" : L"WASAPI RECOVERING")
+               << L" • in " << audio.capture_frames
+               << L" • out " << audio.render_frames
+               << L" • under " << audio.output_underruns
+               << L" • over " << audio.output_overruns;
+        if (!audio.last_error.empty()) status << L" • " << audio.last_error;
+        set_text(state.status, status.str());
+    } else {
+        if (state.session.run_probe(256u, state.scope_samples) == FV1_SDK_OK) {
+            InvalidateRect(state.scope, nullptr, FALSE);
+        }
+
+        fv1_sdk_snapshot_v1 snapshot{};
+        if (state.session.snapshot(snapshot) == FV1_SDK_OK) {
+            std::wostringstream text;
+            text << L"VIRTUAL CHIP\r\n"
+                 << L"sample       " << snapshot.sample_counter << L"\r\n"
+                 << L"PC           " << snapshot.program_counter << L"\r\n"
+                 << L"instruction  " << snapshot.instruction_counter << L"\r\n"
+                 << L"ACC          " << snapshot.acc << L"\r\n"
+                 << L"PACC         " << snapshot.pacc << L"\r\n"
+                 << L"LR           " << snapshot.lr << L"\r\n"
+                 << L"ADDR_PTR     " << snapshot.delay_pointer << L"\r\n"
+                 << L"DACL         " << snapshot.regs[FV1_SDK_REG_DACL] << L"\r\n"
+                 << L"DACR         " << snapshot.regs[FV1_SDK_REG_DACR] << L"\r\n"
+                 << L"POT0         " << snapshot.regs[FV1_SDK_REG_POT0] << L"\r\n"
+                 << L"POT1         " << snapshot.regs[FV1_SDK_REG_POT1] << L"\r\n"
+                 << L"POT2         " << snapshot.regs[FV1_SDK_REG_POT2];
+            set_text(state.snapshot, text.str());
+        }
     }
 
     fv1_sdk_resource_report_v1 report{};
@@ -207,7 +275,7 @@ void probe_wasapi(AppState& state) {
     print_endpoint(L"capture", probe.capture);
     print_endpoint(L"render", probe.render);
     if (!probe.diagnostic.empty()) append_console(state, L"  " + probe.diagnostic);
-    append_console(state, L"  Phase 7A probes native endpoints; realtime duplex streaming remains the next Windows-audio increment.");
+    append_console(state, L"  Phase 7 uses these default endpoints for the event-driven realtime FV-1 stream.");
 }
 
 HMENU build_menu() {
@@ -220,6 +288,9 @@ HMENU build_menu() {
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"File");
 
     HMENU audio = CreatePopupMenu();
+    AppendMenuW(audio, MF_STRING, IDM_AUDIO_START, L"Start realtime audio");
+    AppendMenuW(audio, MF_STRING, IDM_AUDIO_STOP, L"Stop realtime audio");
+    AppendMenuW(audio, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(audio, MF_STRING, IDM_AUDIO_PROBE, L"Probe default WASAPI endpoints");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(audio), L"Audio");
 
@@ -241,6 +312,7 @@ void create_controls(HWND window, AppState& state) {
     state.source = make_control(window, L"EDIT", L"", edit_style, IDC_SOURCE, WS_EX_CLIENTEDGE);
     state.compile_button = make_control(window, L"BUTTON", L"Compile && Load", BS_PUSHBUTTON, IDC_COMPILE_LOAD);
     state.reset_button = make_control(window, L"BUTTON", L"Reset chip", BS_PUSHBUTTON, IDC_RESET);
+    state.audio_button = make_control(window, L"BUTTON", L"Start Audio", BS_PUSHBUTTON, IDC_AUDIO_TOGGLE);
 
     for (std::size_t i = 0; i < state.pots.size(); ++i) {
         state.pots[i] = make_control(window, TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_AUTOTICKS,
@@ -260,13 +332,13 @@ void create_controls(HWND window, AppState& state) {
     state.status = make_control(window, L"STATIC", L"READY", SS_LEFT | WS_BORDER, IDC_STATUS);
 
     const wchar_t* default_source =
-        L"; Native Windows Phase 7A default program\r\n"
+        L"; Native Windows Phase 7 default program\r\n"
         L"RDAX ADCL, 1.0\r\n"
         L"WRAX DACL, 0\r\n"
         L"RDAX ADCR, 1.0\r\n"
         L"WRAX DACR, 0\r\n";
     set_text(state.source, default_source);
-    append_console(state, L"FV-1 Lab native Windows frontend initialized.");
+    append_console(state, L"FV-1 Lab native Windows frontend initialized: realtime WASAPI + public FV1SDK boundary.");
     append_console(state, L"Emulator boundary: public FV1SDK C ABI only.");
     compile_source(state);
     probe_wasapi(state);
@@ -293,9 +365,10 @@ void layout(HWND window, AppState& state) {
     const int pot_block = (pot_h * 3) + (kGap * 2);
     const int source_h = std::max(120, body_h - button_h - pot_block - (kGap * 4));
     MoveWindow(state.source, x_left, y, left_w, source_h, TRUE);
-    const int button_w = (left_w - kGap) / 2;
+    const int button_w = (left_w - (2 * kGap)) / 3;
     MoveWindow(state.compile_button, x_left, y + source_h + kGap, button_w, button_h, TRUE);
     MoveWindow(state.reset_button, x_left + button_w + kGap, y + source_h + kGap, button_w, button_h, TRUE);
+    MoveWindow(state.audio_button, x_left + (2 * (button_w + kGap)), y + source_h + kGap, button_w, button_h, TRUE);
     int pot_y = y + source_h + kGap + button_h + kGap;
     for (auto pot : state.pots) {
         MoveWindow(pot, x_left, pot_y, left_w, pot_h, TRUE);
@@ -356,8 +429,10 @@ void draw_scope(const DRAWITEMSTRUCT& draw, const AppState& state) {
     RECT label = rect;
     label.left += 8;
     label.top += 6;
-    DrawTextW(dc, L"VIRTUAL OUTPUT SCOPE • 440 Hz deterministic probe", -1, &label,
-              DT_LEFT | DT_TOP | DT_SINGLELINE);
+    const wchar_t* scope_label = state.audio.active()
+        ? L"REALTIME FV-1 OUTPUT SCOPE • WASAPI capture → SDK → render"
+        : L"VIRTUAL OUTPUT SCOPE • 440 Hz deterministic probe";
+    DrawTextW(dc, scope_label, -1, &label, DT_LEFT | DT_TOP | DT_SINGLELINE);
 }
 
 void on_open_spinasm(HWND window, AppState& state) {
@@ -381,7 +456,10 @@ void on_open_program(HWND window, AppState& state) {
         return;
     }
     const auto result = state.session.load_program(program.data(), program.size());
-    if (result == FV1_SDK_OK) append_console(state, L"512-byte FV-1 program image loaded.");
+    if (result == FV1_SDK_OK) {
+        append_console(state, L"512-byte FV-1 program image loaded.");
+        restart_realtime_audio_if_active(state);
+    }
     else append_console(state, L"Program load failed: " + utf8_to_wide(fv1_sdk_result_string(result)));
 }
 
@@ -407,6 +485,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
                         const LRESULT position = SendMessageW(control, TBM_GETPOS, 0, 0);
                         state->session.set_pot(static_cast<std::uint32_t>(i),
                                                static_cast<float>(position) / 1000.0F);
+                        state->audio.set_pots(state->session.pot_values());
                         return 0;
                     }
                 }
@@ -417,13 +496,22 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             switch (LOWORD(wparam)) {
                 case IDC_COMPILE_LOAD: compile_source(*state); return 0;
                 case IDC_RESET:
+                    if (state->audio.active()) {
+                        restart_realtime_audio_if_active(*state);
+                        append_console(*state, L"Realtime FV-1 engine reset by stream restart; delay RAM cleared.");
+                    }
                     if (state->session.reset(true) == FV1_SDK_OK) append_console(*state, L"Virtual chip reset; delay RAM cleared.");
                     return 0;
+                case IDC_AUDIO_TOGGLE: toggle_realtime_audio(*state); return 0;
                 case IDM_FILE_OPEN_SPINASM: on_open_spinasm(window, *state); return 0;
                 case IDM_FILE_OPEN_PROGRAM: on_open_program(window, *state); return 0;
+                case IDM_AUDIO_START:
+                    if (!state->audio.active()) start_realtime_audio(*state);
+                    return 0;
+                case IDM_AUDIO_STOP: stop_realtime_audio(*state); return 0;
                 case IDM_AUDIO_PROBE: probe_wasapi(*state); return 0;
                 case IDM_HELP_ABOUT: {
-                    std::wstring text = L"FV-1 Lab — Native Windows Preview\n\nVersion ";
+                    std::wstring text = L"FV-1 Lab — Native Windows\n\nVersion ";
                     text += utf8_to_wide(FV1_PRODUCT_VERSION_STRING);
                     text += L"\nFV1SDK ABI 1.0 candidate\n\nCreated & engineered by Adam Vadala-Roth\nRoth Amplification LTD\nMozilla Public License 2.0\n© 2026 Roth Amplification LTD";
                     MessageBoxW(window, text.c_str(), L"About FV-1 Lab", MB_OK | MB_ICONINFORMATION);
@@ -447,6 +535,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             break;
         case WM_DESTROY:
             KillTimer(window, kProbeTimer);
+            if (state) state->audio.stop();
             PostQuitMessage(0);
             return 0;
         default:

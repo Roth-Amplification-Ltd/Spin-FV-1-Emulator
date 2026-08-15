@@ -68,11 +68,24 @@ if(WIN32)
         endforeach()
     endif()
 endif()
-execute_process(
-    COMMAND "${host}"
-    RESULT_VARIABLE run_result
-    OUTPUT_VARIABLE run_stdout
-    ERROR_VARIABLE run_stderr)
+if(WIN32 AND SDK_BUILD_SHARED)
+    # The external consumer links the SDK from the staged install prefix.
+    # On Windows the loader does not search that prefix automatically, so put
+    # the staged bin directory on PATH for this one smoke-test process. This
+    # validates the installed DLL rather than accidentally finding a build-tree
+    # copy or depending on a machine-global installation.
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" -E env "PATH=${prefix}/bin;$ENV{PATH}" "${host}"
+        RESULT_VARIABLE run_result
+        OUTPUT_VARIABLE run_stdout
+        ERROR_VARIABLE run_stderr)
+else()
+    execute_process(
+        COMMAND "${host}"
+        RESULT_VARIABLE run_result
+        OUTPUT_VARIABLE run_stdout
+        ERROR_VARIABLE run_stderr)
+endif()
 if(NOT run_result EQUAL 0)
     message(FATAL_ERROR "external SDK consumer run failed:\n${run_stdout}\n${run_stderr}")
 endif()

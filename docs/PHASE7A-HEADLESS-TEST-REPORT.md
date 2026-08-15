@@ -1,5 +1,7 @@
 # Phase 7A — Headless Test Report
 
+> Historical Phase 7A foundation note: this document records the first Windows-shell checkpoint. Current Windows work is consolidated under `docs/PHASE7-WINDOWS-FRONTEND.md` as **Phase 7**.
+
 Date: 2026-08-15
 Baseline: Phase 6C `1.0.0-rc1` / commit candidate `e69dbbf3751872c09ff00cd9431b41db8f82de55`
 
@@ -83,4 +85,4 @@ Likewise ABI v1 remains a freeze candidate until the corrected Phase-6C SDK Port
 - Public SDK boundary scan: PASS
 - Reviewed ABI/public files unchanged: PASS
 - Native MSVC Win32 compile/run: PENDING REMOTE CI
-- Realtime full-duplex WASAPI: intentionally deferred to Phase 7B
+- Realtime full-duplex WASAPI: deferred at this historical checkpoint; delivered by consolidated Phase 7
