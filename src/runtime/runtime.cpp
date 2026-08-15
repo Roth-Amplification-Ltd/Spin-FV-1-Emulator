@@ -1,4 +1,5 @@
 #include <fv1/runtime.hpp>
+#include <fv1/sdk.h>
 
 #include <algorithm>
 #include <atomic>
@@ -209,12 +210,14 @@ private:
 class Runtime::Impl {
 public:
     RuntimeConfig cfg{};
-    fv1_engine* chip{};
+    fv1_sdk_engine* chip{};
     StereoResampler host_to_fv1;
     StereoResampler fv1_to_host;
     std::vector<StereoFrame> input_scratch;
     std::vector<StereoFrame> fv1_input;
     std::vector<StereoFrame> fv1_output;
+    std::vector<float> sdk_input_interleaved;
+    std::vector<float> sdk_output_interleaved;
     std::vector<StereoFrame> host_resampled;
     FrameRing output_ring;
     std::atomic<std::uint64_t> host_input_frames{0};
@@ -223,7 +226,7 @@ public:
     std::atomic<std::uint64_t> underrun_frames{0};
     std::atomic<std::uint64_t> overrun_frames{0};
 
-    ~Impl() { if (chip) fv1_destroy(chip); }
+    ~Impl() { if (chip) fv1_sdk_engine_destroy(chip); }
 };
 
 Runtime::Runtime() : impl_(std::make_unique<Impl>()) {}
@@ -236,10 +239,13 @@ bool Runtime::prepare(const RuntimeConfig& config) {
         config.max_host_block_frames == 0) return false;
 
     impl_->cfg = config;
-    if (impl_->chip) { fv1_destroy(impl_->chip); impl_->chip = nullptr; }
-    const fv1_config core_cfg{config.fv1_sample_rate, config.delay_model};
-    impl_->chip = fv1_create(&core_cfg);
-    if (!impl_->chip) return false;
+    if (impl_->chip) { fv1_sdk_engine_destroy(impl_->chip); impl_->chip = nullptr; }
+    fv1_sdk_engine_config_v1 sdk_cfg;
+    fv1_sdk_engine_config_v1_init(&sdk_cfg);
+    sdk_cfg.virtual_sample_rate = config.fv1_sample_rate;
+    sdk_cfg.delay_model = config.delay_model == FV1_DELAY_FULL_24
+        ? FV1_SDK_DELAY_FULL_24 : FV1_SDK_DELAY_REFERENCE_16;
+    if (fv1_sdk_engine_create_v1(&sdk_cfg, &impl_->chip) != FV1_SDK_OK) return false;
 
     if (!impl_->host_to_fv1.init(config.host_sample_rate, config.fv1_sample_rate,
                                  config.resampler_quality)) return false;
@@ -256,6 +262,8 @@ bool Runtime::prepare(const RuntimeConfig& config) {
     impl_->input_scratch.assign(config.max_host_block_frames, {});
     impl_->fv1_input.assign(fv1_capacity, {});
     impl_->fv1_output.assign(fv1_capacity, {});
+    impl_->sdk_input_interleaved.assign(fv1_capacity * 2u, 0.0f);
+    impl_->sdk_output_interleaved.assign(fv1_capacity * 2u, 0.0f);
     impl_->host_resampled.assign(host_capacity, {});
     impl_->output_ring.prepare(std::max<std::size_t>(host_capacity * 4, config.max_host_block_frames * 8));
     clear_stats();
@@ -264,20 +272,19 @@ bool Runtime::prepare(const RuntimeConfig& config) {
 
 void Runtime::reset(bool clear_delay_ram) {
     if (!impl_->chip) return;
-    fv1_reset(impl_->chip, clear_delay_ram ? 1 : 0);
+    (void)fv1_sdk_engine_reset(impl_->chip, clear_delay_ram ? 1 : 0);
     impl_->host_to_fv1.reset();
     impl_->fv1_to_host.reset();
     impl_->output_ring.clear();
     clear_stats();
 }
 
-fv1_engine* Runtime::engine() noexcept { return impl_->chip; }
-const fv1_engine* Runtime::engine() const noexcept { return impl_->chip; }
-
 bool Runtime::load_program_bytes(const std::uint8_t* bytes, std::size_t size) {
-    return impl_->chip && fv1_load_bytes(impl_->chip, bytes, size) == FV1_OK;
+    return impl_->chip && fv1_sdk_engine_load_program(impl_->chip, bytes, size) == FV1_SDK_OK;
 }
-void Runtime::set_pots(float a, float b, float c) { if (impl_->chip) fv1_set_pots(impl_->chip, a, b, c); }
+void Runtime::set_pots(float a, float b, float c) {
+    if (impl_->chip) (void)fv1_sdk_engine_set_pots(impl_->chip, a, b, c);
+}
 
 bool Runtime::process_block(const StereoFrame* input, StereoFrame* output,
                             std::size_t host_frames) noexcept {
@@ -296,10 +303,19 @@ bool Runtime::process_block(const StereoFrame* input, StereoFrame* output,
     if (consumed != host_frames) return false;
 
     for (std::size_t i = 0; i < fv_frames; ++i) {
-        float l = 0.0f, r = 0.0f;
-        if (fv1_process_sample(impl_->chip, impl_->fv1_input[i].left,
-                               impl_->fv1_input[i].right, &l, &r) != FV1_OK) return false;
-        impl_->fv1_output[i] = {l, r};
+        impl_->sdk_input_interleaved[i * 2u] = impl_->fv1_input[i].left;
+        impl_->sdk_input_interleaved[i * 2u + 1u] = impl_->fv1_input[i].right;
+    }
+    if (fv1_sdk_engine_process_interleaved_f32(
+            impl_->chip,
+            impl_->sdk_input_interleaved.data(),
+            impl_->sdk_output_interleaved.data(),
+            fv_frames) != FV1_SDK_OK) return false;
+    for (std::size_t i = 0; i < fv_frames; ++i) {
+        impl_->fv1_output[i] = {
+            impl_->sdk_output_interleaved[i * 2u],
+            impl_->sdk_output_interleaved[i * 2u + 1u]
+        };
     }
 
     std::size_t fv_consumed = 0;

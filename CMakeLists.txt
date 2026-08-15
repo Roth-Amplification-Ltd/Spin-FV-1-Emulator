@@ -1,17 +1,23 @@
 cmake_minimum_required(VERSION 3.20)
-project(SpinFV1Emulator VERSION 0.7.0 LANGUAGES C CXX)
+project(SpinFV1Emulator VERSION 0.8.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
 option(FV1_BUILD_TESTS "Build emulator tests" ON)
 option(FV1_ENABLE_WARNINGS "Enable strict compiler warnings" ON)
 option(FV1_ENABLE_LIVE_AUDIO "Build Linux realtime audio host when miniaudio is available" ON)
 option(FV1_BUILD_GUI "Build the Qt FV-1 emulator/testbench application" ON)
 option(FV1_BUILD_FUZZERS "Build Clang/libFuzzer hardening targets" OFF)
+option(FV1_SDK_BUILD_SHARED "Build the embeddable FV-1 SDK as a shared library" ON)
 
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
+if(FV1_BUILD_TESTS)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+endif()
 find_package(Threads REQUIRED)
 find_package(PkgConfig QUIET)
 
@@ -41,6 +47,66 @@ target_include_directories(fv1-core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 fv1_strict_warnings(fv1-core)
+set_target_properties(fv1-core PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    EXPORT_NAME _core_internal
+    C_VISIBILITY_PRESET hidden
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES)
+
+# -----------------------------------------------------------------------------
+# Phase 6A: native SpinASM compiler + embeddable C ABI SDK.
+#
+# The Qt application, CLI and realtime host consume the native compiler directly
+# so installed builds no longer shell out to Python.  The public SDK is a small,
+# versioned C ABI over opaque handles; internal C++ implementation remains free
+# to evolve until the Phase-6B ABI freeze.
+# -----------------------------------------------------------------------------
+add_library(fv1-spinasm STATIC src/spinasm/spinasm.cpp)
+add_library(FV1::spinasm ALIAS fv1-spinasm)
+target_include_directories(fv1-spinasm PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+set_target_properties(fv1-spinasm PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    EXPORT_NAME _spinasm_internal
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES)
+fv1_strict_warnings(fv1-spinasm)
+
+if(FV1_SDK_BUILD_SHARED)
+    add_library(fv1-sdk SHARED src/sdk/sdk.cpp)
+else()
+    add_library(fv1-sdk STATIC src/sdk/sdk.cpp)
+endif()
+add_library(FV1::sdk ALIAS fv1-sdk)
+target_include_directories(fv1-sdk PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+target_link_libraries(fv1-sdk PRIVATE FV1::core FV1::spinasm)
+target_compile_definitions(fv1-sdk PRIVATE
+    FV1_SDK_BUILDING=1
+    FV1_SDK_VERSION_STRING="${PROJECT_VERSION}")
+if(FV1_SDK_BUILD_SHARED)
+    target_compile_definitions(fv1-sdk PUBLIC FV1_SDK_SHARED=1)
+    if(UNIX AND NOT APPLE)
+        target_link_options(fv1-sdk PRIVATE
+            "LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/cmake/fv1-sdk.map")
+    elseif(APPLE)
+        # Mach-O has no GNU version script. Keep the same narrow public C ABI
+        # with an explicit exported-symbol list so C++ internals stay private.
+        target_link_options(fv1-sdk PRIVATE
+            "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/cmake/fv1-sdk.exports")
+    endif()
+endif()
+set_target_properties(fv1-sdk PROPERTIES
+    EXPORT_NAME sdk
+    VERSION ${PROJECT_VERSION}
+    SOVERSION 1
+    C_VISIBILITY_PRESET hidden
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN YES)
+fv1_strict_warnings(fv1-sdk)
 
 # -----------------------------------------------------------------------------
 # Phase 5C: independent golden/reference model.  This target intentionally does
@@ -72,7 +138,7 @@ add_library(FV1::runtime ALIAS fv1-runtime)
 target_include_directories(fv1-runtime PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
-target_link_libraries(fv1-runtime PUBLIC FV1::core)
+target_link_libraries(fv1-runtime PRIVATE FV1::sdk)
 if(TARGET PkgConfig::SPEEXDSP)
     target_link_libraries(fv1-runtime PRIVATE PkgConfig::SPEEXDSP)
     target_compile_definitions(fv1-runtime PRIVATE FV1_HAVE_SPEEXDSP=1)
@@ -139,19 +205,15 @@ fv1_strict_warnings(fv1-audio)
 # Command-line tools
 # -----------------------------------------------------------------------------
 add_executable(fv1-cli src/cli/main.cpp)
-target_link_libraries(fv1-cli PRIVATE FV1::core FV1::reference FV1::conformance FV1::runtime FV1::validation)
-target_compile_definitions(fv1-cli PRIVATE
-    FV1_ASSEMBLER_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/tools/fv1_assembler.py")
+target_link_libraries(fv1-cli PRIVATE FV1::core FV1::reference FV1::conformance FV1::runtime FV1::validation FV1::spinasm)
 fv1_strict_warnings(fv1-cli)
 
 add_executable(fv1-live src/live/main.cpp)
-target_link_libraries(fv1-live PRIVATE FV1::audio FV1::analysis FV1::runtime FV1::core)
-target_compile_definitions(fv1-live PRIVATE
-    FV1_ASSEMBLER_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/tools/fv1_assembler.py")
+target_link_libraries(fv1-live PRIVATE FV1::audio FV1::analysis FV1::runtime FV1::core FV1::spinasm)
 fv1_strict_warnings(fv1-live)
 
 # -----------------------------------------------------------------------------
-# Phase 5B: Qt FV-1 emulator/testbench (Linux/Windows frontend)
+# Qt FV-1 emulator/testbench application (Linux product frontend)
 # -----------------------------------------------------------------------------
 if(FV1_BUILD_GUI)
     find_package(Qt6 COMPONENTS Widgets QUIET)
@@ -164,7 +226,7 @@ if(FV1_BUILD_GUI)
             src/gui/instrument_plot.cpp
             src/gui/validation_panel.cpp)
         target_link_libraries(fv1-lab PRIVATE
-            Qt6::Widgets FV1::audio FV1::analysis FV1::validation FV1::runtime FV1::debugger FV1::core)
+            Qt6::Widgets FV1::audio FV1::analysis FV1::validation FV1::runtime FV1::debugger FV1::core FV1::spinasm)
         target_include_directories(fv1-lab PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
         fv1_strict_warnings(fv1-lab)
         message(STATUS "Phase 5B hardware-validation/testbench GUI: Qt ${Qt6_VERSION} enabled")
@@ -218,6 +280,45 @@ if(FV1_BUILD_TESTS)
     target_link_libraries(fv1-validation-tests PRIVATE FV1::validation)
     add_test(NAME fv1-validation-tests COMMAND fv1-validation-tests)
 
+    add_executable(fv1-spinasm-tests tests/test_spinasm.cpp)
+    target_link_libraries(fv1-spinasm-tests PRIVATE FV1::spinasm)
+    fv1_strict_warnings(fv1-spinasm-tests)
+    add_test(NAME fv1-spinasm-tests COMMAND fv1-spinasm-tests)
+
+    add_executable(fv1-sdk-c-api-tests tests/sdk/test_sdk_c.c)
+    target_link_libraries(fv1-sdk-c-api-tests PRIVATE FV1::sdk)
+    fv1_strict_warnings(fv1-sdk-c-api-tests)
+    add_test(NAME fv1-sdk-c-api-tests COMMAND fv1-sdk-c-api-tests)
+
+    if(FV1_SDK_BUILD_SHARED AND UNIX AND NOT APPLE AND CMAKE_NM)
+        add_test(NAME sdk-export-surface
+            COMMAND ${CMAKE_COMMAND}
+                -DSDK_LIBRARY=$<TARGET_FILE:fv1-sdk>
+                -DNM_TOOL=${CMAKE_NM}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sdk/check_exports.cmake)
+    endif()
+
+    add_test(NAME native-spinasm-python-equivalence
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_native_spinasm_equivalence.py
+                $<TARGET_FILE:fv1-cli>
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/fv1_assembler.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/examples/steal-this-dsp-programs
+                ${CMAKE_CURRENT_BINARY_DIR}/native-spinasm-equivalence
+                phase6a)
+
+    add_test(NAME installed-sdk-consumer
+        COMMAND ${CMAKE_COMMAND}
+            -DPROJECT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+            -DPROJECT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DSDK_HOST_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/examples/sdk-host
+            -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/installed-sdk-consumer
+            -DSDK_BUILD_SHARED=${FV1_SDK_BUILD_SHARED}
+            "-DSDK_C_FLAGS=${CMAKE_C_FLAGS}"
+            "-DSDK_CXX_FLAGS=${CMAKE_CXX_FLAGS}"
+            -DCMAKE_GENERATOR_NAME=${CMAKE_GENERATOR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/sdk/test_installed_sdk.cmake)
+    set_tests_properties(installed-sdk-consumer PROPERTIES TIMEOUT 90)
+
     add_test(NAME compile-steal-this-bank
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_compile_examples.py
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/fv1_assembler.py
@@ -270,7 +371,7 @@ if(FV1_BUILD_TESTS)
 endif()
 
 # -----------------------------------------------------------------------------
-# Optional Phase-5C fuzzing.  These targets are intentionally opt-in because
+# Optional Phase-6 hardening fuzzing.  These targets are intentionally opt-in because
 # libFuzzer is a Clang runtime and is not required for normal developer builds.
 # -----------------------------------------------------------------------------
 if(FV1_BUILD_FUZZERS)
@@ -292,21 +393,61 @@ if(FV1_BUILD_FUZZERS)
         -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
     target_link_options(fv1-conformance-fuzzer PRIVATE
         -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
+
+    # The native SpinASM compiler is now part of the public SDK attack surface.
+    # Build this fuzzer from the parser source directly so sanitizer/fuzzer
+    # instrumentation remains isolated from normal application targets.
+    add_executable(fv1-spinasm-fuzzer
+        tests/fuzz/fuzz_spinasm.cpp
+        src/spinasm/spinasm.cpp)
+    target_include_directories(fv1-spinasm-fuzzer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_options(fv1-spinasm-fuzzer PRIVATE
+        -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
+    target_link_options(fv1-spinasm-fuzzer PRIVATE
+        -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
 endif()
 
 # -----------------------------------------------------------------------------
-# Installation
+# Installation / Phase-6 SDK package
 # -----------------------------------------------------------------------------
-set(FV1_INSTALL_TARGETS fv1-core fv1-reference fv1-conformance fv1-runtime fv1-analysis fv1-validation fv1-debugger fv1-audio fv1-cli fv1-live)
+# SDK-facing targets are exported separately from the application-internal
+# libraries. fv1-core/fv1-spinasm are present in the export only as private
+# static dependencies of fv1-sdk; consumers should link FV1SDK::sdk, never the
+# _core_internal/_spinasm_internal implementation targets.
+install(TARGETS fv1-core fv1-spinasm fv1-sdk
+        EXPORT FV1SDKTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+set(FV1_INSTALL_TARGETS fv1-reference fv1-conformance fv1-runtime fv1-analysis fv1-validation fv1-debugger fv1-audio fv1-cli fv1-live)
 if(TARGET fv1-lab)
     list(APPEND FV1_INSTALL_TARGETS fv1-lab)
 endif()
 install(TARGETS ${FV1_INSTALL_TARGETS}
-        EXPORT FV1Targets
-        ARCHIVE DESTINATION lib
-        RUNTIME DESTINATION bin)
-install(DIRECTORY include/ DESTINATION include)
-install(PROGRAMS tools/fv1_assembler.py DESTINATION libexec/spin-fv1-emulator)
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FV1SDKConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/FV1SDKConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/FV1SDK)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/FV1SDKConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion)
+install(EXPORT FV1SDKTargets
+        FILE FV1SDKTargets.cmake
+        NAMESPACE FV1SDK::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/FV1SDK)
+install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/FV1SDKConfig.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/FV1SDKConfigVersion.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/FV1SDK)
+
 install(DIRECTORY assets/icons/ DESTINATION share/spin-fv1-emulator/icons
         PATTERN "hicolor" EXCLUDE)
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/roth-fv1-emulator.desktop")

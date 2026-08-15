@@ -1,6 +1,7 @@
 #include <fv1/fv1.h>
 #include <fv1/conformance.hpp>
 #include <fv1/runtime.hpp>
+#include <fv1/spinasm.hpp>
 #include <fv1/validation.hpp>
 
 #include <algorithm>
@@ -24,23 +25,12 @@
 
 namespace fs = std::filesystem;
 
-#ifndef FV1_ASSEMBLER_SCRIPT
-#define FV1_ASSEMBLER_SCRIPT "tools/fv1_assembler.py"
-#endif
+
 
 namespace {
 
 struct Error : std::runtime_error { using std::runtime_error::runtime_error; };
 
-std::string shell_quote(const std::string& s) {
-    std::string out = "'";
-    for (char c : s) {
-        if (c == '\'') out += "'\\''";
-        else out += c;
-    }
-    out += "'";
-    return out;
-}
 
 std::vector<uint8_t> read_file(const fs::path& path) {
     std::ifstream f(path, std::ios::binary);
@@ -107,54 +97,22 @@ std::vector<uint8_t> parse_intel_hex(const fs::path& path) {
     return out;
 }
 
-fs::path find_assembler_script() {
-    if (const char* env = std::getenv("FV1_ASSEMBLER_SCRIPT")) {
-        fs::path p(env);
-        if (fs::exists(p)) return p;
+std::vector<uint8_t> assemble_spn(const fs::path& source) {
+    const auto source_bytes = read_file(source);
+    try {
+        const auto compiled = fv1::spinasm::compile(std::string_view(
+            reinterpret_cast<const char*>(source_bytes.data()), source_bytes.size()));
+        return {compiled.image.begin(), compiled.image.end()};
+    } catch (const fv1::spinasm::CompileError& error) {
+        throw Error(source.string() + ": " + error.what());
     }
-
-    fs::path built(FV1_ASSEMBLER_SCRIPT);
-    if (fs::exists(built)) return built;
-
-#if defined(__linux__)
-    std::error_code ec;
-    fs::path exe = fs::read_symlink("/proc/self/exe", ec);
-    if (!ec) {
-        fs::path installed = exe.parent_path() / ".." / "libexec" / "spin-fv1-emulator" / "fv1_assembler.py";
-        installed = fs::weakly_canonical(installed, ec);
-        if (!ec && fs::exists(installed)) return installed;
-    }
-#endif
-    throw Error("cannot locate fv1_assembler.py; set FV1_ASSEMBLER_SCRIPT");
-}
-
-fs::path assemble_spn(const fs::path& source) {
-    const fs::path tmp = fs::temp_directory_path() /
-        ("fv1-cli-" + std::to_string(static_cast<unsigned long long>(std::hash<std::string>{}(source.string()))) + ".bin");
-    const fs::path assembler = find_assembler_script();
-    const std::string cmd = "python3 " + shell_quote(assembler.string()) + " " +
-                            shell_quote(source.string()) + " " + shell_quote(tmp.string());
-    const int rc = std::system(cmd.c_str());
-    if (rc != 0) throw Error("SpinASM compilation failed");
-    return tmp;
 }
 
 std::vector<uint8_t> load_program_image(const fs::path& path, unsigned slot) {
-    fs::path actual = path;
-    std::optional<fs::path> temporary;
     std::string ext = path.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
-    if (ext == ".spn") {
-        temporary = assemble_spn(path);
-        actual = *temporary;
-        ext = ".bin";
-    }
-
-    std::vector<uint8_t> data = (ext == ".hex") ? parse_intel_hex(actual) : read_file(actual);
-    if (temporary) {
-        std::error_code ec;
-        fs::remove(*temporary, ec);
-    }
+    std::vector<uint8_t> data = ext == ".spn" ? assemble_spn(path)
+                                                : (ext == ".hex" ? parse_intel_hex(path) : read_file(path));
 
     if (data.size() == FV1_PROGRAM_BYTES) return data;
     if (data.size() >= 8 * FV1_PROGRAM_BYTES) {
@@ -360,9 +318,7 @@ Validation workflow:
 
 int cmd_assemble(const Args& args) {
     if (args.values.size() < 3) throw Error("assemble requires input.spn and output.bin");
-    const fs::path tmp = assemble_spn(args.values[1]);
-    auto data = read_file(tmp);
-    std::error_code ec; fs::remove(tmp, ec);
+    const auto data = assemble_spn(args.values[1]);
     write_file(args.values[2], data);
     std::cout << "Wrote " << data.size() << " bytes to " << args.values[2] << "\n";
     return 0;

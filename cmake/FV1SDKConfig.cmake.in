@@ -1,0 +1,5 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/FV1SDKTargets.cmake")
+
+check_required_components(FV1SDK)

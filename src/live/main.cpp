@@ -2,6 +2,7 @@
 #include <fv1/audio_host.hpp>
 #include <fv1/audio_source.hpp>
 #include <fv1/runtime.hpp>
+#include <fv1/spinasm.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -23,9 +24,7 @@
 
 namespace fs = std::filesystem;
 
-#ifndef FV1_ASSEMBLER_SCRIPT
-#define FV1_ASSEMBLER_SCRIPT "tools/fv1_assembler.py"
-#endif
+
 
 namespace {
 struct Error : std::runtime_error { using std::runtime_error::runtime_error; };
@@ -39,11 +38,6 @@ struct Args {
     }
 };
 
-std::string shell_quote(const std::string& s) {
-    std::string out = "'";
-    for (char c : s) out += (c == '\'') ? "'\\''" : std::string(1, c);
-    return out + "'";
-}
 
 std::vector<std::uint8_t> read_file(const fs::path& path) {
     std::ifstream f(path, std::ios::binary);
@@ -98,37 +92,22 @@ std::vector<std::uint8_t> parse_hex(const fs::path& path) {
     return data;
 }
 
-fs::path find_assembler() {
-    if (const char* env = std::getenv("FV1_ASSEMBLER_SCRIPT")) {
-        if (fs::exists(env)) return env;
-    }
-    if (fs::exists(FV1_ASSEMBLER_SCRIPT)) return FV1_ASSEMBLER_SCRIPT;
-#if defined(__linux__)
-    std::error_code ec;
-    fs::path exe = fs::read_symlink("/proc/self/exe", ec);
-    if (!ec) {
-        fs::path p = exe.parent_path() / ".." / "libexec" / "spin-fv1-emulator" / "fv1_assembler.py";
-        p = fs::weakly_canonical(p, ec);
-        if (!ec && fs::exists(p)) return p;
-    }
-#endif
-    throw Error("cannot locate fv1_assembler.py; set FV1_ASSEMBLER_SCRIPT");
-}
-
 std::vector<std::uint8_t> load_program(const fs::path& source, unsigned slot) {
-    fs::path actual = source;
-    std::optional<fs::path> tmp;
     std::string ext = source.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+    std::vector<std::uint8_t> data;
     if (ext == ".spn") {
-        tmp = fs::temp_directory_path() / "fv1-live-program.bin";
-        const std::string command = "python3 " + shell_quote(find_assembler().string()) + " " +
-                                    shell_quote(source.string()) + " " + shell_quote(tmp->string());
-        if (std::system(command.c_str()) != 0) throw Error("SpinASM compilation failed");
-        actual = *tmp; ext = ".bin";
+        const auto source_bytes = read_file(source);
+        try {
+            const auto compiled = fv1::spinasm::compile(std::string_view(
+                reinterpret_cast<const char*>(source_bytes.data()), source_bytes.size()));
+            data.assign(compiled.image.begin(), compiled.image.end());
+        } catch (const fv1::spinasm::CompileError& error) {
+            throw Error(source.string() + ": " + error.what());
+        }
+    } else {
+        data = ext == ".hex" ? parse_hex(source) : read_file(source);
     }
-    auto data = ext == ".hex" ? parse_hex(actual) : read_file(actual);
-    if (tmp) { std::error_code ec; fs::remove(*tmp, ec); }
     if (data.size() == FV1_PROGRAM_BYTES) return data;
     if (data.size() >= 8u * FV1_PROGRAM_BYTES) {
         if (slot > 7) throw Error("slot must be 0..7");

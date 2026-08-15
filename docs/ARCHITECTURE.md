@@ -2,23 +2,25 @@
 
 ## Dependency direction
 
-The fundamental rule is that the virtual DSP never depends on an application framework.
+The fundamental rule is that the virtual DSP never depends on an application framework. Phase 6A
+adds an even stronger rule: **frontends embed the virtual chip through a narrow SDK boundary rather
+than inheriting the Linux application's object graph.**
 
 ```text
-frontends (Qt now; Windows/macOS later)
-             |
-             v
-       fv1-runtime       source routing + host/FV-1 SRC
-             |
-             +----------> fv1-analysis (background worker)
-             |
-             +----------> fv1-audio (miniaudio host)
-             |
-             v
-         fv1-core        production virtual FV-1
-             ^
-             |
-       compiler/loader
+ Linux Qt frontend      Windows native frontend      macOS native frontend      other host
+        |                       |                           |                      |
+        +-----------------------+---------------------------+----------------------+
+                                        |
+                                  <fv1/sdk.h>
+                                  FV1SDK::sdk
+                                        |
+                               private C++ internals
+                                 /              \
+                           fv1-core          fv1-spinasm
+
+Linux application-only services remain outside the SDK ABI:
+
+     fv1-runtime -> fv1-analysis / fv1-audio / fv1-debugger / fv1-validation
 
 Verification-only dependency direction:
 
@@ -30,8 +32,13 @@ Verification-only dependency direction:
                      +---- compares against fv1-core
 ```
 
-`fv1-core` contains no JUCE, Qt, GTK, miniaudio, PipeWire, CoreAudio or UI types.
+The candidate SDK is C-shaped and contains no Qt, miniaudio, SpeexDSP, STL, exception, filesystem,
+CoreAudio, WASAPI, PipeWire or UI types. `fv1-runtime` now dogfoods `FV1SDK::sdk` for its virtual-chip
+create/load/POT/process path while keeping host-rate SRC outside the ABI. The current auxiliary C++
+libraries remain free to evolve until they are either kept private or deliberately wrapped by a
+future additive SDK module.
 
+See `SDK-ARCHITECTURE.md` and `SDK-ABI-POLICY.md`.
 
 ## Phase-5C reference/conformance boundary
 
@@ -80,9 +87,17 @@ Neither is labeled as the final bit-exact hardware model. Hardware-validation ve
 
 ## Compiler boundary
 
-Phase 1 keeps the existing MPL-2.0 Python SpinASM-compatible assembler as an isolated tool and uses it from `fv1-cli` for `.spn` inputs. Binary execution itself has no Python dependency.
+Phase 6A replaces the runtime Python bridge with `fv1-spinasm`, a native C++20 compiler used by the
+CLI, live host and Qt application. External SDK consumers access the same compiler through
+`fv1_sdk_compile_spinasm_v1()` and receive a caller-owned 512-byte program image plus versioned
+diagnostics metadata.
 
-This lets the emulator core stabilize independently. A future native compiler library can replace the bridge without changing the C ABI of `fv1-core`.
+The historical Python assembler remains a development oracle only. Automated tests require native
+and Python output to be byte-identical for all eight bundled programs. No Python interpreter is
+required by an installed SDK/application at runtime.
+
+`fv1-spinasm` itself is **not** the stable cross-language ABI; its C++ API remains an internal
+implementation detail behind `fv1/sdk.h`.
 
 ## Phase-2 audio-source boundary
 

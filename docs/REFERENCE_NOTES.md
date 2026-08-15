@@ -28,3 +28,12 @@ methodology. In particular:
 - compatibility fixes belong in the machine model, never in program-specific workarounds.
 
 See `HARDWARE-EMULATION-CONTRACT.md` and `PHASE5C-MODEL-HARDENING.md`.
+
+## Phase 6 observer/API boundary
+
+The same emulation methodology applies to software architecture: the stable SDK describes what an
+external observer may provide and observe, while the implementation behind that boundary remains
+replaceable. Phase 6 therefore freezes neither Qt nor the internal C++ object graph. It extracts a
+small C ABI, tests it from an external consumer, and postpones the compatibility promise until a
+dedicated ABI review. This mirrors the Hardware Emulation Contract principle of defining observer,
+state and semantics explicitly before optimizing or multiplying implementations.

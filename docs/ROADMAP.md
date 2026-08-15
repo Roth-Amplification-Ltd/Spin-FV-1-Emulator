@@ -119,12 +119,12 @@ Phase 5B completed the software/UI preparation needed before physical captures:
 The physical-silicon leg remains intentionally deferred until an FV-1 board and capture interface are
 available. The generated deterministic packs remain the future hardware stimulus set.
 
-## Phase 5C — Model hardening and differential conformance — CURRENT
+## Phase 5C — Model hardening and differential conformance — COMPLETE
 
 Strengthen the machine model before copying it into Windows/macOS products. This phase is independent
 of physical hardware and follows the project's Hardware Emulation research methodology.
 
-Implemented in the current hardening pass:
+Implemented and accepted on Rosie:
 
 - a written **Hardware Emulation Contract** with explicit observer, fidelity classes and oracle status;
 - independent `fv1-reference` Model A that does not link or reuse the `fv1-core` decoder/arithmetic;
@@ -163,32 +163,71 @@ board and quantify:
 Measured discrepancies become minimal regression vectors and corrections to the machine model, never
 per-effect compatibility hacks.
 
-## Phase 6 — Linux 1.0 / shared-API freeze — NEXT AFTER 5C
+## Phase 6A — FV-1 SDK extraction — CURRENT
 
-Before starting the Windows/macOS products:
+Do **not** freeze the Linux Qt/C++ application architecture. Extract a small platform-neutral SDK so
+Linux Qt, future native Windows/macOS frontends, the future IDE, and other applications can all be
+clients of the same virtual chip.
+
+Implemented in the current extraction pass:
+
+- candidate versioned C ABI in `fv1/sdk.h` over opaque handles;
+- shared `fv1-sdk` library plus supported static form;
+- native in-process `fv1-spinasm` compiler;
+- SDK SpinASM compile API with caller-owned output/diagnostic buffers;
+- realtime planar/interleaved float processing boundary;
+- program/POT/configuration plus snapshot/delay/resource inspection;
+- exported-symbol hiding so shared libraries expose only `fv1_sdk_*`;
+- installable `FV1SDKConfig.cmake` / `FV1SDK::sdk`;
+- external pure-C installed SDK host regression;
+- native-vs-Python byte equivalence over all eight bundled effects;
+- SpinASM parser fuzz target in addition to the Phase-5C conformance fuzzer.
+
+Phase 6A calls this an **ABI candidate**, not a freeze. See `SDK-ARCHITECTURE.md`,
+`SDK-ABI-POLICY.md`, and `PHASE6A-SDK-EXTRACTION.md`.
+
+## Phase 6B — SDK ABI/API review and stabilization — NEXT
+
+Before promising ABI v1 compatibility:
+
+- review every exported function, ownership rule, aliasing rule and realtime guarantee;
+- decide whether debugger/runtime/analysis/validation need separate stable C modules now or remain
+  future additive surfaces;
+- record ABI layout/export fixtures for supported 64-bit platforms;
+- exercise the DLL/dylib boundary with MSVC and Apple Clang/Swift/Objective-C consumers;
+- prove installed shared/static packages from clean external projects;
+- make any final breaking changes while the candidate is still explicitly unfrozen.
+
+Only after this review may the project declare **FV-1 SDK ABI v1 FROZEN**.
+
+## Phase 6C — Linux 1.0 release candidate / torture testing — AFTER 6B
 
 - extended sanitizer/fuzzer soak and malformed-input testing;
 - warning-clean GCC + Clang builds;
 - fresh-install and audio-device failure/hot-plug checks on supported Linux targets;
 - package/version/About/release metadata cleanup;
 - high-DPI and application-data/configuration-path acceptance;
-- freeze the reusable `fv1-core`, `fv1-reference`, `fv1-conformance`, `fv1-runtime`, `fv1-analysis`,
-  `fv1-audio`, `fv1-debugger`, `fv1-validation` and compiler/loader boundaries.
+- release-candidate test report against the frozen SDK.
+
+After Phase 6C, Windows and macOS frontends should be independent native clients of the same frozen
+SDK rather than ports of the Qt application's internal architecture.
 
 ## Future dedicated FV-1 IDE — SEPARATE APPLICATION
 
-A future IDE may consume `fv1-core`, `fv1-runtime`, `fv1-analysis`, `fv1-audio`, `fv1-debugger`,
-`fv1-validation`, `fv1-reference`, `fv1-conformance`, and the SpinASM compiler/loader boundary. Source editors, source-mapped
-breakpoints, project management and EEPROM-bank authoring belong there rather than becoming the
-primary identity of this emulator/testbench.
+A future IDE should primarily consume the stable FV-1 SDK. Additional debugger/analysis/validation
+capabilities should be exposed through deliberate additive SDK modules rather than coupling the IDE
+to the Linux GUI's private C++ architecture. Source editors, source-mapped breakpoints, project
+management and EEPROM-bank authoring belong there rather than becoming the primary identity of this
+emulator/testbench.
 
 ## Later platform frontends
 
-After the shared APIs and silicon model are mature:
+After the SDK v1 boundary is frozen and the Linux release candidate is accepted:
 
-- Windows desktop frontend;
+- Windows desktop frontend using native Windows UI/audio facilities;
 - native macOS shell using SwiftUI + Metal/MetalKit + CoreAudio/AVAudioEngine;
-- both reuse the same platform-neutral libraries.
+- both consume the same platform-neutral `FV1SDK::sdk` C ABI while owning their platform UI/audio
+  integration independently.
 
 DAW/VST/AU/CLAP plugins are **not part of this standalone application project**. If desired later,
 they should be separate consumers of the emulator libraries.

@@ -50,9 +50,6 @@ public:
     bool prepare(const RuntimeConfig& config);
     void reset(bool clear_delay_ram = true);
 
-    fv1_engine* engine() noexcept;
-    const fv1_engine* engine() const noexcept;
-
     bool load_program_bytes(const std::uint8_t* bytes, std::size_t size);
     void set_pots(float pot0, float pot1, float pot2);
 

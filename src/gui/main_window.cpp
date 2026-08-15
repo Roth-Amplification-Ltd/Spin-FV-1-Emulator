@@ -10,6 +10,7 @@
 #include <fv1/gui/theme_manager.hpp>
 #include <fv1/gui/validation_panel.hpp>
 #include <fv1/runtime.hpp>
+#include <fv1/spinasm.hpp>
 
 #include <QActionGroup>
 #include <QApplication>
@@ -36,7 +37,6 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPlainTextEdit>
-#include <QProcess>
 #include <QProgressBar>
 #include <QPixmap>
 #include <QPushButton>
@@ -49,7 +49,6 @@
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTableWidgetItem>
-#include <QTemporaryDir>
 #include <QTextStream>
 #include <QTimer>
 #include <QToolBar>
@@ -82,22 +81,6 @@ QString format_time(double seconds) {
 }
 
 
-QString find_assembler_script() {
-    const QByteArray env = qgetenv("FV1_ASSEMBLER_SCRIPT");
-    if (!env.isEmpty() && QFileInfo::exists(QString::fromLocal8Bit(env))) return QString::fromLocal8Bit(env);
-
-    const QStringList candidates{
-        QDir::current().filePath(QStringLiteral("tools/fv1_assembler.py")),
-        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("../tools/fv1_assembler.py")),
-        QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("../libexec/spin-fv1-emulator/fv1_assembler.py"))
-    };
-    for (const QString& path : candidates) {
-        const QString clean = QDir::cleanPath(path);
-        if (QFileInfo::exists(clean)) return clean;
-    }
-    return {};
-}
-
 QString find_icon_asset(const QString& icon_name) {
     QString slug = icon_name.toLower();
     if (slug == QStringLiteral("dark cyan")) slug = QStringLiteral("dark-cyan");
@@ -115,31 +98,32 @@ QString find_icon_asset(const QString& icon_name) {
 }
 
 bool load_program_image(const QString& path, QByteArray& bytes, QString& error) {
-    QString actual = path;
-    std::unique_ptr<QTemporaryDir> temp;
     const QString suffix = QFileInfo(path).suffix().toLower();
     if (suffix == QStringLiteral("spn")) {
-        const QString assembler = find_assembler_script();
-        if (assembler.isEmpty()) {
-            error = QStringLiteral("Cannot locate tools/fv1_assembler.py. Set FV1_ASSEMBLER_SCRIPT if running an installed build.");
+        QFile source(path);
+        if (!source.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            error = QStringLiteral("Cannot open %1").arg(path);
             return false;
         }
-        temp = std::make_unique<QTemporaryDir>();
-        if (!temp->isValid()) { error = QStringLiteral("Cannot create temporary directory for SpinASM output."); return false; }
-        actual = temp->filePath(QStringLiteral("program.bin"));
-        QProcess proc;
-        proc.start(QStringLiteral("python3"), {assembler, path, actual});
-        if (!proc.waitForStarted(3000) || !proc.waitForFinished(30000) || proc.exitCode() != 0) {
-            error = QStringLiteral("SpinASM failed: %1").arg(QString::fromLocal8Bit(proc.readAllStandardError()));
+        const QByteArray source_bytes = source.readAll();
+        try {
+            const auto compiled = fv1::spinasm::compile(std::string_view(
+                source_bytes.constData(), static_cast<std::size_t>(source_bytes.size())));
+            bytes = QByteArray(reinterpret_cast<const char*>(compiled.image.data()),
+                               static_cast<qsizetype>(compiled.image.size()));
+            return true;
+        } catch (const fv1::spinasm::CompileError& compile_error) {
+            error = QString::fromStdString(compile_error.what());
             return false;
         }
-    } else if (suffix != QStringLiteral("bin")) {
+    }
+    if (suffix != QStringLiteral("bin")) {
         error = QStringLiteral("The GUI opens .spn and 512-byte .bin programs. HEX/bank selection remains available in fv1-cli/fv1-live.");
         return false;
     }
 
-    QFile file(actual);
-    if (!file.open(QIODevice::ReadOnly)) { error = QStringLiteral("Cannot open %1").arg(actual); return false; }
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) { error = QStringLiteral("Cannot open %1").arg(path); return false; }
     bytes = file.readAll();
     if (bytes.size() != static_cast<qsizetype>(FV1_PROGRAM_BYTES)) {
         error = QStringLiteral("Program image is %1 bytes; expected exactly %2.").arg(bytes.size()).arg(FV1_PROGRAM_BYTES);
@@ -1442,66 +1426,33 @@ void MainWindow::paste_spinasm() {
             status->setPlainText(QStringLiteral("ERROR: SpinASM source is empty."));
             return;
         }
-        const QString assembler = find_assembler_script();
-        if (assembler.isEmpty()) {
-            status->setPlainText(QStringLiteral("ERROR: Cannot locate tools/fv1_assembler.py. Set FV1_ASSEMBLER_SCRIPT for an installed build."));
-            return;
-        }
-
-        QTemporaryDir temp;
-        if (!temp.isValid()) {
-            status->setPlainText(QStringLiteral("ERROR: Cannot create temporary directory for SpinASM compilation."));
-            return;
-        }
-        const QString source_path = temp.filePath(QStringLiteral("pasted-program.spn"));
-        const QString output_path = temp.filePath(QStringLiteral("pasted-program.bin"));
-        QFile source_file(source_path);
-        if (!source_file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            status->setPlainText(QStringLiteral("ERROR: Cannot create temporary SpinASM source."));
-            return;
-        }
-        source_file.write(source_text.toUtf8());
-        source_file.close();
-
         compile->setEnabled(false);
-        status->setPlainText(QStringLiteral("Compiling pasted SpinASM…"));
+        status->setPlainText(QStringLiteral("Compiling pasted SpinASM with native compiler…"));
         QApplication::processEvents();
-        QProcess proc;
-        proc.start(QStringLiteral("python3"), {assembler, source_path, output_path});
-        const bool started = proc.waitForStarted(3000);
-        const bool finished = started && proc.waitForFinished(30000);
-        const QByteArray stdout_text = proc.readAllStandardOutput();
-        const QByteArray stderr_text = proc.readAllStandardError();
-        compile->setEnabled(true);
-        if (!started || !finished || proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0) {
-            QString detail = QString::fromUtf8(stderr_text).trimmed();
-            if (detail.isEmpty()) detail = QString::fromUtf8(stdout_text).trimmed();
-            if (detail.isEmpty()) detail = QStringLiteral("SpinASM compiler exited without diagnostics.");
+
+        const QByteArray source_bytes = source_text.toUtf8();
+        QByteArray bytes;
+        std::uint32_t instruction_count = 0;
+        std::uint32_t highest_delay = 0;
+        try {
+            const auto compiled = fv1::spinasm::compile(std::string_view(
+                source_bytes.constData(), static_cast<std::size_t>(source_bytes.size())));
+            bytes = QByteArray(reinterpret_cast<const char*>(compiled.image.data()),
+                               static_cast<qsizetype>(compiled.image.size()));
+            instruction_count = compiled.instruction_count;
+            highest_delay = compiled.highest_delay_address;
+        } catch (const fv1::spinasm::CompileError& compile_error) {
+            compile->setEnabled(true);
+            const QString detail = QString::fromStdString(compile_error.what());
             status->setPlainText(QStringLiteral("COMPILE ERROR\n") + detail);
             log(QStringLiteral("Pasted SpinASM compilation failed: ") + detail);
             return;
         }
+        compile->setEnabled(true);
 
-        QFile binary(output_path);
-        if (!binary.open(QIODevice::ReadOnly)) {
-            status->setPlainText(QStringLiteral("ERROR: Compiler did not produce a readable program image."));
-            return;
-        }
-        const QByteArray bytes = binary.readAll();
-        if (bytes.size() != static_cast<qsizetype>(FV1_PROGRAM_BYTES)) {
-            status->setPlainText(QStringLiteral("ERROR: Compiler produced %1 bytes; expected %2.").arg(bytes.size()).arg(FV1_PROGRAM_BYTES));
-            return;
-        }
-
-        QString summary = QString::fromUtf8(stdout_text).trimmed();
-        const QRegularExpression count_re(QStringLiteral(":\\s*(\\d+) instructions, highest delay address (\\d+)"));
-        const auto match = count_re.match(summary);
-        if (match.hasMatch()) {
-            summary = QStringLiteral("Compiled successfully — %1 / 128 instructions; highest delay address %2; 512-byte program loaded.")
-                .arg(match.captured(1), match.captured(2));
-        } else {
-            summary = QStringLiteral("Compiled successfully — 512-byte FV-1 program loaded.");
-        }
+        const QString summary = QStringLiteral(
+            "Compiled successfully — %1 / 128 instructions; highest delay address %2; 512-byte program loaded.")
+            .arg(instruction_count).arg(highest_delay);
         status->setPlainText(summary);
         pasted_spinasm_source_ = source_text;
         if (!install_program_image(bytes, QStringLiteral("Pasted SpinASM Program"))) {

@@ -2,7 +2,7 @@
 
 Linux-first, open-source tools for emulating, measuring and inspecting the Spin Semiconductor FV-1 DSP.
 
-**Current milestone: Phase 5B — physical-FV-1 validation preparation and accuracy refinement.**
+**Current milestone: Phase 6A — FV-1 SDK extraction (ABI candidate, not yet frozen).**
 
 The product is intentionally a polished virtual FV-1 and DSP lab instrument, not a full source-code IDE. Lightweight development/debug conveniences are welcome when they directly support emulation, while the underlying libraries remain reusable by a future dedicated IDE and other applications.
 
@@ -12,7 +12,7 @@ The project is intentionally layered so the virtual FV-1 is not tied to a GUI to
 
 Complete and regression-tested:
 
-- `libfv1-core` C++20 static library with a stable C API
+- `libfv1-core` C++20 production engine with a legacy low-level C API
 - 128-word / 512-byte external FV-1 program loading
 - predecoded instruction representation for the realtime execution path
 - signed 24-bit saturating datapath
@@ -70,7 +70,7 @@ Requirements:
 - CMake 3.20+
 - Ninja
 - GCC or Clang with C++20 support
-- Python 3 (SpinASM assembler bridge)
+- Python 3 for development/regression tests (the installed app/SDK compiles SpinASM natively)
 - `libspeexdsp-dev` for production realtime SRC
 - a pinned miniaudio header installed automatically by `bootstrap-dev.sh` for Linux device I/O
 - Qt 6 Widgets development packages (`qt6-base-dev`, `qt6-base-dev-tools`) for `fv1-lab`
@@ -269,6 +269,67 @@ Contract**, not proof of undocumented silicon behavior. Physical FV-1 closure re
 See [`docs/HARDWARE-EMULATION-CONTRACT.md`](docs/HARDWARE-EMULATION-CONTRACT.md),
 [`docs/PHASE5C-MODEL-HARDENING.md`](docs/PHASE5C-MODEL-HARDENING.md), and
 [`docs/FV1-INSTRUCTION-CONFORMANCE.md`](docs/FV1-INSTRUCTION-CONFORMANCE.md).
+
+## Phase 6A FV-1 SDK extraction
+
+Phase 6A turns the virtual chip into an installable module before any API is frozen. The desktop GUI
+is now explicitly a **client of the engine**, not the definition of its portable interface.
+
+The candidate embedding boundary is the C header `<fv1/sdk.h>` and CMake target `FV1SDK::sdk`. It
+uses opaque handles and versioned plain-C structures while keeping the implementation in C++20. The
+default shared library exports only `fv1_sdk_*` symbols. Qt, miniaudio, SpeexDSP, STL types,
+exceptions and OS-specific audio/window types do not cross this boundary.
+
+The Linux realtime runtime now owns an opaque SDK engine and routes create/load/POT/process calls
+through this same C ABI, so FV-1 Lab dogfoods the portable processing boundary instead of leaving the
+SDK as a sidecar. Host-rate SRC, miniaudio and Qt remain outside the SDK.
+
+The app, CLI and live host also now use a native C++ SpinASM compiler. Python remains only as a
+development oracle: all eight bundled programs are compiled by native and Python implementations and
+must match byte-for-byte.
+
+A minimal external C host can consume an installed SDK with:
+
+```cmake
+find_package(FV1SDK CONFIG REQUIRED)
+target_link_libraries(my_host PRIVATE FV1SDK::sdk)
+```
+
+```c
+#include <fv1/sdk.h>
+
+fv1_sdk_engine_config_v1 cfg;
+fv1_sdk_engine_config_v1_init(&cfg);
+
+fv1_sdk_engine *engine = NULL;
+if (fv1_sdk_engine_create_v1(&cfg, &engine) == FV1_SDK_OK) {
+    fv1_sdk_engine_load_program(engine, program, FV1_SDK_PROGRAM_BYTES);
+    fv1_sdk_engine_process_interleaved_f32(engine, input, output, frames);
+    fv1_sdk_engine_destroy(engine);
+}
+```
+
+Build/install the SDK into a prefix:
+
+```bash
+cmake -S . -B build-sdk -G Ninja \
+  -DFV1_BUILD_GUI=OFF -DFV1_BUILD_TESTS=OFF
+cmake --build build-sdk
+cmake --install build-sdk --prefix /tmp/fv1-sdk
+```
+
+`examples/sdk-host/` is an external-style **pure C** consumer. CTest installs the SDK into a clean
+staging prefix, configures that example through `find_package(FV1SDK)`, builds it without private
+headers, and runs it. Shared and static SDK forms are both supported; the shared SDK is the preferred
+cross-language form.
+
+The Phase-6A headless suite contains **23 tests**; a Qt-enabled workstation adds `fv1-lab-smoke` for
+**24 total**.
+
+**The ABI is not frozen in Phase 6A.** Phase 6B is the deliberate API/ABI review before any v1
+compatibility promise is made. See [`docs/SDK-ARCHITECTURE.md`](docs/SDK-ARCHITECTURE.md),
+[`docs/SDK-ABI-POLICY.md`](docs/SDK-ABI-POLICY.md), and
+[`docs/PHASE6A-SDK-EXTRACTION.md`](docs/PHASE6A-SDK-EXTRACTION.md).
 
 ## Fidelity policy
 
