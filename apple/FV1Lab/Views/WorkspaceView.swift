@@ -43,7 +43,15 @@ struct WorkspaceView: View {
                 rightColumn
                     .frame(minWidth: 390, idealWidth: 440, maxWidth: 540)
             }
-            .frame(minWidth: 1280, minHeight: 760)
+            // The persistent three-column engineering layout needs
+            // roughly 300 + 650 + 390 points before split-view dividers.
+            // Advertise the real minimum and a useful desktop ideal size.
+            .frame(
+                minWidth: 1360,
+                idealWidth: 1500,
+                minHeight: 760,
+                idealHeight: 860
+            )
             #else
             GeometryReader { proxy in
                 HStack(spacing: 8) {

@@ -28,11 +28,13 @@ swift_sources = [
     "FV1Lab/Model/FV1Document.swift",
     "FV1Lab/Model/FV1WorkspaceModel.swift",
     "FV1Lab/Platform/macOS/MacAboutPresenter.swift",
+    "FV1Lab/Platform/macOS/MacStartupSplashController.swift",
     "FV1Lab/SDK/FV1Engine.swift",
     "FV1Lab/SDK/FV1RealtimeBridge.swift",
     "FV1Lab/Views/ScopeView.swift",
     "FV1Lab/Views/ControlsView.swift",
     "FV1Lab/Views/InspectionView.swift",
+    "FV1Lab/Views/StartupSplashView.swift",
     "FV1Lab/Views/WorkspaceView.swift",
 ]
 implementation_sources = [
