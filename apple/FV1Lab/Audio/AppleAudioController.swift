@@ -6,6 +6,7 @@ import Foundation
 enum AppleAudioSourceMode: String, CaseIterable, Identifiable {
     case testGenerator = "Test Generator"
     case audioInterface = "Audio Interface"
+    case audioFileLoop = "Audio File Loop"
 
     var id: String { rawValue }
 }
@@ -41,20 +42,34 @@ final class AppleAudioController: ObservableObject {
     @Published private(set) var underflows: UInt64 = 0
     @Published private(set) var overflows: UInt64 = 0
     @Published private(set) var lastError = ""
+
     @Published private(set) var scopeLeft: [Float] = []
     @Published private(set) var scopeRight: [Float] = []
-
-    @Published private(set) var rawAnalysis =
-        AppleAnalysisSnapshot.empty
-    @Published private(set) var processedAnalysis =
-        AppleAnalysisSnapshot.empty
+    @Published private(set) var rawAnalysis = AppleAnalysisSnapshot.empty
+    @Published private(set) var processedAnalysis = AppleAnalysisSnapshot.empty
 
     @Published private(set) var isRecording = false
-    @Published private(set) var recorderStats =
-        AppleRecorderStats()
+    @Published private(set) var recorderStats = AppleRecorderStats()
+
+    @Published private(set) var fileLoopInfo = AppleFileLoopInfo.empty
+    @Published private(set) var fileLoopName = ""
+    @Published var fileLoopBegin = 0.0
+    @Published var fileLoopEnd = 0.0
+    @Published var fileLoopCrossfadeMS = 5.0
+
+    @Published var analyzerFFTSize = 4096 {
+        didSet {
+            guard [1024, 2048, 4096, 8192].contains(analyzerFFTSize) else {
+                return
+            }
+            UserDefaults.standard.set(analyzerFFTSize, forKey: "analysis/fftSize")
+            realtime.setAnalyzerFFTSize(analyzerFFTSize)
+        }
+    }
 
     @Published var dspEnabled = true {
         didSet {
+            UserDefaults.standard.set(dspEnabled, forKey: "audio/dspEnabled")
             realtime.setDSPEnabled(dspEnabled)
             updateRouteDescription()
         }
@@ -63,34 +78,42 @@ final class AppleAudioController: ObservableObject {
     @Published var sourceMode: AppleAudioSourceMode = .testGenerator {
         didSet { sourceModeDidChange() }
     }
+
     @Published var generatorKind: AppleTestSignalKind = .sine {
-        didSet { syncGeneratorSettings() }
+        didSet { generatorSettingChanged() }
     }
     @Published var generatorFrequency = 440.0 {
-        didSet { syncGeneratorSettings() }
+        didSet { generatorSettingChanged() }
     }
     @Published var generatorAmplitude = 0.25 {
-        didSet { syncGeneratorSettings() }
+        didSet { generatorSettingChanged() }
     }
     @Published var generatorSweepEnd = 12_000.0 {
-        didSet { syncGeneratorSettings() }
+        didSet { generatorSettingChanged() }
     }
     @Published var generatorSweepSeconds = 5.0 {
-        didSet { syncGeneratorSettings() }
+        didSet { generatorSettingChanged() }
     }
     @Published var generatorImpulsePeriod = 1.0 {
-        didSet { syncGeneratorSettings() }
+        didSet { generatorSettingChanged() }
     }
 
     #if os(iOS)
     @Published private(set) var availableInputs: [AVAudioSessionPortDescription] = []
     #endif
 
+    #if os(macOS)
+    let macAudioDevices = MacAudioDeviceManager()
+    #endif
+
     private let engine = AVAudioEngine()
     private let realtime: FV1RealtimeBridge
+    private let fileLoop: FV1FileLoopBridge
+
     private var sourceNode: AVAudioSourceNode?
     private var telemetryTimer: Timer?
     private var currentProgram: Data?
+    private var fileLoopURL: URL?
     private var pots: [Float] = [0, 0, 0]
     private var inputTapInstalled = false
     private var notificationTokens: [NSObjectProtocol] = []
@@ -99,14 +122,41 @@ final class AppleAudioController: ObservableObject {
     init() {
         do {
             realtime = try FV1RealtimeBridge()
+            fileLoop = try FV1FileLoopBridge()
         } catch {
-            fatalError("FV-1 realtime bridge could not be created: \(error)")
+            fatalError("FV-1 Apple audio/testbench bridge could not be created: \(error)")
         }
+
+        let defaults = UserDefaults.standard
+
+        let savedFFT = defaults.integer(forKey: "analysis/fftSize")
+        if [1024, 2048, 4096, 8192].contains(savedFFT) {
+            analyzerFFTSize = savedFFT
+        }
+
+        if defaults.object(forKey: "audio/dspEnabled") != nil {
+            dspEnabled = defaults.bool(forKey: "audio/dspEnabled")
+        }
+
+        if let rawKind = defaults.string(forKey: "generator/kind"),
+           let kind = AppleTestSignalKind(rawValue: rawKind) {
+            generatorKind = kind
+        }
+
+        generatorFrequency = Self.savedDouble("generator/frequency", fallback: 440)
+        generatorAmplitude = Self.savedDouble("generator/amplitude", fallback: 0.25)
+        generatorSweepEnd = Self.savedDouble("generator/sweepEndHz", fallback: 12_000)
+        generatorSweepSeconds = Self.savedDouble("generator/sweepSeconds", fallback: 5)
+        generatorImpulsePeriod = Self.savedDouble("generator/impulsePeriodSeconds", fallback: 1)
+
         syncGeneratorSettings()
         realtime.setDSPEnabled(dspEnabled)
+        realtime.setAnalyzerFFTSize(analyzerFFTSize)
+
         #if os(iOS)
         refreshAvailableInputs()
         #endif
+
         registerConfigurationObservers()
         updateRouteDescription()
     }
@@ -128,15 +178,23 @@ final class AppleAudioController: ObservableObject {
     func resetChip() throws {
         let resume = isRunning
         if resume { stop() }
+
         try realtime.reset()
-        if let currentProgram { try realtime.load(program: currentProgram) }
+        if let currentProgram {
+            try realtime.load(program: currentProgram)
+        }
         realtime.setPots(pots)
+
         if resume { try start() }
     }
 
     func toggle() {
         do {
-            if isRunning { stop() } else { try start() }
+            if isRunning {
+                stop()
+            } else {
+                try start()
+            }
         } catch {
             lastError = error.localizedDescription
             stop()
@@ -145,13 +203,20 @@ final class AppleAudioController: ObservableObject {
 
     func start() throws {
         guard !isRunning else { return }
+
         try configurePlatformAudioSession()
 
         engine.stop()
         engine.reset()
 
-        let outputNode = engine.outputNode
-        let outputHardware = outputNode.inputFormat(forBus: 0)
+        #if os(macOS)
+        try macAudioDevices.apply(
+            to: engine,
+            needsInput: sourceMode == .audioInterface
+        )
+        #endif
+
+        let outputHardware = engine.outputNode.inputFormat(forBus: 0)
 
         guard outputHardware.sampleRate > 0,
               outputHardware.channelCount > 0 else {
@@ -189,14 +254,11 @@ final class AppleAudioController: ObservableObject {
                 )
             }
 
-            let inputChannels = AVAudioChannelCount(
-                min(2, Int(inputHardware.channelCount))
-            )
-
+            let channels = AVAudioChannelCount(min(2, Int(inputHardware.channelCount)))
             guard let canonicalInput = AVAudioFormat(
                 commonFormat: .pcmFormatFloat32,
                 sampleRate: inputHardware.sampleRate,
-                channels: inputChannels,
+                channels: channels,
                 interleaved: false
             ) else {
                 throw FV1EngineError.sdk(
@@ -208,21 +270,37 @@ final class AppleAudioController: ObservableObject {
             inputNode = liveInput
             inputFormat = canonicalInput
             bridgeInputRate = canonicalInput.sampleRate
+        } else if sourceMode == .audioFileLoop {
+            guard fileLoopURL != nil else {
+                throw FV1TestbenchError.operation(
+                    "Load an audio loop before starting the file-loop source."
+                )
+            }
+
+            try fileLoop.prepare(
+                sampleRate: renderFormat.sampleRate,
+                maxFrames: 4096
+            )
+            bridgeInputRate = renderFormat.sampleRate
         }
 
+        realtime.setAnalyzerFFTSize(analyzerFFTSize)
         try realtime.configureAndPrime(
             inputRate: bridgeInputRate,
             outputRate: renderFormat.sampleRate,
             primeFrames: 256
         )
         realtime.setPots(pots)
+        realtime.setDSPEnabled(dspEnabled)
         syncGeneratorSettings()
 
         let bridge = realtime
+        let loopSource = fileLoop
         let useTestGenerator = sourceMode == .testGenerator
+        let useFileLoop = sourceMode == .audioFileLoop
 
         let renderBlock: AVAudioSourceNodeRenderBlock = {
-            @Sendable [bridge] _, _, frameCount, outputData in
+            @Sendable [bridge, loopSource] _, _, frameCount, outputData in
 
             let buffers = UnsafeMutableAudioBufferListPointer(outputData)
             guard buffers.count >= 2,
@@ -231,31 +309,26 @@ final class AppleAudioController: ObservableObject {
                 return kAudio_ParamError
             }
 
-            let left = leftData.bindMemory(
-                to: Float.self,
-                capacity: Int(frameCount)
-            )
-            let right = rightData.bindMemory(
-                to: Float.self,
-                capacity: Int(frameCount)
-            )
+            let count = Int(frameCount)
+            let left = leftData.bindMemory(to: Float.self, capacity: count)
+            let right = rightData.bindMemory(to: Float.self, capacity: count)
 
             if useTestGenerator {
-                bridge.processTestGenerator(frames: Int(frameCount))
+                bridge.processTestGenerator(frames: count)
+            } else if useFileLoop {
+                loopSource.render(left: left, right: right, frames: count)
+                bridge.process(
+                    left: UnsafePointer(left),
+                    right: UnsafePointer(right),
+                    frames: count
+                )
             }
 
-            bridge.render(
-                left: left,
-                right: right,
-                frames: Int(frameCount)
-            )
+            bridge.render(left: left, right: right, frames: count)
             return noErr
         }
 
-        let source = AVAudioSourceNode(
-            format: renderFormat,
-            renderBlock: renderBlock
-        )
+        let source = AVAudioSourceNode(format: renderFormat, renderBlock: renderBlock)
         sourceNode = source
         engine.attach(source)
         engine.connect(source, to: engine.mainMixerNode, format: renderFormat)
@@ -271,8 +344,7 @@ final class AppleAudioController: ObservableObject {
                 }
 
                 let left = UnsafePointer(channels[0])
-                let rightIndex = min(1, inputChannelCount - 1)
-                let right = UnsafePointer(channels[rightIndex])
+                let right = UnsafePointer(channels[min(1, inputChannelCount - 1)])
 
                 bridge.process(
                     left: left,
@@ -291,6 +363,7 @@ final class AppleAudioController: ObservableObject {
         }
 
         engine.prepare()
+
         do {
             try engine.start()
         } catch {
@@ -307,7 +380,9 @@ final class AppleAudioController: ObservableObject {
         outputSampleRate = renderFormat.sampleRate
         isRunning = true
         lastError = ""
+
         updateRouteDescription()
+        refreshFileLoopInfo()
         startTelemetry()
     }
 
@@ -318,24 +393,114 @@ final class AppleAudioController: ObservableObject {
 
         telemetryTimer?.invalidate()
         telemetryTimer = nil
+
         if inputTapInstalled {
             engine.inputNode.removeTap(onBus: 0)
             inputTapInstalled = false
         }
+
         engine.stop()
-        if let sourceNode, engine.attachedNodes.contains(sourceNode) { engine.detach(sourceNode) }
+
+        if let sourceNode, engine.attachedNodes.contains(sourceNode) {
+            engine.detach(sourceNode)
+        }
         sourceNode = nil
         isRunning = false
+
+        if sourceMode == .audioFileLoop {
+            fileLoop.stop()
+            refreshFileLoopInfo()
+        }
+
         routeDescription = "Stopped"
+
         #if os(iOS)
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        try? AVAudioSession.sharedInstance().setActive(
+            false,
+            options: .notifyOthersOnDeactivation
+        )
         #endif
     }
 
-    func startRecording(
-        to url: URL,
-        mode: AppleRecordMode
-    ) throws {
+    func loadFileLoop(url: URL) throws {
+        if isRunning { stop() }
+
+        try fileLoop.load(url: url)
+        fileLoopURL = url
+        fileLoopName = url.lastPathComponent
+
+        let info = fileLoop.info()
+        fileLoopInfo = info
+        fileLoopBegin = info.loopBegin
+        fileLoopEnd = info.loopEnd
+
+        let savedCrossfade = UserDefaults.standard.double(forKey: "fileLoop/crossfadeMs")
+        fileLoopCrossfadeMS = savedCrossfade > 0 ? savedCrossfade : 5.0
+        fileLoop.setCrossfade(milliseconds: fileLoopCrossfadeMS)
+
+        sourceMode = .audioFileLoop
+        updateRouteDescription()
+    }
+
+    func playFileLoop() {
+        fileLoop.play()
+        refreshFileLoopInfo()
+    }
+
+    func pauseFileLoop() {
+        fileLoop.pause()
+        refreshFileLoopInfo()
+    }
+
+    func stopFileLoop() {
+        fileLoop.stop()
+        refreshFileLoopInfo()
+    }
+
+    func seekFileLoop(seconds: Double) {
+        do {
+            try fileLoop.seek(seconds: seconds)
+            refreshFileLoopInfo()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func setFileLooping(_ enabled: Bool) {
+        fileLoop.setLooping(enabled)
+        refreshFileLoopInfo()
+    }
+
+    func applyFileLoopRegion() {
+        guard fileLoopInfo.duration > 0 else { return }
+
+        let begin = max(0, min(fileLoopBegin, fileLoopInfo.duration))
+        let end = max(
+            begin + 0.001,
+            min(fileLoopEnd, fileLoopInfo.duration)
+        )
+
+        do {
+            try fileLoop.setLoopRegion(begin: begin, end: end)
+            let crossfade = max(0, min(500, fileLoopCrossfadeMS))
+            fileLoop.setCrossfade(milliseconds: crossfade)
+            UserDefaults.standard.set(crossfade, forKey: "fileLoop/crossfadeMs")
+
+            fileLoopBegin = begin
+            fileLoopEnd = end
+            fileLoopCrossfadeMS = crossfade
+            refreshFileLoopInfo()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func setAnalyzerFFTSize(_ size: Int) {
+        guard [1024, 2048, 4096, 8192].contains(size) else { return }
+        analyzerFFTSize = size
+    }
+
+    func startRecording(to url: URL, mode: AppleRecordMode) throws {
         guard isRunning else {
             throw AppleRecordingError.recorder(
                 "Start an audio session before recording."
@@ -343,35 +508,27 @@ final class AppleAudioController: ObservableObject {
         }
 
         let selectedRate: Double
-
         switch mode {
         case .processed:
             selectedRate = outputSampleRate
-
         case .raw:
             selectedRate = inputSampleRate
-
         case .rawAndProcessed:
-            guard abs(
-                inputSampleRate - outputSampleRate
-            ) < 0.5 else {
-                throw AppleRecordingError
-                    .invalidSampleRates
+            guard abs(inputSampleRate - outputSampleRate) < 0.5 else {
+                throw AppleRecordingError.invalidSampleRates
             }
             selectedRate = outputSampleRate
         }
 
         guard selectedRate > 0 else {
             throw AppleRecordingError.recorder(
-                "The active Apple route has no valid sample rate."
+                "The active Apple audio route has no valid sample rate."
             )
         }
 
         try realtime.startRecording(
             url: url,
-            sampleRate: UInt32(
-                selectedRate.rounded()
-            ),
+            sampleRate: UInt32(selectedRate.rounded()),
             mode: mode
         )
 
@@ -385,6 +542,12 @@ final class AppleAudioController: ObservableObject {
         isRecording = false
     }
 
+    #if os(macOS)
+    func refreshMacAudioDevices() {
+        macAudioDevices.refresh()
+    }
+    #endif
+
     #if os(iOS)
     func refreshAvailableInputs() {
         availableInputs = AVAudioSession.sharedInstance().availableInputs ?? []
@@ -393,28 +556,52 @@ final class AppleAudioController: ObservableObject {
     func selectInput(uid: String) {
         do {
             let session = AVAudioSession.sharedInstance()
-            guard let port = session.availableInputs?.first(where: { $0.uid == uid }) else { return }
+            guard let port = session.availableInputs?.first(where: { $0.uid == uid }) else {
+                return
+            }
+
             sourceMode = .audioInterface
             try session.setPreferredInput(port)
             refreshAvailableInputs()
-            if isRunning { stop(); try start() }
-        } catch { lastError = error.localizedDescription }
+
+            if isRunning {
+                stop()
+                try start()
+            }
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
     #endif
 
-
     private func registerConfigurationObservers() {
         let center = NotificationCenter.default
-        notificationTokens.append(center.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.recoverAfterRouteChange() }
-        })
-        #if os(iOS)
-        notificationTokens.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in
-                self?.refreshAvailableInputs()
-                self?.recoverAfterRouteChange()
+
+        notificationTokens.append(
+            center.addObserver(
+                forName: .AVAudioEngineConfigurationChange,
+                object: engine,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.recoverAfterRouteChange()
+                }
             }
-        })
+        )
+
+        #if os(iOS)
+        notificationTokens.append(
+            center.addObserver(
+                forName: AVAudioSession.routeChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.refreshAvailableInputs()
+                    self?.recoverAfterRouteChange()
+                }
+            }
+        )
         #endif
     }
 
@@ -423,8 +610,10 @@ final class AppleAudioController: ObservableObject {
             updateRouteDescription()
             return
         }
+
         isRecoveringRoute = true
         defer { isRecoveringRoute = false }
+
         stop()
         do {
             try start()
@@ -436,8 +625,13 @@ final class AppleAudioController: ObservableObject {
 
     private func startTelemetry() {
         telemetryTimer?.invalidate()
-        telemetryTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshTelemetry() }
+        telemetryTimer = Timer.scheduledTimer(
+            withTimeInterval: 1.0 / 20.0,
+            repeats: true
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshTelemetry()
+            }
         }
     }
 
@@ -447,12 +641,9 @@ final class AppleAudioController: ObservableObject {
         chipFrames = stats.chip_frames
         underflows = stats.output_underflows
         overflows = stats.output_overflows
-        rawAnalysis = realtime.analysis(
-            stream: .raw
-        )
-        processedAnalysis = realtime.analysis(
-            stream: .processed
-        )
+
+        rawAnalysis = realtime.analysis(stream: .raw)
+        processedAnalysis = realtime.analysis(stream: .processed)
 
         scopeLeft = processedAnalysis.scopeLeft
         scopeRight = processedAnalysis.scopeRight
@@ -460,7 +651,15 @@ final class AppleAudioController: ObservableObject {
         isRecording = realtime.isRecording
         recorderStats = realtime.recorderStats()
 
+        if fileLoopURL != nil {
+            refreshFileLoopInfo()
+        }
+
         updateRouteDescription()
+    }
+
+    private func refreshFileLoopInfo() {
+        fileLoopInfo = fileLoop.info()
     }
 
     private func configurePlatformAudioSession() throws {
@@ -492,32 +691,53 @@ final class AppleAudioController: ObservableObject {
     }
 
     private func updateRouteDescription() {
+        let path = dspEnabled ? "DSP/FX ON" : "DSP/FX BYPASS"
+
         #if os(iOS)
         let route = AVAudioSession.sharedInstance().currentRoute
         let output = route.outputs.first?.portName ?? "No output"
-        let path =
-            dspEnabled ? "DSP/FX ON" : "DSP/FX BYPASS"
 
-        if sourceMode == .testGenerator {
-            routeDescription =
-                "Test Generator → \(path) → \(output)"
-        } else {
-            let input =
-                route.inputs.first?.portName
-                ?? "No input"
-            routeDescription =
-                "\(input) → \(path) → \(output)"
+        switch sourceMode {
+        case .testGenerator:
+            routeDescription = "Test Generator → \(path) → \(output)"
+        case .audioInterface:
+            let input = route.inputs.first?.portName ?? "No input"
+            routeDescription = "\(input) → \(path) → \(output)"
+        case .audioFileLoop:
+            let file = fileLoopName.isEmpty ? "Audio File Loop" : fileLoopName
+            routeDescription = "\(file) → \(path) → \(output)"
         }
         #else
-        let path =
-            dspEnabled ? "DSP/FX ON" : "DSP/FX BYPASS"
+        let selectedDevice =
+            macAudioDevices
+                .selectedDevice()?
+                .displayName
 
-        if sourceMode == .testGenerator {
+        let output =
+            selectedDevice
+            ?? "system default output"
+
+        switch sourceMode {
+        case .testGenerator:
             routeDescription =
-                "Test Generator → \(path) → system default output"
-        } else {
+                "Test Generator → \(path) → \(output)"
+
+        case .audioInterface:
+            let input =
+                selectedDevice
+                ?? "system default input"
+
             routeDescription =
-                "System default input → \(path) → output"
+                "\(input) → \(path) → \(output)"
+
+        case .audioFileLoop:
+            let file =
+                fileLoopName.isEmpty
+                ? "Audio File Loop"
+                : fileLoopName
+
+            routeDescription =
+                "\(file) → \(path) → \(output)"
         }
         #endif
     }
@@ -525,12 +745,23 @@ final class AppleAudioController: ObservableObject {
     private func syncGeneratorSettings() {
         realtime.configureTestGenerator(
             kind: generatorKind.bridgeValue,
-            frequency: max(0.0, generatorFrequency),
-            amplitude: min(1.0, max(0.0, generatorAmplitude)),
-            sweepEnd: max(1.0, generatorSweepEnd),
+            frequency: max(0, generatorFrequency),
+            amplitude: min(1, max(0, generatorAmplitude)),
+            sweepEnd: max(1, generatorSweepEnd),
             sweepSeconds: max(0.001, generatorSweepSeconds),
             impulsePeriod: max(0.001, generatorImpulsePeriod)
         )
+    }
+
+    private func generatorSettingChanged() {
+        let defaults = UserDefaults.standard
+        defaults.set(generatorKind.rawValue, forKey: "generator/kind")
+        defaults.set(generatorFrequency, forKey: "generator/frequency")
+        defaults.set(generatorAmplitude, forKey: "generator/amplitude")
+        defaults.set(generatorSweepEnd, forKey: "generator/sweepEndHz")
+        defaults.set(generatorSweepSeconds, forKey: "generator/sweepSeconds")
+        defaults.set(generatorImpulsePeriod, forKey: "generator/impulsePeriodSeconds")
+        syncGeneratorSettings()
     }
 
     private func sourceModeDidChange() {
@@ -545,5 +776,13 @@ final class AppleAudioController: ObservableObject {
             lastError = "Audio source change failed: \(error.localizedDescription)"
             stop()
         }
+    }
+
+    private static func savedDouble(_ key: String, fallback: Double) -> Double {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: key) != nil else {
+            return fallback
+        }
+        return defaults.double(forKey: key)
     }
 }

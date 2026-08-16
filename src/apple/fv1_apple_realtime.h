@@ -131,6 +131,17 @@ uint32_t fv1_apple_realtime_get_dsp_enabled(
     const fv1_apple_realtime* bridge);
 
 /*
+ * Analyzer FFT size is a control-thread setting. Supported values match the
+ * Linux testbench: 1024, 2048, 4096 and 8192. The selected size is applied
+ * when the next audio session configures the bridge.
+ */
+fv1_sdk_result fv1_apple_realtime_set_analyzer_fft_size(
+    fv1_apple_realtime* bridge,
+    size_t fft_size);
+size_t fv1_apple_realtime_get_analyzer_fft_size(
+    const fv1_apple_realtime* bridge);
+
+/*
  * Built-in test generator.  Configuration writes are atomic and may come from
  * the main/UI thread while audio is running.  Generation itself occurs only
  * from the audio callback and does not allocate, lock, access files, or log.

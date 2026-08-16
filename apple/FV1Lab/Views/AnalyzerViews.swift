@@ -272,6 +272,11 @@ struct FV1ScopeAnalyzerView: View {
 }
 
 private struct Phase8BScopeCanvas: View {
+    @Environment(
+        \.fv1ThemePalette
+    )
+    private var theme
+
     let raw: AppleAnalysisSnapshot
     let processed: AppleAnalysisSnapshot
     let showRaw: Bool
@@ -286,7 +291,7 @@ private struct Phase8BScopeCanvas: View {
             if showRaw {
                 drawStereo(
                     snapshot: raw,
-                    color: .gray,
+                    color: theme.rawTrace,
                     context: &context,
                     size: size
                 )
@@ -294,13 +299,13 @@ private struct Phase8BScopeCanvas: View {
             if showProcessed {
                 drawStereo(
                     snapshot: processed,
-                    color: .cyan,
+                    color: theme.accent,
                     context: &context,
                     size: size
                 )
             }
         }
-        .background(.black.opacity(0.92))
+        .background(theme.panel)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .accessibilityLabel("Raw and processed FV-1 oscilloscope")
     }
@@ -311,14 +316,14 @@ private struct Phase8BScopeCanvas: View {
             var path = Path()
             path.move(to: CGPoint(x: x, y: 0))
             path.addLine(to: CGPoint(x: x, y: size.height))
-            context.stroke(path, with: .color(.white.opacity(0.08)), lineWidth: 0.5)
+            context.stroke(path, with: .color(theme.gridMinor), lineWidth: 0.5)
         }
         for i in 1..<8 {
             let y = size.height * CGFloat(i) / 8
             var path = Path()
             path.move(to: CGPoint(x: 0, y: y))
             path.addLine(to: CGPoint(x: size.width, y: y))
-            context.stroke(path, with: .color(.white.opacity(0.08)), lineWidth: 0.5)
+            context.stroke(path, with: .color(theme.gridMinor), lineWidth: 0.5)
         }
     }
 
@@ -534,6 +539,11 @@ struct FV1SpectrumAnalyzerView: View {
 }
 
 private struct Phase8BSpectrumCanvas: View {
+    @Environment(
+        \.fv1ThemePalette
+    )
+    private var theme
+
     let raw: AppleAnalysisSnapshot
     let processed: AppleAnalysisSnapshot
     let showRaw: Bool
@@ -550,19 +560,19 @@ private struct Phase8BSpectrumCanvas: View {
                 var grid = Path()
                 grid.move(to: CGPoint(x: 0, y: y))
                 grid.addLine(to: CGPoint(x: size.width, y: y))
-                context.stroke(grid, with: .color(.white.opacity(0.08)), lineWidth: 0.5)
+                context.stroke(grid, with: .color(theme.gridMinor), lineWidth: 0.5)
             }
 
             if showRaw {
-                draw(raw.spectrumDB, snapshot: raw, color: .gray, context: &context, size: size)
-                draw(rawPeaks, snapshot: raw, color: .white.opacity(0.30), context: &context, size: size)
+                draw(raw.spectrumDB, snapshot: raw, color: theme.rawTrace, context: &context, size: size)
+                draw(rawPeaks, snapshot: raw, color: theme.text.opacity(0.30), context: &context, size: size)
             }
             if showProcessed {
-                draw(processed.spectrumDB, snapshot: processed, color: .cyan, context: &context, size: size)
-                draw(processedPeaks, snapshot: processed, color: .cyan.opacity(0.30), context: &context, size: size)
+                draw(processed.spectrumDB, snapshot: processed, color: theme.accent, context: &context, size: size)
+                draw(processedPeaks, snapshot: processed, color: theme.accent.opacity(0.30), context: &context, size: size)
             }
         }
-        .background(.black.opacity(0.92))
+        .background(theme.panel)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
@@ -616,6 +626,11 @@ private struct Phase8BSpectrumCanvas: View {
 }
 
 struct FV1SpectrogramView: View {
+    @Environment(
+        \.fv1ThemePalette
+    )
+    private var theme
+
     let raw: AppleAnalysisSnapshot
     let processed: AppleAnalysisSnapshot
 
@@ -700,7 +715,7 @@ struct FV1SpectrogramView: View {
                     }
                 }
             }
-            .background(.black.opacity(0.94))
+            .background(theme.panel)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .frame(minHeight: 360)
 

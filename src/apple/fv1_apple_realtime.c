@@ -40,6 +40,7 @@ struct fv1_apple_realtime {
     linear_resampler bypass_to_output;
     fv1_apple_analysis_state* analysis;
     atomic_uint_least32_t dsp_enabled;
+    size_t analyzer_fft_size;
 
     atomic_uint_least32_t desired_pot_bits[3];
     uint32_t applied_pot_bits[3];
@@ -116,6 +117,13 @@ static float clamp_pot(float value) {
 
 static int valid_rate(double rate) {
     return isfinite(rate) && rate >= 8000.0 && rate <= 384000.0;
+}
+
+static int valid_analyzer_fft_size(size_t fft_size) {
+    return fft_size == 1024u
+        || fft_size == 2048u
+        || fft_size == 4096u
+        || fft_size == 8192u;
 }
 
 static void resampler_reset(linear_resampler* resampler,
@@ -477,10 +485,13 @@ fv1_sdk_result fv1_apple_realtime_create(double input_sample_rate,
         return result;
     }
 
+    bridge->analyzer_fft_size =
+        FV1_APPLE_ANALYZER_FFT_SIZE;
+
     result = fv1_apple_analysis_create(
         input_sample_rate,
         output_sample_rate,
-        FV1_APPLE_ANALYZER_FFT_SIZE,
+        bridge->analyzer_fft_size,
         &bridge->analysis);
     if (result != FV1_SDK_OK) {
         fv1_sdk_engine_destroy(bridge->engine);
@@ -551,7 +562,7 @@ fv1_sdk_result fv1_apple_realtime_configure_rates(fv1_apple_realtime* bridge,
             bridge->analysis,
             input_sample_rate,
             output_sample_rate,
-            FV1_APPLE_ANALYZER_FFT_SIZE);
+            bridge->analyzer_fft_size);
     if (analysis_result != FV1_SDK_OK) {
         return analysis_result;
     }
@@ -653,6 +664,30 @@ uint32_t fv1_apple_realtime_get_dsp_enabled(
     return (uint32_t)atomic_load_explicit(
         &bridge->dsp_enabled,
         memory_order_acquire);
+}
+
+/*
+ * Phase 8C analyzer FFT control.
+ *
+ * This is a control-thread preference. The analyzer worker is reconfigured
+ * when the next Apple audio session calls configure_rates(), so changing this
+ * value never reallocates or locks from the realtime render callback.
+ */
+fv1_sdk_result fv1_apple_realtime_set_analyzer_fft_size(
+    fv1_apple_realtime* bridge,
+    size_t fft_size) {
+    if (!bridge || !valid_analyzer_fft_size(fft_size)) {
+        return FV1_SDK_ERROR_INVALID_ARGUMENT;
+    }
+
+    bridge->analyzer_fft_size = fft_size;
+    return FV1_SDK_OK;
+}
+
+size_t fv1_apple_realtime_get_analyzer_fft_size(
+    const fv1_apple_realtime* bridge) {
+    if (!bridge) return 0u;
+    return bridge->analyzer_fft_size;
 }
 
 void fv1_apple_realtime_set_test_generator(fv1_apple_realtime* bridge,

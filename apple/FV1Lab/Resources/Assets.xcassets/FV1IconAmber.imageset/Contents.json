@@ -1,0 +1,13 @@
+{
+  "images": [
+    {
+      "filename": "fv1-emulator-amber.png",
+      "idiom": "universal",
+      "scale": "1x"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}
