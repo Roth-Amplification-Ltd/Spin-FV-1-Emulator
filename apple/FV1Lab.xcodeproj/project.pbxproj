@@ -11,11 +11,13 @@
 		CE94C1C11FA08F2E4B4A33F5 /* FV1Document.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = 02D95D5D9893CB09FA826664 /* FV1Document.swift */; };
 		3703E501AFBA8D660345AD36 /* FV1WorkspaceModel.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = FEC3113590E959E0CF15560E /* FV1WorkspaceModel.swift */; };
 		D77CCA00DFBD9B46D286C70C /* MacAboutPresenter.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = F9C85DC0EBAA96F8AC38EDF4 /* MacAboutPresenter.swift */; };
+		C1D0919AF8B42479B5A2069E /* MacStartupSplashController.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = 9341F0651C132C1410A4416E /* MacStartupSplashController.swift */; };
 		71B97EC2FA92EC3A30872390 /* FV1Engine.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = 2A9AC5DD32F29FBFCBF4EE0E /* FV1Engine.swift */; };
 		7F900BEAD4554AED9243A018 /* FV1RealtimeBridge.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = F63C9DF937626E9922CD9B75 /* FV1RealtimeBridge.swift */; };
 		03CD08FF04C54E300FAEF769 /* ScopeView.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = 97B05E32F437EFCC74C9BDA1 /* ScopeView.swift */; };
 		EC878D7675A2073C748CC451 /* ControlsView.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = 27A57C6686800FF83BF6065E /* ControlsView.swift */; };
 		B19D71C669A13CC0D93F7F0C /* InspectionView.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = FCBA238CFE46398BB7BE8E90 /* InspectionView.swift */; };
+		C1A2C5B5AD367CB5E7A1AEA2 /* StartupSplashView.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = A27CB3E77AB6E01F2D2E5EB8 /* StartupSplashView.swift */; };
 		BC9808CB0D12B787F38E0D21 /* WorkspaceView.swift in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = D03BB50A2930EB8C682595C7 /* WorkspaceView.swift */; };
 		E741D8877515CDBC149026C9 /* sdk.cpp in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = DD16F9DCD25FBEE7BC5564F7 /* sdk.cpp */; };
 		3FDB9D7307991190EAE8F68B /* engine.cpp in Sources (macOS) */ = {isa = PBXBuildFile; fileRef = D1BE57206E7E8C8355330BC7 /* engine.cpp */; };
@@ -27,11 +29,13 @@
 		38709ECA9FB49A620F72E98C /* FV1Document.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = 02D95D5D9893CB09FA826664 /* FV1Document.swift */; };
 		6CDE27A65A83A3F6C3C5EFA2 /* FV1WorkspaceModel.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = FEC3113590E959E0CF15560E /* FV1WorkspaceModel.swift */; };
 		46FE12969B9963208E4DFF9F /* MacAboutPresenter.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = F9C85DC0EBAA96F8AC38EDF4 /* MacAboutPresenter.swift */; };
+		420F12251BD3FCA3B11E1CC6 /* MacStartupSplashController.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = 9341F0651C132C1410A4416E /* MacStartupSplashController.swift */; };
 		D1E7162ACAECB04A0AD7D3F3 /* FV1Engine.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = 2A9AC5DD32F29FBFCBF4EE0E /* FV1Engine.swift */; };
 		C1C83F682DEF4179B35D62D6 /* FV1RealtimeBridge.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = F63C9DF937626E9922CD9B75 /* FV1RealtimeBridge.swift */; };
 		8F0E720D6CF202A9426ABC39 /* ScopeView.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = 97B05E32F437EFCC74C9BDA1 /* ScopeView.swift */; };
 		8D785615FC02D54BA0B67414 /* ControlsView.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = 27A57C6686800FF83BF6065E /* ControlsView.swift */; };
 		3163C7F1211883BB560B1873 /* InspectionView.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = FCBA238CFE46398BB7BE8E90 /* InspectionView.swift */; };
+		05DC1D8C396833218FA2052F /* StartupSplashView.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = A27CB3E77AB6E01F2D2E5EB8 /* StartupSplashView.swift */; };
 		126AD1E0B63861511FF53335 /* WorkspaceView.swift in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = D03BB50A2930EB8C682595C7 /* WorkspaceView.swift */; };
 		D2E0BC907763FA4478F3FA38 /* sdk.cpp in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = DD16F9DCD25FBEE7BC5564F7 /* sdk.cpp */; };
 		AD077B11A2BC71B6587B4A40 /* engine.cpp in Sources (iPadOS) */ = {isa = PBXBuildFile; fileRef = D1BE57206E7E8C8355330BC7 /* engine.cpp */; };
@@ -48,11 +52,13 @@
 		02D95D5D9893CB09FA826664 /* FV1Document.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Model/FV1Document.swift"; sourceTree = SOURCE_ROOT; };
 		FEC3113590E959E0CF15560E /* FV1WorkspaceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Model/FV1WorkspaceModel.swift"; sourceTree = SOURCE_ROOT; };
 		F9C85DC0EBAA96F8AC38EDF4 /* MacAboutPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Platform/macOS/MacAboutPresenter.swift"; sourceTree = SOURCE_ROOT; };
+		9341F0651C132C1410A4416E /* MacStartupSplashController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Platform/macOS/MacStartupSplashController.swift"; sourceTree = SOURCE_ROOT; };
 		2A9AC5DD32F29FBFCBF4EE0E /* FV1Engine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/SDK/FV1Engine.swift"; sourceTree = SOURCE_ROOT; };
 		F63C9DF937626E9922CD9B75 /* FV1RealtimeBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/SDK/FV1RealtimeBridge.swift"; sourceTree = SOURCE_ROOT; };
 		97B05E32F437EFCC74C9BDA1 /* ScopeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Views/ScopeView.swift"; sourceTree = SOURCE_ROOT; };
 		27A57C6686800FF83BF6065E /* ControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Views/ControlsView.swift"; sourceTree = SOURCE_ROOT; };
 		FCBA238CFE46398BB7BE8E90 /* InspectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Views/InspectionView.swift"; sourceTree = SOURCE_ROOT; };
+		A27CB3E77AB6E01F2D2E5EB8 /* StartupSplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Views/StartupSplashView.swift"; sourceTree = SOURCE_ROOT; };
 		D03BB50A2930EB8C682595C7 /* WorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FV1Lab/Views/WorkspaceView.swift"; sourceTree = SOURCE_ROOT; };
 		DD16F9DCD25FBEE7BC5564F7 /* sdk.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = "../src/sdk/sdk.cpp"; sourceTree = SOURCE_ROOT; };
 		D1BE57206E7E8C8355330BC7 /* engine.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = "../src/core/engine.cpp"; sourceTree = SOURCE_ROOT; };
@@ -72,7 +78,7 @@
 
 /* Begin PBXGroup section */
 		870B3294C0CBD48AF6BBCC1B = {isa = PBXGroup; children = (8309DD304D804F9D7F6302F5, DD9383857FEF17DC74FE4893, 50F0FC3AFD5FBC981B5A0DDD, 615B463D1028E4E24B674CF7); sourceTree = "<group>"; };
-		8309DD304D804F9D7F6302F5 /* Apple SwiftUI */ = {isa = PBXGroup; children = (A3679B3680C78F7E07611898, DA5F8CAB8E0741DC06EACD65, 02D95D5D9893CB09FA826664, FEC3113590E959E0CF15560E, F9C85DC0EBAA96F8AC38EDF4, 2A9AC5DD32F29FBFCBF4EE0E, F63C9DF937626E9922CD9B75, 97B05E32F437EFCC74C9BDA1, 27A57C6686800FF83BF6065E, FCBA238CFE46398BB7BE8E90, D03BB50A2930EB8C682595C7); name = "Apple SwiftUI"; sourceTree = "<group>"; };
+		8309DD304D804F9D7F6302F5 /* Apple SwiftUI */ = {isa = PBXGroup; children = (A3679B3680C78F7E07611898, DA5F8CAB8E0741DC06EACD65, 02D95D5D9893CB09FA826664, FEC3113590E959E0CF15560E, F9C85DC0EBAA96F8AC38EDF4, 9341F0651C132C1410A4416E, 2A9AC5DD32F29FBFCBF4EE0E, F63C9DF937626E9922CD9B75, 97B05E32F437EFCC74C9BDA1, 27A57C6686800FF83BF6065E, FCBA238CFE46398BB7BE8E90, A27CB3E77AB6E01F2D2E5EB8, D03BB50A2930EB8C682595C7); name = "Apple SwiftUI"; sourceTree = "<group>"; };
 		DD9383857FEF17DC74FE4893 /* SDK implementation */ = {isa = PBXGroup; children = (DD16F9DCD25FBEE7BC5564F7, D1BE57206E7E8C8355330BC7, 954294CD5FF1124C8523AA38, 53F364FD20EB40EFD7221AC4); name = "SDK implementation"; sourceTree = "<group>"; };
 		50F0FC3AFD5FBC981B5A0DDD /* Resources and support */ = {isa = PBXGroup; children = (517B29B6B7323BCD196D1B0C, 43CF24550BB02AD1746176A4, 3FEC3391285714C5AEC6DD06, AD9295820D71DCC1C96136C1, 9B1A2D6EEE7F4042204B23C1); name = "Resources and Support"; sourceTree = "<group>"; };
 		615B463D1028E4E24B674CF7 /* Products */ = {isa = PBXGroup; children = (312B597B66C089DF3C99776A, 55DCB52116628156C4422ABE); name = Products; sourceTree = "<group>"; };
@@ -134,8 +140,8 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		DD823B4E40F33A3436587EBD /* Sources (macOS) */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (AAD120CBBD23BB84B02FD9AD, EEF8683BC4AA000C06BEBA39, CE94C1C11FA08F2E4B4A33F5, 3703E501AFBA8D660345AD36, D77CCA00DFBD9B46D286C70C, 71B97EC2FA92EC3A30872390, 7F900BEAD4554AED9243A018, 03CD08FF04C54E300FAEF769, EC878D7675A2073C748CC451, B19D71C669A13CC0D93F7F0C, BC9808CB0D12B787F38E0D21, E741D8877515CDBC149026C9, 3FDB9D7307991190EAE8F68B, 702415B63ADD523EA862BD42, 9922B5DB2E9FA1DD9BE2090A); runOnlyForDeploymentPostprocessing = 0; };
-		5CAB48D73E1871378194CF62 /* Sources (iPadOS) */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A77AC878706B69EA302634DF, 451E68F291D1607112F573B1, 38709ECA9FB49A620F72E98C, 6CDE27A65A83A3F6C3C5EFA2, 46FE12969B9963208E4DFF9F, D1E7162ACAECB04A0AD7D3F3, C1C83F682DEF4179B35D62D6, 8F0E720D6CF202A9426ABC39, 8D785615FC02D54BA0B67414, 3163C7F1211883BB560B1873, 126AD1E0B63861511FF53335, D2E0BC907763FA4478F3FA38, AD077B11A2BC71B6587B4A40, A5A61D0717604BA04ADB1F0F, 8163919C7DAB693F67FCCEF7); runOnlyForDeploymentPostprocessing = 0; };
+		DD823B4E40F33A3436587EBD /* Sources (macOS) */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (AAD120CBBD23BB84B02FD9AD, EEF8683BC4AA000C06BEBA39, CE94C1C11FA08F2E4B4A33F5, 3703E501AFBA8D660345AD36, D77CCA00DFBD9B46D286C70C, C1D0919AF8B42479B5A2069E, 71B97EC2FA92EC3A30872390, 7F900BEAD4554AED9243A018, 03CD08FF04C54E300FAEF769, EC878D7675A2073C748CC451, B19D71C669A13CC0D93F7F0C, C1A2C5B5AD367CB5E7A1AEA2, BC9808CB0D12B787F38E0D21, E741D8877515CDBC149026C9, 3FDB9D7307991190EAE8F68B, 702415B63ADD523EA862BD42, 9922B5DB2E9FA1DD9BE2090A); runOnlyForDeploymentPostprocessing = 0; };
+		5CAB48D73E1871378194CF62 /* Sources (iPadOS) */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A77AC878706B69EA302634DF, 451E68F291D1607112F573B1, 38709ECA9FB49A620F72E98C, 6CDE27A65A83A3F6C3C5EFA2, 46FE12969B9963208E4DFF9F, 420F12251BD3FCA3B11E1CC6, D1E7162ACAECB04A0AD7D3F3, C1C83F682DEF4179B35D62D6, 8F0E720D6CF202A9426ABC39, 8D785615FC02D54BA0B67414, 3163C7F1211883BB560B1873, 05DC1D8C396833218FA2052F, 126AD1E0B63861511FF53335, D2E0BC907763FA4478F3FA38, AD077B11A2BC71B6587B4A40, A5A61D0717604BA04ADB1F0F, 8163919C7DAB693F67FCCEF7); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
