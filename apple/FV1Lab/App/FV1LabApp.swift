@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 struct FV1CompileActionKey: FocusedValueKey {
@@ -11,14 +12,274 @@ extension FocusedValues {
     }
 }
 
+#if os(macOS)
+struct FV1OpenProgramActionKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
+struct FV1PasteSpinASMActionKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
+struct FV1ToggleDSPActionKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
+struct FV1RecordActionKey: FocusedValueKey {
+    typealias Value = (AppleRecordMode) -> Void
+}
+
+struct FV1StopRecordActionKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
+struct FV1RecordingStateKey: FocusedValueKey {
+    typealias Value = Bool
+}
+
+extension FocusedValues {
+    var fv1OpenProgramAction: (() -> Void)? {
+        get { self[FV1OpenProgramActionKey.self] }
+        set { self[FV1OpenProgramActionKey.self] = newValue }
+    }
+
+    var fv1PasteSpinASMAction: (() -> Void)? {
+        get { self[FV1PasteSpinASMActionKey.self] }
+        set { self[FV1PasteSpinASMActionKey.self] = newValue }
+    }
+
+    var fv1ToggleDSPAction: (() -> Void)? {
+        get { self[FV1ToggleDSPActionKey.self] }
+        set { self[FV1ToggleDSPActionKey.self] = newValue }
+    }
+
+    var fv1RecordAction: ((AppleRecordMode) -> Void)? {
+        get { self[FV1RecordActionKey.self] }
+        set { self[FV1RecordActionKey.self] = newValue }
+    }
+
+    var fv1StopRecordAction: (() -> Void)? {
+        get { self[FV1StopRecordActionKey.self] }
+        set { self[FV1StopRecordActionKey.self] = newValue }
+    }
+
+    var fv1RecordingState: Bool? {
+        get { self[FV1RecordingStateKey.self] }
+        set { self[FV1RecordingStateKey.self] = newValue }
+    }
+}
+#endif
+
 struct FV1Commands: Commands {
     @FocusedValue(\.fv1CompileAction)
     private var compileAction
+
+    #if os(macOS)
+    @FocusedValue(\.fv1OpenProgramAction)
+    private var openProgramAction
+
+    @FocusedValue(\.fv1PasteSpinASMAction)
+    private var pasteSpinASMAction
+
+    @FocusedValue(\.fv1ToggleDSPAction)
+    private var toggleDSPAction
+
+    @FocusedValue(\.fv1RecordAction)
+    private var recordAction
+
+    @FocusedValue(\.fv1StopRecordAction)
+    private var stopRecordAction
+
+    @FocusedValue(\.fv1RecordingState)
+    private var recordingState
+    #endif
 
     var body: some Commands {
         #if os(macOS)
         CommandGroup(replacing: .appInfo) {
             Button("About FV-1 Lab") {
+                MacAboutPresenter.show()
+            }
+        }
+
+        CommandGroup(replacing: .newItem) {
+            Button("Open FV-1 Program…") {
+                openProgramAction?()
+            }
+            .keyboardShortcut("o")
+            .disabled(openProgramAction == nil)
+
+            Button("Paste SpinASM…") {
+                pasteSpinASMAction?()
+            }
+            .keyboardShortcut(
+                "v",
+                modifiers: [.command, .shift]
+            )
+            .disabled(pasteSpinASMAction == nil)
+
+            Button("Open Audio Loop…") {}
+                .disabled(true)
+        }
+
+        CommandMenu("Audio") {
+            Button("Audio Settings…") {}
+                .disabled(true)
+
+            Button("Refresh Audio Devices") {}
+                .disabled(true)
+
+            Divider()
+
+            Button("Test Generator Settings…") {}
+                .disabled(true)
+
+            Button("Audio Loop Region…") {}
+                .disabled(true)
+
+            Divider()
+
+            Menu("Record Raw / Processed Audio…") {
+                Button("Processed") {
+                    recordAction?(.processed)
+                }
+                .disabled(recordAction == nil)
+
+                Button("Raw") {
+                    recordAction?(.raw)
+                }
+                .disabled(recordAction == nil)
+
+                Button("Raw + Processed") {
+                    recordAction?(.rawAndProcessed)
+                }
+                .disabled(recordAction == nil)
+            }
+
+            Button("Stop Recording") {
+                stopRecordAction?()
+            }
+            .disabled(
+                stopRecordAction == nil
+                    || recordingState != true
+            )
+
+            Divider()
+
+            Button("Toggle DSP/FX Bypass") {
+                toggleDSPAction?()
+            }
+            .keyboardShortcut(
+                "d",
+                modifiers: [.command, .shift]
+            )
+            .disabled(toggleDSPAction == nil)
+        }
+
+        CommandMenu("Analysis") {
+            Button("Show Raw + Processed Overlay") {
+                let defaults = UserDefaults.standard
+                let key =
+                    "analysis/rawProcessedOverlay"
+
+                let current: Bool
+                if defaults.object(
+                    forKey: key
+                ) == nil {
+                    current = true
+                } else {
+                    current =
+                        defaults.bool(
+                            forKey: key
+                        )
+                }
+
+                let enabled = !current
+                defaults.set(
+                    enabled,
+                    forKey: key
+                )
+
+                NotificationCenter.default
+                    .post(
+                        name:
+                            .fv1AnalyzerOverlayChanged,
+                        object: enabled
+                    )
+            }
+
+            Divider()
+
+            Button("Freeze / Unfreeze All Plots") {
+                NotificationCenter.default
+                    .post(
+                        name:
+                            .fv1AnalyzerToggleFreezeAll,
+                        object: nil
+                    )
+            }
+
+            Button("Clear Analyzer Displays") {
+                NotificationCenter.default
+                    .post(
+                        name:
+                            .fv1AnalyzerClearAll,
+                        object: nil
+                    )
+            }
+
+            Menu("FFT Size (next session)") {
+                Button("1024") {}
+                    .disabled(true)
+                Button("2048") {}
+                    .disabled(true)
+                Button("4096 ✓") {}
+                    .disabled(true)
+                Button("8192") {}
+                    .disabled(true)
+            }
+        }
+
+        CommandGroup(after: .toolbar) {
+            Menu("Theme") {
+                Button("Dark") {}.disabled(true)
+                Button("Light") {}.disabled(true)
+                Button("Midnight") {}.disabled(true)
+                Button("Amber CRT") {}.disabled(true)
+                Button("Green Phosphor") {}.disabled(true)
+                Button("Slate") {}.disabled(true)
+                Button("High Contrast") {}.disabled(true)
+            }
+
+            Menu("Accent Color") {
+                Button("Cyan") {}.disabled(true)
+                Button("Blue") {}.disabled(true)
+                Button("Green") {}.disabled(true)
+                Button("Amber") {}.disabled(true)
+                Button("Orange") {}.disabled(true)
+                Button("Red") {}.disabled(true)
+                Button("Purple") {}.disabled(true)
+                Button("Magenta") {}.disabled(true)
+            }
+
+            Menu("Application Icon") {
+                Button("Silver") {}.disabled(true)
+                Button("Dark Cyan") {}.disabled(true)
+                Button("Blue") {}.disabled(true)
+                Button("Amber") {}.disabled(true)
+            }
+        }
+
+        CommandGroup(replacing: .help) {
+            Button("Show Startup Splash") {
+                FV1MacStartupCoordinator
+                    .shared
+                    .showStartupSplashAgain()
+            }
+
+            Divider()
+
+            Button("About FV-1 Lab…") {
                 MacAboutPresenter.show()
             }
         }
@@ -153,6 +414,13 @@ struct FV1StartupRootView: View {
 
 @main
 struct FV1LabApp: App {
+    #if os(macOS)
+    @NSApplicationDelegateAdaptor(
+        FV1MacAppDelegate.self
+    )
+    private var appDelegate
+    #endif
+
     var body: some Scene {
         WindowGroup("FV-1 Lab") {
             #if os(macOS)

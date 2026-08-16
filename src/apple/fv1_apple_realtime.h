@@ -47,6 +47,50 @@ typedef struct fv1_apple_realtime_stats_v1 {
 
 void fv1_apple_realtime_stats_v1_init(fv1_apple_realtime_stats_v1* stats);
 
+enum {
+    FV1_APPLE_ANALYSIS_RAW = 0u,
+    FV1_APPLE_ANALYSIS_PROCESSED = 1u
+};
+
+enum {
+    FV1_APPLE_RECORD_PROCESSED = 0u,
+    FV1_APPLE_RECORD_RAW = 1u,
+    FV1_APPLE_RECORD_RAW_AND_PROCESSED = 2u
+};
+
+typedef struct fv1_apple_analysis_snapshot_v1 {
+    uint32_t struct_size;
+    uint32_t spectrum_bins;
+    uint32_t scope_frames;
+    uint32_t reserved0;
+    double sample_rate;
+    uint64_t sequence;
+    uint64_t dropped_frames;
+    float peak_left;
+    float peak_right;
+    float rms_left;
+    float rms_right;
+    float correlation;
+    float dominant_frequency_hz;
+    float dominant_level_db;
+    uint32_t reserved[8];
+} fv1_apple_analysis_snapshot_v1;
+
+typedef struct fv1_apple_recorder_stats_v1 {
+    uint32_t struct_size;
+    uint32_t reserved0;
+    uint64_t raw_frames_written;
+    uint64_t processed_frames_written;
+    uint64_t raw_frames_dropped;
+    uint64_t processed_frames_dropped;
+    uint32_t reserved[8];
+} fv1_apple_recorder_stats_v1;
+
+void fv1_apple_analysis_snapshot_v1_init(
+    fv1_apple_analysis_snapshot_v1* snapshot);
+void fv1_apple_recorder_stats_v1_init(
+    fv1_apple_recorder_stats_v1* stats);
+
 fv1_sdk_result fv1_apple_realtime_create(double input_sample_rate,
                                           double output_sample_rate,
                                           uint32_t output_capacity_frames,
@@ -75,6 +119,16 @@ void fv1_apple_realtime_set_pots(fv1_apple_realtime* bridge,
                                   float pot0,
                                   float pot1,
                                   float pot2);
+
+/*
+ * Atomic realtime DSP routing. Bypass changes only the audible route; the
+ * virtual FV-1 continues running so RAW and PROCESSED analysis stays live.
+ */
+void fv1_apple_realtime_set_dsp_enabled(
+    fv1_apple_realtime* bridge,
+    uint32_t enabled);
+uint32_t fv1_apple_realtime_get_dsp_enabled(
+    const fv1_apple_realtime* bridge);
 
 /*
  * Built-in test generator.  Configuration writes are atomic and may come from
@@ -125,6 +179,33 @@ size_t fv1_apple_realtime_copy_scope(const fv1_apple_realtime* bridge,
                                       float* output_left,
                                       float* output_right,
                                       size_t capacity_frames);
+
+/* Shared Linux/Apple analyzer snapshot surface. */
+fv1_sdk_result fv1_apple_realtime_copy_analysis(
+    const fv1_apple_realtime* bridge,
+    uint32_t stream,
+    fv1_apple_analysis_snapshot_v1* snapshot,
+    float* spectrum_db,
+    size_t spectrum_capacity,
+    float* scope_left,
+    float* scope_right,
+    size_t scope_capacity);
+
+/* Shared realtime-safe WAV recorder surface. */
+fv1_sdk_result fv1_apple_realtime_start_recording(
+    fv1_apple_realtime* bridge,
+    const char* path,
+    uint32_t sample_rate,
+    uint32_t mode,
+    char* error,
+    size_t error_capacity);
+void fv1_apple_realtime_stop_recording(
+    fv1_apple_realtime* bridge);
+uint32_t fv1_apple_realtime_is_recording(
+    const fv1_apple_realtime* bridge);
+void fv1_apple_realtime_get_recorder_stats(
+    const fv1_apple_realtime* bridge,
+    fv1_apple_recorder_stats_v1* stats);
 
 #ifdef __cplusplus
 }

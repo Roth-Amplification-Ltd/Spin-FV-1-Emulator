@@ -44,6 +44,22 @@ final class AppleAudioController: ObservableObject {
     @Published private(set) var scopeLeft: [Float] = []
     @Published private(set) var scopeRight: [Float] = []
 
+    @Published private(set) var rawAnalysis =
+        AppleAnalysisSnapshot.empty
+    @Published private(set) var processedAnalysis =
+        AppleAnalysisSnapshot.empty
+
+    @Published private(set) var isRecording = false
+    @Published private(set) var recorderStats =
+        AppleRecorderStats()
+
+    @Published var dspEnabled = true {
+        didSet {
+            realtime.setDSPEnabled(dspEnabled)
+            updateRouteDescription()
+        }
+    }
+
     @Published var sourceMode: AppleAudioSourceMode = .testGenerator {
         didSet { sourceModeDidChange() }
     }
@@ -87,6 +103,7 @@ final class AppleAudioController: ObservableObject {
             fatalError("FV-1 realtime bridge could not be created: \(error)")
         }
         syncGeneratorSettings()
+        realtime.setDSPEnabled(dspEnabled)
         #if os(iOS)
         refreshAvailableInputs()
         #endif
@@ -295,6 +312,10 @@ final class AppleAudioController: ObservableObject {
     }
 
     func stop() {
+        if isRecording {
+            stopRecording()
+        }
+
         telemetryTimer?.invalidate()
         telemetryTimer = nil
         if inputTapInstalled {
@@ -309,6 +330,59 @@ final class AppleAudioController: ObservableObject {
         #if os(iOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif
+    }
+
+    func startRecording(
+        to url: URL,
+        mode: AppleRecordMode
+    ) throws {
+        guard isRunning else {
+            throw AppleRecordingError.recorder(
+                "Start an audio session before recording."
+            )
+        }
+
+        let selectedRate: Double
+
+        switch mode {
+        case .processed:
+            selectedRate = outputSampleRate
+
+        case .raw:
+            selectedRate = inputSampleRate
+
+        case .rawAndProcessed:
+            guard abs(
+                inputSampleRate - outputSampleRate
+            ) < 0.5 else {
+                throw AppleRecordingError
+                    .invalidSampleRates
+            }
+            selectedRate = outputSampleRate
+        }
+
+        guard selectedRate > 0 else {
+            throw AppleRecordingError.recorder(
+                "The active Apple route has no valid sample rate."
+            )
+        }
+
+        try realtime.startRecording(
+            url: url,
+            sampleRate: UInt32(
+                selectedRate.rounded()
+            ),
+            mode: mode
+        )
+
+        isRecording = true
+        recorderStats = realtime.recorderStats()
+    }
+
+    func stopRecording() {
+        realtime.stopRecording()
+        recorderStats = realtime.recorderStats()
+        isRecording = false
     }
 
     #if os(iOS)
@@ -373,9 +447,19 @@ final class AppleAudioController: ObservableObject {
         chipFrames = stats.chip_frames
         underflows = stats.output_underflows
         overflows = stats.output_overflows
-        let scope = realtime.scope(maxFrames: 1024)
-        scopeLeft = scope.0
-        scopeRight = scope.1
+        rawAnalysis = realtime.analysis(
+            stream: .raw
+        )
+        processedAnalysis = realtime.analysis(
+            stream: .processed
+        )
+
+        scopeLeft = processedAnalysis.scopeLeft
+        scopeRight = processedAnalysis.scopeRight
+
+        isRecording = realtime.isRecording
+        recorderStats = realtime.recorderStats()
+
         updateRouteDescription()
     }
 
@@ -411,17 +495,29 @@ final class AppleAudioController: ObservableObject {
         #if os(iOS)
         let route = AVAudioSession.sharedInstance().currentRoute
         let output = route.outputs.first?.portName ?? "No output"
+        let path =
+            dspEnabled ? "DSP/FX ON" : "DSP/FX BYPASS"
+
         if sourceMode == .testGenerator {
-            routeDescription = "Test Generator → \(output)"
+            routeDescription =
+                "Test Generator → \(path) → \(output)"
         } else {
-            let input = route.inputs.first?.portName ?? "No input"
-            routeDescription = "\(input) → \(output)"
+            let input =
+                route.inputs.first?.portName
+                ?? "No input"
+            routeDescription =
+                "\(input) → \(path) → \(output)"
         }
         #else
+        let path =
+            dspEnabled ? "DSP/FX ON" : "DSP/FX BYPASS"
+
         if sourceMode == .testGenerator {
-            routeDescription = "Test Generator → system default output"
+            routeDescription =
+                "Test Generator → \(path) → system default output"
         } else {
-            routeDescription = "System default input → output"
+            routeDescription =
+                "System default input → \(path) → output"
         }
         #endif
     }

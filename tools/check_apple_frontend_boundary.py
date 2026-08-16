@@ -45,4 +45,4 @@ if violations:
     for item in violations:
         print(f"  - {item}")
     sys.exit(1)
-print(f"Phase 8 Apple frontend boundary OK: {len(files)} Apple source/project files; public SDK only; no iPhone target")
+print(f"Phase 8 Apple frontend boundary OK: {len(files)} Apple source/project files; public emulator SDK boundary + shared testbench services; no iPhone target")

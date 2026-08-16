@@ -1,6 +1,10 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+#if os(macOS)
+import AppKit
+#endif
+
 struct WorkspaceView: View {
     @StateObject private var model = FV1WorkspaceModel()
     @State private var spinASMSource = ""
@@ -24,6 +28,27 @@ struct WorkspaceView: View {
                 guard !spinASMSource.isEmpty else { return }
                 model.compileAndLoad(source: spinASMSource)
             }
+            #if os(macOS)
+            .focusedSceneValue(\.fv1OpenProgramAction) {
+                importingProgram = true
+            }
+            .focusedSceneValue(\.fv1PasteSpinASMAction) {
+                pasteSpinASMFromClipboard()
+            }
+            .focusedSceneValue(\.fv1ToggleDSPAction) {
+                model.audio.dspEnabled.toggle()
+            }
+            .focusedSceneValue(\.fv1RecordAction) { mode in
+                beginRecording(mode)
+            }
+            .focusedSceneValue(\.fv1StopRecordAction) {
+                model.audio.stopRecording()
+            }
+            .focusedSceneValue(
+                \.fv1RecordingState,
+                model.audio.isRecording
+            )
+            #endif
     }
 
     @ViewBuilder
@@ -98,6 +123,52 @@ struct WorkspaceView: View {
                 Label("Compile & Load", systemImage: "hammer")
             }
             .disabled(spinASMSource.isEmpty)
+
+            Button {
+                model.audio.dspEnabled.toggle()
+            } label: {
+                Label(
+                    model.audio.dspEnabled
+                        ? "DSP/FX ON"
+                        : "DSP/FX BYPASS",
+                    systemImage:
+                        model.audio.dspEnabled
+                        ? "waveform.path.ecg"
+                        : "arrow.right"
+                )
+            }
+
+            #if os(macOS)
+            Menu {
+                if model.audio.isRecording {
+                    Button("Stop Recording") {
+                        model.audio.stopRecording()
+                    }
+                } else {
+                    Button("Record Processed…") {
+                        beginRecording(.processed)
+                    }
+                    Button("Record Raw…") {
+                        beginRecording(.raw)
+                    }
+                    Button("Record Raw + Processed…") {
+                        beginRecording(
+                            .rawAndProcessed
+                        )
+                    }
+                }
+            } label: {
+                Label(
+                    model.audio.isRecording
+                        ? "Recording"
+                        : "Record",
+                    systemImage:
+                        model.audio.isRecording
+                        ? "record.circle.fill"
+                        : "record.circle"
+                )
+            }
+            #endif
 
             Divider().frame(height: 22)
 
@@ -316,32 +387,65 @@ struct WorkspaceView: View {
     private var centerColumn: some View {
         VStack(spacing: 8) {
             TabView {
-                analyzerScope
-                    .tabItem { Label("OSCILLOSCOPE", systemImage: "waveform") }
-
-                analyzerPlaceholder(
-                    "SPECTRUM",
-                    "Spectrum analyzer parity is not yet wired into the Apple bridge."
+                FV1ScopeAnalyzerView(
+                    raw: model.audio.rawAnalysis,
+                    processed:
+                        model.audio.processedAnalysis
                 )
-                .tabItem { Label("SPECTRUM", systemImage: "chart.bar.xaxis") }
+                .tabItem {
+                    Label(
+                        "OSCILLOSCOPE",
+                        systemImage: "waveform"
+                    )
+                }
 
-                analyzerPlaceholder(
-                    "SPECTROGRAM",
-                    "Spectrogram parity is not yet wired into the Apple bridge."
+                FV1SpectrumAnalyzerView(
+                    raw: model.audio.rawAnalysis,
+                    processed:
+                        model.audio.processedAnalysis
                 )
-                .tabItem { Label("SPECTROGRAM", systemImage: "water.waves") }
+                .tabItem {
+                    Label(
+                        "SPECTRUM",
+                        systemImage: "chart.bar.xaxis"
+                    )
+                }
 
-                analyzerPlaceholder(
-                    "LEVELS",
-                    "Raw/processed level analysis remains to be ported from the Linux analyzer."
+                FV1SpectrogramView(
+                    raw: model.audio.rawAnalysis,
+                    processed:
+                        model.audio.processedAnalysis
                 )
-                .tabItem { Label("LEVELS", systemImage: "gauge.with.dots.needle.50percent") }
+                .tabItem {
+                    Label(
+                        "SPECTROGRAM",
+                        systemImage: "water.waves"
+                    )
+                }
+
+                FV1LevelsAnalyzerView(
+                    raw: model.audio.rawAnalysis,
+                    processed:
+                        model.audio.processedAnalysis
+                )
+                .tabItem {
+                    Label(
+                        "LEVELS",
+                        systemImage:
+                            "gauge.with.dots.needle.50percent"
+                    )
+                }
 
                 analyzerPlaceholder(
                     "VALIDATION",
-                    "Hardware-validation tools remain available in the core and need their native Apple panel."
+                    "Validation moves into Phase 8C with full inspector and Delay RAM parity."
                 )
-                .tabItem { Label("VALIDATION", systemImage: "checkmark.seal") }
+                .tabItem {
+                    Label(
+                        "VALIDATION",
+                        systemImage: "checkmark.seal"
+                    )
+                }
             }
 
             HStack(alignment: .top, spacing: 8) {
@@ -350,26 +454,6 @@ struct WorkspaceView: View {
                 dspStatusPanel
             }
             .frame(minHeight: 180, maxHeight: 220)
-        }
-        .padding(8)
-    }
-
-    private var analyzerScope: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("REALTIME STEREO OUTPUT")
-                    .font(.caption.bold())
-                Spacer()
-                Text(model.audio.routeDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            ScopeView(
-                left: model.audio.scopeLeft,
-                right: model.audio.scopeRight
-            )
-            .frame(minHeight: 360)
         }
         .padding(8)
     }
@@ -462,6 +546,20 @@ struct WorkspaceView: View {
                 Text("FV-1 clock: 32768 Hz")
                     .font(.caption.monospaced())
 
+                Text(
+                    model.audio.dspEnabled
+                        ? "Path: DSP/FX ON"
+                        : "Path: DSP/FX BYPASS"
+                )
+                .font(.caption.monospaced())
+
+                if model.audio.isRecording {
+                    Text(
+                        "REC raw \(model.audio.recorderStats.rawFramesWritten) · processed \(model.audio.recorderStats.processedFramesWritten)"
+                    )
+                    .font(.caption2.monospaced())
+                }
+
                 Text("Underflows: \(model.audio.underflows)")
                     .font(.caption.monospaced())
 
@@ -507,6 +605,66 @@ struct WorkspaceView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
     }
+
+    #if os(macOS)
+    private func pasteSpinASMFromClipboard() {
+        guard let source =
+            NSPasteboard.general.string(
+                forType: .string
+            ),
+            !source
+                .trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+                .isEmpty else {
+            model.reportExternalError(
+                "Clipboard does not contain SpinASM text."
+            )
+            return
+        }
+
+        spinASMSource = source
+        programName = "Pasted SpinASM"
+
+        model.compileAndLoad(
+            source: source
+        )
+    }
+
+    private func beginRecording(
+        _ mode: AppleRecordMode
+    ) {
+        let suffix: String
+
+        switch mode {
+        case .processed:
+            suffix = "processed"
+        case .raw:
+            suffix = "raw"
+        case .rawAndProcessed:
+            suffix = "raw-processed"
+        }
+
+        guard let url =
+            MacExportPresenter.chooseRecordingURL(
+                suggestedName:
+                    "fv1-\(suffix).wav"
+            ) else {
+            return
+        }
+
+        do {
+            try model.audio.startRecording(
+                to: url,
+                mode: mode
+            )
+        } catch {
+            model.reportExternalError(
+                error.localizedDescription
+            )
+        }
+    }
+    #endif
 
     private func pot(_ title: String, value: Binding<Double>) -> some View {
         VStack(alignment: .leading, spacing: 4) {

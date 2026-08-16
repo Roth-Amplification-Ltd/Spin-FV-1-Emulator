@@ -1,4 +1,5 @@
 #include "fv1_apple_realtime.h"
+#include "fv1_apple_analysis.h"
 
 #include <math.h>
 #include <stdatomic.h>
@@ -8,6 +9,7 @@
 #define FV1_APPLE_VIRTUAL_SAMPLE_RATE 32768.0
 #define FV1_APPLE_DEFAULT_FIFO_FRAMES 32768u
 #define FV1_APPLE_SCOPE_FRAMES 2048u
+#define FV1_APPLE_ANALYZER_FFT_SIZE 4096u
 #define FV1_APPLE_RESAMPLER_EPSILON 1.0e-12
 #define FV1_APPLE_TEST_NOISE_SEED 0x465631u
 #define FV1_APPLE_PI 3.14159265358979323846264338327950288
@@ -35,6 +37,9 @@ struct fv1_apple_realtime {
     stereo_ring output_ring;
     linear_resampler input_to_chip;
     linear_resampler chip_to_output;
+    linear_resampler bypass_to_output;
+    fv1_apple_analysis_state* analysis;
+    atomic_uint_least32_t dsp_enabled;
 
     atomic_uint_least32_t desired_pot_bits[3];
     uint32_t applied_pot_bits[3];
@@ -189,13 +194,41 @@ static void write_scope(fv1_apple_realtime* bridge, float left, float right) {
     atomic_store_explicit(&bridge->scope_write_index, index + 1u, memory_order_release);
 }
 
-static void push_output_sample(fv1_apple_realtime* bridge, float left, float right) {
+static void push_audible_output_sample(
+    fv1_apple_realtime* bridge,
+    float left,
+    float right) {
     if (!ring_push(&bridge->output_ring, left, right)) {
-        atomic_fetch_add_explicit(&bridge->output_overflows, 1u, memory_order_relaxed);
+        atomic_fetch_add_explicit(
+            &bridge->output_overflows,
+            1u,
+            memory_order_relaxed);
         return;
     }
-    atomic_fetch_add_explicit(&bridge->generated_output_frames, 1u, memory_order_relaxed);
+    atomic_fetch_add_explicit(
+        &bridge->generated_output_frames,
+        1u,
+        memory_order_relaxed);
+}
+
+static void push_output_sample(
+    fv1_apple_realtime* bridge,
+    float left,
+    float right) {
+    fv1_apple_analysis_push_processed_sample(
+        bridge->analysis,
+        left,
+        right);
     write_scope(bridge, left, right);
+
+    if (atomic_load_explicit(
+            &bridge->dsp_enabled,
+            memory_order_acquire) != 0u) {
+        push_audible_output_sample(
+            bridge,
+            left,
+            right);
+    }
 }
 
 static void feed_output_resampler(fv1_apple_realtime* bridge, float left, float right) {
@@ -219,6 +252,71 @@ static void feed_output_resampler(fv1_apple_realtime* bridge, float left, float 
         const float out_right = resampler->previous_right + (right - resampler->previous_right) * (float)alpha;
         push_output_sample(bridge, out_left, out_right);
         resampler->next_output_position += resampler->step;
+    }
+
+    resampler->previous_left = left;
+    resampler->previous_right = right;
+    resampler->input_index = current_index;
+}
+
+static void feed_bypass_resampler(
+    fv1_apple_realtime* bridge,
+    float left,
+    float right) {
+    linear_resampler* resampler =
+        &bridge->bypass_to_output;
+
+    if (!resampler->have_previous) {
+        resampler->previous_left = left;
+        resampler->previous_right = right;
+        resampler->input_index = 0u;
+        resampler->next_output_position =
+            resampler->step;
+        resampler->have_previous = 1;
+
+        if (atomic_load_explicit(
+                &bridge->dsp_enabled,
+                memory_order_acquire) == 0u) {
+            push_audible_output_sample(
+                bridge,
+                left,
+                right);
+        }
+        return;
+    }
+
+    const uint64_t current_index =
+        resampler->input_index + 1u;
+
+    while (resampler->next_output_position
+           <= (double)current_index
+                + FV1_APPLE_RESAMPLER_EPSILON) {
+        double alpha =
+            resampler->next_output_position
+            - (double)(current_index - 1u);
+        if (alpha < 0.0) alpha = 0.0;
+        if (alpha > 1.0) alpha = 1.0;
+
+        const float out_left =
+            resampler->previous_left
+            + (left - resampler->previous_left)
+                * (float)alpha;
+        const float out_right =
+            resampler->previous_right
+            + (right - resampler->previous_right)
+                * (float)alpha;
+
+        if (atomic_load_explicit(
+                &bridge->dsp_enabled,
+                memory_order_acquire) == 0u) {
+            push_audible_output_sample(
+                bridge,
+                out_left,
+                out_right);
+        }
+
+        resampler->next_output_position +=
+            resampler->step;
     }
 
     resampler->previous_left = left;
@@ -326,6 +424,23 @@ void fv1_apple_realtime_stats_v1_init(fv1_apple_realtime_stats_v1* stats) {
     stats->last_sdk_result = FV1_SDK_OK;
 }
 
+void fv1_apple_analysis_snapshot_v1_init(
+    fv1_apple_analysis_snapshot_v1* snapshot) {
+    if (!snapshot) return;
+    memset(snapshot, 0, sizeof(*snapshot));
+    snapshot->struct_size =
+        (uint32_t)sizeof(*snapshot);
+    snapshot->dominant_level_db = -200.0f;
+}
+
+void fv1_apple_recorder_stats_v1_init(
+    fv1_apple_recorder_stats_v1* stats) {
+    if (!stats) return;
+    memset(stats, 0, sizeof(*stats));
+    stats->struct_size =
+        (uint32_t)sizeof(*stats);
+}
+
 fv1_sdk_result fv1_apple_realtime_create(double input_sample_rate,
                                           double output_sample_rate,
                                           uint32_t output_capacity_frames,
@@ -362,8 +477,30 @@ fv1_sdk_result fv1_apple_realtime_create(double input_sample_rate,
         return result;
     }
 
-    resampler_reset(&bridge->input_to_chip, input_sample_rate, FV1_APPLE_VIRTUAL_SAMPLE_RATE);
-    resampler_reset(&bridge->chip_to_output, FV1_APPLE_VIRTUAL_SAMPLE_RATE, output_sample_rate);
+    result = fv1_apple_analysis_create(
+        input_sample_rate,
+        output_sample_rate,
+        FV1_APPLE_ANALYZER_FFT_SIZE,
+        &bridge->analysis);
+    if (result != FV1_SDK_OK) {
+        fv1_sdk_engine_destroy(bridge->engine);
+        ring_destroy(&bridge->output_ring);
+        free(bridge);
+        return result;
+    }
+
+    resampler_reset(
+        &bridge->input_to_chip,
+        input_sample_rate,
+        FV1_APPLE_VIRTUAL_SAMPLE_RATE);
+    resampler_reset(
+        &bridge->chip_to_output,
+        FV1_APPLE_VIRTUAL_SAMPLE_RATE,
+        output_sample_rate);
+    resampler_reset(
+        &bridge->bypass_to_output,
+        input_sample_rate,
+        output_sample_rate);
 
     for (uint32_t i = 0u; i < 3u; ++i) {
         const uint32_t bits = float_to_bits(0.0f);
@@ -386,6 +523,7 @@ fv1_sdk_result fv1_apple_realtime_create(double input_sample_rate,
     atomic_init(&bridge->output_underflows, 0u);
     atomic_init(&bridge->output_overflows, 0u);
     atomic_init(&bridge->last_sdk_result, FV1_SDK_OK);
+    atomic_init(&bridge->dsp_enabled, 1u);
     atomic_init(&bridge->scope_write_index, 0u);
 
     *out_bridge = bridge;
@@ -394,6 +532,8 @@ fv1_sdk_result fv1_apple_realtime_create(double input_sample_rate,
 
 void fv1_apple_realtime_destroy(fv1_apple_realtime* bridge) {
     if (!bridge) return;
+    fv1_apple_analysis_destroy(bridge->analysis);
+    bridge->analysis = NULL;
     fv1_sdk_engine_destroy(bridge->engine);
     bridge->engine = NULL;
     ring_destroy(&bridge->output_ring);
@@ -406,8 +546,28 @@ fv1_sdk_result fv1_apple_realtime_configure_rates(fv1_apple_realtime* bridge,
     if (!bridge || !valid_rate(input_sample_rate) || !valid_rate(output_sample_rate)) {
         return FV1_SDK_ERROR_INVALID_ARGUMENT;
     }
-    resampler_reset(&bridge->input_to_chip, input_sample_rate, FV1_APPLE_VIRTUAL_SAMPLE_RATE);
-    resampler_reset(&bridge->chip_to_output, FV1_APPLE_VIRTUAL_SAMPLE_RATE, output_sample_rate);
+    const fv1_sdk_result analysis_result =
+        fv1_apple_analysis_configure(
+            bridge->analysis,
+            input_sample_rate,
+            output_sample_rate,
+            FV1_APPLE_ANALYZER_FFT_SIZE);
+    if (analysis_result != FV1_SDK_OK) {
+        return analysis_result;
+    }
+
+    resampler_reset(
+        &bridge->input_to_chip,
+        input_sample_rate,
+        FV1_APPLE_VIRTUAL_SAMPLE_RATE);
+    resampler_reset(
+        &bridge->chip_to_output,
+        FV1_APPLE_VIRTUAL_SAMPLE_RATE,
+        output_sample_rate);
+    resampler_reset(
+        &bridge->bypass_to_output,
+        input_sample_rate,
+        output_sample_rate);
     ring_clear(&bridge->output_ring);
     generator_reset(bridge);
     return FV1_SDK_OK;
@@ -422,6 +582,7 @@ fv1_sdk_result fv1_apple_realtime_load_program(fv1_apple_realtime* bridge,
     if (result == FV1_SDK_OK) {
         resampler_reset(&bridge->input_to_chip, bridge->input_to_chip.source_rate, bridge->input_to_chip.target_rate);
         resampler_reset(&bridge->chip_to_output, bridge->chip_to_output.source_rate, bridge->chip_to_output.target_rate);
+        resampler_reset(&bridge->bypass_to_output, bridge->bypass_to_output.source_rate, bridge->bypass_to_output.target_rate);
         ring_clear(&bridge->output_ring);
         generator_reset(bridge);
     }
@@ -436,6 +597,7 @@ fv1_sdk_result fv1_apple_realtime_reset(fv1_apple_realtime* bridge,
     if (result == FV1_SDK_OK) {
         resampler_reset(&bridge->input_to_chip, bridge->input_to_chip.source_rate, bridge->input_to_chip.target_rate);
         resampler_reset(&bridge->chip_to_output, bridge->chip_to_output.source_rate, bridge->chip_to_output.target_rate);
+        resampler_reset(&bridge->bypass_to_output, bridge->bypass_to_output.source_rate, bridge->bypass_to_output.target_rate);
         ring_clear(&bridge->output_ring);
         generator_reset(bridge);
     }
@@ -446,6 +608,7 @@ void fv1_apple_realtime_flush(fv1_apple_realtime* bridge) {
     if (!bridge) return;
     resampler_reset(&bridge->input_to_chip, bridge->input_to_chip.source_rate, bridge->input_to_chip.target_rate);
     resampler_reset(&bridge->chip_to_output, bridge->chip_to_output.source_rate, bridge->chip_to_output.target_rate);
+    resampler_reset(&bridge->bypass_to_output, bridge->bypass_to_output.source_rate, bridge->bypass_to_output.target_rate);
     ring_clear(&bridge->output_ring);
     generator_reset(bridge);
     atomic_store_explicit(&bridge->scope_write_index, 0u, memory_order_release);
@@ -472,6 +635,24 @@ void fv1_apple_realtime_set_pots(fv1_apple_realtime* bridge,
     for (uint32_t i = 0u; i < 3u; ++i) {
         atomic_store_explicit(&bridge->desired_pot_bits[i], float_to_bits(values[i]), memory_order_release);
     }
+}
+
+void fv1_apple_realtime_set_dsp_enabled(
+    fv1_apple_realtime* bridge,
+    uint32_t enabled) {
+    if (!bridge) return;
+    atomic_store_explicit(
+        &bridge->dsp_enabled,
+        enabled ? 1u : 0u,
+        memory_order_release);
+}
+
+uint32_t fv1_apple_realtime_get_dsp_enabled(
+    const fv1_apple_realtime* bridge) {
+    if (!bridge) return 0u;
+    return (uint32_t)atomic_load_explicit(
+        &bridge->dsp_enabled,
+        memory_order_acquire);
 }
 
 void fv1_apple_realtime_set_test_generator(fv1_apple_realtime* bridge,
@@ -631,6 +812,16 @@ fv1_sdk_result fv1_apple_realtime_process_test_generator(
         }
 
         const float sample = (float)value;
+
+        fv1_apple_analysis_push_raw_sample(
+            bridge->analysis,
+            sample,
+            sample);
+        feed_bypass_resampler(
+            bridge,
+            sample,
+            sample);
+
         const fv1_sdk_result result = feed_input_resampler(
             bridge,
             sample,
@@ -655,8 +846,24 @@ fv1_sdk_result fv1_apple_realtime_process_planar_input(fv1_apple_realtime* bridg
     if (frames == 0u) return FV1_SDK_OK;
 
     apply_pending_pots(bridge);
+
+    fv1_apple_analysis_push_raw_planar(
+        bridge->analysis,
+        input_left,
+        input_right,
+        frames);
+
     for (size_t i = 0u; i < frames; ++i) {
-        const fv1_sdk_result result = feed_input_resampler(bridge, input_left[i], input_right[i]);
+        feed_bypass_resampler(
+            bridge,
+            input_left[i],
+            input_right[i]);
+
+        const fv1_sdk_result result =
+            feed_input_resampler(
+                bridge,
+                input_left[i],
+                input_right[i]);
         if (result != FV1_SDK_OK) return result;
     }
     atomic_fetch_add_explicit(&bridge->input_frames, (uint64_t)frames, memory_order_relaxed);
@@ -691,6 +898,71 @@ void fv1_apple_realtime_get_stats(const fv1_apple_realtime* bridge,
     stats->output_underflows = atomic_load_explicit(&bridge->output_underflows, memory_order_acquire);
     stats->output_overflows = atomic_load_explicit(&bridge->output_overflows, memory_order_acquire);
     stats->last_sdk_result = atomic_load_explicit(&bridge->last_sdk_result, memory_order_acquire);
+}
+
+fv1_sdk_result fv1_apple_realtime_copy_analysis(
+    const fv1_apple_realtime* bridge,
+    uint32_t stream,
+    fv1_apple_analysis_snapshot_v1* snapshot,
+    float* spectrum_db,
+    size_t spectrum_capacity,
+    float* scope_left,
+    float* scope_right,
+    size_t scope_capacity) {
+    if (!bridge) return FV1_SDK_ERROR_INVALID_ARGUMENT;
+    return fv1_apple_analysis_copy(
+        bridge->analysis,
+        stream,
+        snapshot,
+        spectrum_db,
+        spectrum_capacity,
+        scope_left,
+        scope_right,
+        scope_capacity);
+}
+
+fv1_sdk_result fv1_apple_realtime_start_recording(
+    fv1_apple_realtime* bridge,
+    const char* path,
+    uint32_t sample_rate,
+    uint32_t mode,
+    char* error,
+    size_t error_capacity) {
+    if (!bridge) return FV1_SDK_ERROR_INVALID_ARGUMENT;
+    return fv1_apple_analysis_start_recording(
+        bridge->analysis,
+        path,
+        sample_rate,
+        mode,
+        error,
+        error_capacity);
+}
+
+void fv1_apple_realtime_stop_recording(
+    fv1_apple_realtime* bridge) {
+    if (!bridge) return;
+    fv1_apple_analysis_stop_recording(
+        bridge->analysis);
+}
+
+uint32_t fv1_apple_realtime_is_recording(
+    const fv1_apple_realtime* bridge) {
+    if (!bridge) return 0u;
+    return fv1_apple_analysis_is_recording(
+        bridge->analysis);
+}
+
+void fv1_apple_realtime_get_recorder_stats(
+    const fv1_apple_realtime* bridge,
+    fv1_apple_recorder_stats_v1* stats) {
+    if (!stats) return;
+    if (!bridge) {
+        fv1_apple_recorder_stats_v1_init(stats);
+        return;
+    }
+    fv1_apple_analysis_get_recorder_stats(
+        bridge->analysis,
+        stats);
 }
 
 size_t fv1_apple_realtime_copy_scope(const fv1_apple_realtime* bridge,

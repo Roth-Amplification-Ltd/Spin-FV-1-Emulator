@@ -275,10 +275,16 @@ endif()
 # while proving that it consumes only the public FV-1 SDK boundary.
 # -----------------------------------------------------------------------------
 add_library(fv1-apple-realtime-bridge STATIC
-    src/apple/fv1_apple_realtime.c)
+    src/apple/fv1_apple_realtime.c
+    src/apple/fv1_apple_analysis.cpp
+    src/analysis/analysis.cpp
+    src/audio/audio_recorder.cpp)
 target_include_directories(fv1-apple-realtime-bridge PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/apple)
-target_link_libraries(fv1-apple-realtime-bridge PUBLIC FV1::sdk)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/apple
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(fv1-apple-realtime-bridge PUBLIC
+    FV1::sdk
+    Threads::Threads)
 fv1_strict_warnings(fv1-apple-realtime-bridge)
 
 # -----------------------------------------------------------------------------
@@ -704,6 +710,31 @@ endif()
 if(TARGET fv1-lab-win32)
     list(APPEND FV1_INSTALL_TARGETS fv1-lab-win32)
 endif()
+
+# Installed Unix executables must be able to locate the installed shared FV-1
+# SDK without relying on developer-shell environment variables.
+#
+# macOS shared-library install names use @rpath, so provide a loader search
+# path relative to each executable. The analogous $ORIGIN path keeps generic
+# prefix installs relocatable on ELF platforms as well.
+if(APPLE)
+    foreach(_fv1_product_target IN LISTS FV1_INSTALL_TARGETS)
+        set_target_properties(
+            ${_fv1_product_target}
+            PROPERTIES
+                INSTALL_RPATH
+                    "@executable_path/../${CMAKE_INSTALL_LIBDIR}")
+    endforeach()
+elseif(UNIX)
+    foreach(_fv1_product_target IN LISTS FV1_INSTALL_TARGETS)
+        set_target_properties(
+            ${_fv1_product_target}
+            PROPERTIES
+                INSTALL_RPATH
+                    "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+    endforeach()
+endif()
+
 install(TARGETS ${FV1_INSTALL_TARGETS}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 

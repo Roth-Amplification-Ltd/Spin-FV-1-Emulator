@@ -3,8 +3,8 @@
 
 No third-party project generator is required.  The resulting project contains
 native macOS and iPadOS application targets that share the same SwiftUI source
-files and compile the existing public FV-1 SDK implementation into each app.
-The Swift bridge exposes only fv1/sdk.h plus the platform-neutral Apple realtime
+files and compile the public FV-1 SDK plus shared testbench analysis/recording services into each app.
+The Swift bridge keeps the FV-1 engine behind fv1/sdk.h and the platform-neutral Apple realtime
 bridge; frontend source is separately guarded by check_apple_frontend_boundary.py.
 """
 from __future__ import annotations
@@ -28,9 +28,11 @@ swift_sources = [
     "FV1Lab/Model/FV1Document.swift",
     "FV1Lab/Model/FV1WorkspaceModel.swift",
     "FV1Lab/Platform/macOS/MacAboutPresenter.swift",
+    "FV1Lab/Platform/macOS/MacExportPresenter.swift",
     "FV1Lab/Platform/macOS/MacStartupSplashController.swift",
     "FV1Lab/SDK/FV1Engine.swift",
     "FV1Lab/SDK/FV1RealtimeBridge.swift",
+    "FV1Lab/Views/AnalyzerViews.swift",
     "FV1Lab/Views/ScopeView.swift",
     "FV1Lab/Views/ControlsView.swift",
     "FV1Lab/Views/InspectionView.swift",
@@ -41,6 +43,9 @@ implementation_sources = [
     "../src/sdk/sdk.cpp",
     "../src/core/engine.cpp",
     "../src/spinasm/spinasm.cpp",
+    "../src/analysis/analysis.cpp",
+    "../src/audio/audio_recorder.cpp",
+    "../src/apple/fv1_apple_analysis.cpp",
     "../src/apple/fv1_apple_realtime.c",
 ]
 resource_files = ["FV1Lab/Resources/Assets.xcassets"]

@@ -4,9 +4,19 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 static int nearly_equal(float a, float b, float epsilon) {
     return fabsf(a - b) <= epsilon;
+}
+
+static void phase8b_sleep_ms(long milliseconds) {
+    const clock_t start = clock();
+    const double target =
+        (double)milliseconds / 1000.0;
+    while (((double)(clock() - start) / (double)CLOCKS_PER_SEC) < target) {
+        /* Standard-C bounded wait for the background analyzer worker. */
+    }
 }
 
 int main(void) {
@@ -119,7 +129,192 @@ int main(void) {
         return 8;
     }
 
+    /*
+     * Phase 8B: prove RAW + PROCESSED background analyzer snapshots with a
+     * deterministic 1 kHz generator signal.
+     */
+    static const char passthrough_source[] =
+        "RDAX ADCL, 1.0\n"
+        "WRAX DACL, 0\n"
+        "RDAX ADCR, 1.0\n"
+        "WRAX DACR, 0\n";
+    uint8_t passthrough_program[FV1_SDK_PROGRAM_BYTES];
+    fv1_sdk_compile_report_v1 passthrough_report;
+    char passthrough_diag[256];
+    fv1_sdk_compile_report_v1_init(&passthrough_report);
+    memset(passthrough_program, 0, sizeof(passthrough_program));
+    memset(passthrough_diag, 0, sizeof(passthrough_diag));
+
+    if (fv1_sdk_compile_spinasm_v1(
+            passthrough_source,
+            sizeof(passthrough_source) - 1u,
+            passthrough_program,
+            sizeof(passthrough_program),
+            &passthrough_report,
+            passthrough_diag,
+            sizeof(passthrough_diag)) != FV1_SDK_OK ||
+        fv1_apple_realtime_load_program(
+            bridge,
+            passthrough_program,
+            sizeof(passthrough_program)) != FV1_SDK_OK ||
+        fv1_apple_realtime_configure_rates(
+            bridge,
+            48000.0,
+            48000.0) != FV1_SDK_OK) {
+        fprintf(stderr, "Phase 8B analyzer setup failed: %s\n", passthrough_diag);
+        fv1_apple_realtime_destroy(bridge);
+        return 9;
+    }
+
+    fv1_apple_realtime_set_test_generator(
+        bridge,
+        FV1_APPLE_TEST_SIGNAL_SINE,
+        1000.0,
+        0.25,
+        12000.0,
+        5.0,
+        1.0);
+
+    for (int block = 0; block < 20; ++block) {
+        if (fv1_apple_realtime_process_test_generator(
+                bridge,
+                FRAMES) != FV1_SDK_OK) {
+            fprintf(stderr, "Phase 8B generator failed\n");
+            fv1_apple_realtime_destroy(bridge);
+            return 10;
+        }
+        fv1_apple_realtime_render_planar_output(
+            bridge,
+            out_left,
+            out_right,
+            FRAMES);
+    }
+
+    phase8b_sleep_ms(120);
+
+    fv1_apple_analysis_snapshot_v1 raw_analysis;
+    fv1_apple_analysis_snapshot_v1 processed_analysis;
+    float raw_spectrum[2049];
+    float processed_spectrum[2049];
+    float raw_scope[512];
+    float raw_scope_r[512];
+    float processed_scope[512];
+    float processed_scope_r[512];
+
+    if (fv1_apple_realtime_copy_analysis(
+            bridge,
+            FV1_APPLE_ANALYSIS_RAW,
+            &raw_analysis,
+            raw_spectrum,
+            2049u,
+            raw_scope,
+            raw_scope_r,
+            512u) != FV1_SDK_OK ||
+        fv1_apple_realtime_copy_analysis(
+            bridge,
+            FV1_APPLE_ANALYSIS_PROCESSED,
+            &processed_analysis,
+            processed_spectrum,
+            2049u,
+            processed_scope,
+            processed_scope_r,
+            512u) != FV1_SDK_OK ||
+        raw_analysis.sequence == 0u ||
+        processed_analysis.sequence == 0u ||
+        raw_analysis.spectrum_bins != 2049u ||
+        processed_analysis.scope_frames == 0u ||
+        raw_analysis.dominant_frequency_hz < 970.0f ||
+        raw_analysis.dominant_frequency_hz > 1030.0f ||
+        raw_analysis.rms_left < 0.10f) {
+        fprintf(
+            stderr,
+            "Phase 8B analyzer mismatch: raw seq=%llu f=%f rms=%f bins=%u; processed seq=%llu\n",
+            (unsigned long long)raw_analysis.sequence,
+            raw_analysis.dominant_frequency_hz,
+            raw_analysis.rms_left,
+            raw_analysis.spectrum_bins,
+            (unsigned long long)processed_analysis.sequence);
+        fv1_apple_realtime_destroy(bridge);
+        return 11;
+    }
+
+    /*
+     * DSP bypass routes raw input audibly while the processed FV-1 path stays
+     * alive for simultaneous A/B analysis.
+     */
+    static const char mute_source[] =
+        "RDAX ADCL, 0.0\n"
+        "WRAX DACL, 0\n"
+        "RDAX ADCR, 0.0\n"
+        "WRAX DACR, 0\n";
+    uint8_t mute_program[FV1_SDK_PROGRAM_BYTES];
+    fv1_sdk_compile_report_v1 mute_report;
+    char mute_diag[256];
+    fv1_sdk_compile_report_v1_init(&mute_report);
+    memset(mute_program, 0, sizeof(mute_program));
+    memset(mute_diag, 0, sizeof(mute_diag));
+
+    if (fv1_sdk_compile_spinasm_v1(
+            mute_source,
+            sizeof(mute_source) - 1u,
+            mute_program,
+            sizeof(mute_program),
+            &mute_report,
+            mute_diag,
+            sizeof(mute_diag)) != FV1_SDK_OK ||
+        fv1_apple_realtime_load_program(
+            bridge,
+            mute_program,
+            sizeof(mute_program)) != FV1_SDK_OK ||
+        fv1_apple_realtime_configure_rates(
+            bridge,
+            48000.0,
+            48000.0) != FV1_SDK_OK) {
+        fprintf(stderr, "Phase 8B bypass setup failed: %s\n", mute_diag);
+        fv1_apple_realtime_destroy(bridge);
+        return 12;
+    }
+
+    for (size_t i = 0u; i < FRAMES; ++i) {
+        left[i] = 0.20f;
+        right[i] = -0.10f;
+    }
+
+    fv1_apple_realtime_set_dsp_enabled(bridge, 0u);
+    if (fv1_apple_realtime_get_dsp_enabled(bridge) != 0u ||
+        fv1_apple_realtime_process_planar_input(
+            bridge,
+            left,
+            right,
+            FRAMES) != FV1_SDK_OK) {
+        fprintf(stderr, "Phase 8B bypass enable failed\n");
+        fv1_apple_realtime_destroy(bridge);
+        return 13;
+    }
+
+    memset(out_left, 0, sizeof(out_left));
+    memset(out_right, 0, sizeof(out_right));
+    fv1_apple_realtime_render_planar_output(
+        bridge,
+        out_left,
+        out_right,
+        FRAMES);
+
+    good = 0u;
+    for (size_t i = 0u; i < FRAMES; ++i) {
+        if (nearly_equal(out_left[i], 0.20f, 2.0e-5f) &&
+            nearly_equal(out_right[i], -0.10f, 2.0e-5f)) {
+            ++good;
+        }
+    }
+
+    if (good < 470u) {
+        fprintf(stderr, "Phase 8B bypass output mismatch: %zu good frames\n", good);
+        fv1_apple_realtime_destroy(bridge);
+        return 14;
+    }
+
     fv1_apple_realtime_destroy(bridge);
-    puts("Apple realtime SDK bridge OK");
+    puts("Apple realtime SDK bridge + Phase 8B analyzer/bypass OK");
     return 0;
 }

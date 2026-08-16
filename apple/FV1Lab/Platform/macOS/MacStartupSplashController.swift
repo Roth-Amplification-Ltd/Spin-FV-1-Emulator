@@ -26,37 +26,140 @@ private struct FV1MacSplashHostView: View {
 }
 
 @MainActor
-final class FV1MacStartupCoordinator {
+final class FV1MacStartupCoordinator: NSObject {
     static let shared = FV1MacStartupCoordinator()
+
+    private static let splashIdentifier =
+        NSUserInterfaceItemIdentifier(
+            "com.rothamplification.fv1lab.startup-splash"
+        )
 
     private weak var mainWindow: NSWindow?
     private var splashWindow: NSPanel?
     private var splashState: FV1MacSplashState?
+    private var launchSuppressionActive = false
+
     private var didStart = false
     private var didFinish = false
 
-    private init() {}
+    private override init() {
+        super.init()
+    }
+
+    func beginLaunchSuppression() {
+        guard !launchSuppressionActive else {
+            return
+        }
+
+        launchSuppressionActive = true
+
+        /*
+         * Use AppKit's selector-based notification API here instead of the
+         * block-based API. In Swift 6 the block form is @Sendable and can
+         * introduce actor-isolation diagnostics for this @MainActor
+         * coordinator. NSWindow key notifications are delivered on the UI
+         * thread, which is exactly where this AppKit lifecycle code belongs.
+         */
+        NotificationCenter.default.addObserver(
+            self,
+            selector:
+                #selector(
+                    handleWindowDidBecomeKey(_:)
+                ),
+            name:
+                NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
+    }
+
+    @objc
+    private func handleWindowDidBecomeKey(
+        _ notification: Notification
+    ) {
+        guard let window =
+            notification.object as? NSWindow else {
+            return
+        }
+
+        suppressWindowBeforeInitialSplash(
+            window
+        )
+    }
+
+    func presentInitialSplashIfNeeded() {
+        guard !didStart else { return }
+        didStart = true
+        presentSplash(replay: false)
+    }
 
     func attachMainWindow(_ window: NSWindow) {
-        guard !didFinish else { return }
+        guard !isSplashWindow(window) else { return }
 
         mainWindow = window
-
-        // Normalize the real dashboard window before hiding it for the
-        // independent splash. SwiftUI can otherwise reveal it in a geometry
-        // smaller than the three-column workspace actually requires.
         configureMainWindowGeometry(window)
+
+        if didFinish {
+            window.alphaValue = 1
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
 
         window.alphaValue = 0
         window.orderOut(nil)
 
-        guard !didStart else { return }
-        didStart = true
-
-        presentSplash()
+        if !didStart {
+            presentInitialSplashIfNeeded()
+        }
     }
 
-    private func presentSplash() {
+    private func suppressWindowBeforeInitialSplash(
+        _ window: NSWindow
+    ) {
+        guard !didFinish,
+              !isSplashWindow(window) else {
+            return
+        }
+
+        if mainWindow == nil {
+            mainWindow = window
+            configureMainWindowGeometry(window)
+        }
+
+        window.alphaValue = 0
+        window.orderOut(nil)
+    }
+
+    private func isSplashWindow(
+        _ window: NSWindow
+    ) -> Bool {
+        window === splashWindow
+            || window.identifier
+                == Self.splashIdentifier
+    }
+
+    func showStartupSplashAgain() {
+        if let existing = splashWindow {
+            existing.alphaValue = 1
+            existing.orderFrontRegardless()
+            return
+        }
+
+        guard didFinish else {
+            presentInitialSplashIfNeeded()
+            return
+        }
+
+        presentSplash(replay: true)
+    }
+
+    private func presentSplash(
+        replay: Bool
+    ) {
+        guard splashWindow == nil else {
+            splashWindow?.orderFrontRegardless()
+            return
+        }
+
         let state = FV1MacSplashState()
         splashState = state
 
@@ -72,6 +175,7 @@ final class FV1MacStartupCoordinator {
             defer: false
         )
 
+        panel.identifier = Self.splashIdentifier
         panel.title = "FV-1 Lab"
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -84,15 +188,41 @@ final class FV1MacStartupCoordinator {
             .fullScreenAuxiliary
         ]
 
-        panel.contentViewController = NSHostingController(
-            rootView: FV1MacSplashHostView(state: state)
-        )
-        panel.setContentSize(
-            NSSize(width: 720, height: 405)
-        )
-        panel.center()
-        panel.alphaValue = 1
+        panel.contentViewController =
+            NSHostingController(
+                rootView:
+                    FV1MacSplashHostView(
+                        state: state
+                    )
+            )
 
+        panel.setContentSize(
+            NSSize(
+                width: 720,
+                height: 405
+            )
+        )
+
+        if replay,
+           let mainWindow {
+            let frame = mainWindow.frame
+            let splashFrame = panel.frame
+
+            panel.setFrameOrigin(
+                NSPoint(
+                    x:
+                        frame.midX
+                        - splashFrame.width * 0.5,
+                    y:
+                        frame.midY
+                        - splashFrame.height * 0.5
+                )
+            )
+        } else {
+            panel.center()
+        }
+
+        panel.alphaValue = 1
         splashWindow = panel
 
         NSApplication.shared.activate(
@@ -101,18 +231,27 @@ final class FV1MacStartupCoordinator {
         panel.orderFrontRegardless()
 
         Task { @MainActor [weak self] in
-            await self?.runStartupSequence()
+            await self?.runSplashSequence(
+                replay: replay
+            )
         }
     }
 
-    private func sleep(milliseconds: UInt64) async {
+    private func sleep(
+        milliseconds: UInt64
+    ) async {
         try? await Task.sleep(
-            nanoseconds: milliseconds * 1_000_000
+            nanoseconds:
+                milliseconds * 1_000_000
         )
     }
 
-    private func runStartupSequence() async {
-        guard let state = splashState else { return }
+    private func runSplashSequence(
+        replay: Bool
+    ) async {
+        guard let state = splashState else {
+            return
+        }
 
         state.progress = 8
         state.status =
@@ -122,58 +261,84 @@ final class FV1MacStartupCoordinator {
         _ = FV1Engine.versionString
         _ = FV1Engine.abiVersion
 
-        withAnimation(.easeOut(duration: 0.16)) {
+        withAnimation(
+            .easeOut(duration: 0.16)
+        ) {
             state.progress = 26
         }
         state.status =
             "Loading FV-1 SDK and application resources…"
         await sleep(milliseconds: 310)
 
-        withAnimation(.easeOut(duration: 0.18)) {
+        withAnimation(
+            .easeOut(duration: 0.18)
+        ) {
             state.progress = 48
         }
         state.status =
             "Preparing native Apple testbench…"
         await sleep(milliseconds: 420)
 
-        withAnimation(.easeOut(duration: 0.20)) {
+        withAnimation(
+            .easeOut(duration: 0.20)
+        ) {
             state.progress = 76
         }
         state.status =
             "Initializing FV-1 Lab workspace…"
         await sleep(milliseconds: 430)
 
-        withAnimation(.easeOut(duration: 0.18)) {
+        withAnimation(
+            .easeOut(duration: 0.18)
+        ) {
             state.progress = 98
         }
+
         state.status =
-            "FV-1 Lab ready — preparing workspace…"
+            replay
+                ? "FV-1 Lab ready"
+                : "FV-1 Lab ready — preparing workspace…"
+
         await sleep(milliseconds: 230)
 
-        withAnimation(.easeOut(duration: 0.12)) {
+        withAnimation(
+            .easeOut(duration: 0.12)
+        ) {
             state.progress = 100
         }
+
         state.status = "Ready"
 
         await sleep(milliseconds: 180)
 
-        revealMainWindow()
+        if replay {
+            closeSplash(
+                revealMainWindow: false
+            )
+        } else {
+            revealMainWindow()
+        }
     }
 
-    private func revealMainWindow() {
-        guard !didFinish else { return }
-        didFinish = true
-
+    private func closeSplash(
+        revealMainWindow: Bool
+    ) {
         guard let panel = splashWindow else {
-            showMainWindowNow()
+            if revealMainWindow {
+                showMainWindowNow()
+            }
             return
         }
 
-        NSAnimationContext.runAnimationGroup { context in
+        NSAnimationContext.runAnimationGroup {
+            context in
+
             context.duration = 0.28
-            context.timingFunction = CAMediaTimingFunction(
-                name: .easeOut
-            )
+            context.timingFunction =
+                CAMediaTimingFunction(
+                    name: .easeOut
+                )
+
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             Task { @MainActor in
@@ -182,82 +347,214 @@ final class FV1MacStartupCoordinator {
 
                 self?.splashWindow = nil
                 self?.splashState = nil
-                self?.showMainWindowNow()
+
+                if revealMainWindow {
+                    self?.showMainWindowNow()
+                }
             }
         }
     }
 
-    private func configureMainWindowGeometry(_ window: NSWindow) {
-        let preferred = NSSize(width: 1500, height: 860)
-        let baseMinimum = NSSize(width: 1360, height: 760)
+    private func revealMainWindow() {
+        guard !didFinish else { return }
+        didFinish = true
 
-        guard let visibleFrame =
-            window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame else {
-            window.contentMinSize = baseMinimum
+        endLaunchSuppression()
 
-            let current = window.contentLayoutRect.size
-            let target = NSSize(
-                width: max(current.width, preferred.width),
-                height: max(current.height, preferred.height)
+        closeSplash(
+            revealMainWindow: true
+        )
+    }
+
+    private func endLaunchSuppression() {
+        guard launchSuppressionActive else {
+            return
+        }
+
+        NotificationCenter.default.removeObserver(
+            self,
+            name:
+                NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
+
+        launchSuppressionActive = false
+    }
+
+    private func configureMainWindowGeometry(
+        _ window: NSWindow
+    ) {
+        let preferred =
+            NSSize(
+                width: 1500,
+                height: 860
             )
 
-            if abs(current.width - target.width) > 1
-                || abs(current.height - target.height) > 1 {
-                window.setContentSize(target)
+        let baseMinimum =
+            NSSize(
+                width: 1360,
+                height: 760
+            )
+
+        guard let visibleFrame =
+            window.screen?.visibleFrame
+                ?? NSScreen.main?.visibleFrame else {
+            window.contentMinSize =
+                baseMinimum
+
+            let current =
+                window.contentLayoutRect.size
+
+            let target =
+                NSSize(
+                    width:
+                        max(
+                            current.width,
+                            preferred.width
+                        ),
+                    height:
+                        max(
+                            current.height,
+                            preferred.height
+                        )
+                )
+
+            if abs(
+                current.width
+                    - target.width
+            ) > 1
+                || abs(
+                    current.height
+                        - target.height
+                ) > 1 {
+                window.setContentSize(
+                    target
+                )
                 window.center()
             }
             return
         }
 
-        // Leave a small margin around the application. On smaller displays,
-        // fit the initial window to the usable work area instead of placing
-        // part of the dashboard off-screen.
-        let availableWidth = max(960, visibleFrame.width - 40)
-        let availableHeight = max(640, visibleFrame.height - 40)
+        let availableWidth =
+            max(
+                960,
+                visibleFrame.width - 40
+            )
 
-        window.contentMinSize = NSSize(
-            width: min(baseMinimum.width, availableWidth),
-            height: min(baseMinimum.height, availableHeight)
-        )
+        let availableHeight =
+            max(
+                640,
+                visibleFrame.height - 40
+            )
 
-        let desired = NSSize(
-            width: min(preferred.width, availableWidth),
-            height: min(preferred.height, availableHeight)
-        )
+        window.contentMinSize =
+            NSSize(
+                width:
+                    min(
+                        baseMinimum.width,
+                        availableWidth
+                    ),
+                height:
+                    min(
+                        baseMinimum.height,
+                        availableHeight
+                    )
+            )
 
-        let current = window.contentLayoutRect.size
+        let desired =
+            NSSize(
+                width:
+                    min(
+                        preferred.width,
+                        availableWidth
+                    ),
+                height:
+                    min(
+                        preferred.height,
+                        availableHeight
+                    )
+            )
 
-        // Preserve a user/window size that is already larger, but automatically
-        // enlarge undersized SwiftUI startup geometry.
-        let target = NSSize(
-            width: min(availableWidth, max(current.width, desired.width)),
-            height: min(availableHeight, max(current.height, desired.height))
-        )
+        let current =
+            window.contentLayoutRect.size
 
-        if abs(current.width - target.width) > 1
-            || abs(current.height - target.height) > 1 {
-            window.setContentSize(target)
+        let target =
+            NSSize(
+                width:
+                    min(
+                        availableWidth,
+                        max(
+                            current.width,
+                            desired.width
+                        )
+                    ),
+                height:
+                    min(
+                        availableHeight,
+                        max(
+                            current.height,
+                            desired.height
+                        )
+                    )
+            )
+
+        if abs(
+            current.width - target.width
+        ) > 1
+            || abs(
+                current.height - target.height
+            ) > 1 {
+            window.setContentSize(
+                target
+            )
             window.center()
         }
     }
 
     private func showMainWindowNow() {
-        guard let window = mainWindow else { return }
+        guard let window = mainWindow else {
+            return
+        }
 
-        // SwiftUI may perform late layout while the main window is ordered out,
-        // so normalize once more immediately before revealing it.
-        configureMainWindowGeometry(window)
+        configureMainWindowGeometry(
+            window
+        )
 
         window.alphaValue = 1
         window.makeKeyAndOrderFront(nil)
+
         NSApplication.shared.activate(
             ignoringOtherApps: true
         )
     }
 }
 
-struct FV1MacMainWindowCapture: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
+@MainActor
+final class FV1MacAppDelegate:
+    NSObject,
+    NSApplicationDelegate {
+
+    func applicationWillFinishLaunching(
+        _ notification: Notification
+    ) {
+        FV1MacStartupCoordinator.shared
+            .beginLaunchSuppression()
+    }
+
+    func applicationDidFinishLaunching(
+        _ notification: Notification
+    ) {
+        FV1MacStartupCoordinator.shared
+            .presentInitialSplashIfNeeded()
+    }
+}
+
+struct FV1MacMainWindowCapture:
+    NSViewRepresentable {
+
+    func makeNSView(
+        context: Context
+    ) -> NSView {
         FV1MacWindowCaptureView()
     }
 
@@ -267,7 +564,9 @@ struct FV1MacMainWindowCapture: NSViewRepresentable {
     ) {}
 }
 
-private final class FV1MacWindowCaptureView: NSView {
+private final class FV1MacWindowCaptureView:
+    NSView {
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
 
@@ -275,7 +574,9 @@ private final class FV1MacWindowCaptureView: NSView {
 
         Task { @MainActor in
             FV1MacStartupCoordinator.shared
-                .attachMainWindow(window)
+                .attachMainWindow(
+                    window
+                )
         }
     }
 }
