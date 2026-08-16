@@ -1,80 +1,115 @@
 # Native Apple Frontend Status
 
-## macOS bring-up checkpoint — August 15, 2026
+## macOS Phase 8D completion candidate — August 16, 2026
 
-The native FV-1 Lab macOS frontend has reached its first usable interactive
-bring-up milestone.
+The native FV-1 Lab macOS frontend has completed the Phase 8B testbench parity
+pass and the Phase 8C workflow/inspector parity pass. Phase 8D is the final
+release/completion gate rather than a feature-development phase.
 
-### Working
+## Working macOS product surface
 
-- Native SwiftUI macOS application builds successfully with Xcode.
-- Application launches directly into FV-1 Lab rather than behaving as a
-  document-based application.
-- Branded FV-1 Lab startup splash is displayed.
-- Main interface has been redesigned around the Linux engineering-dashboard
-  layout rather than the earlier page-oriented Apple prototype.
-- Persistent program, source, controls, analyzer, telemetry, console, resource,
-  DSP-status, and chip-inspection areas are present.
-- SpinASM text programs can be opened, compiled, and loaded.
-- Raw 512-byte FV-1 programs remain supported.
-- Program loading recognizes textual SpinASM by content rather than requiring
-  only one filename extension.
-- Native Apple realtime bridge is functional.
-- Built-in test generator is functional.
-- Test generator supports:
-  - Sine
-  - Logarithmic sweep
-  - White noise
-  - Pink noise
-  - Impulse
-- Generator frequency and amplitude controls are exposed.
-- Test Generator is the default source.
-- Audio Interface remains available as a separate live-input source.
-- CoreAudio render/input callbacks no longer incorrectly inherit MainActor
-  execution and the previous microphone-permission realtime-thread crash has
-  been corrected.
-- FV-1 program processing through the native Apple audio path is functional.
-- Realtime scope and telemetry are connected to the Apple realtime bridge.
-- POT0/POT1/POT2 controls are connected to the virtual FV-1.
-- Start/Stop is manual: loading a program does not automatically begin audio.
-- macOS application bundle metadata is valid.
+- Native SwiftUI macOS application builds and launches.
+- Branded startup splash with staged progress and replay from Help.
+- Manual laboratory workflow: loading a program never auto-starts audio.
+- SpinASM open, native compile/load, raw 512-byte program load, and clipboard
+  SpinASM paste.
+- Test Generator, Audio Interface, and WAV Audio File Loop sources.
+- Native Core Audio I/O device selection with Aggregate Device support.
+- Persistent preferred device, sample rate, and buffer-size preferences.
+- POT0/POT1/POT2 control.
+- DSP/FX bypass with processed analysis kept alive.
+- Raw + processed oscilloscope, spectrum, spectrogram, and level analysis.
+- Selectable analyzer FFT sizes: 1024 / 2048 / 4096 / 8192.
+- Raw / processed / dual recording and CSV analyzer exports.
+- Audio-loop play/pause/stop, seek, loop region, looping, and crossfade.
+- Offline instruction/sample debugger.
+- PC/opcode/ACC/PACC/LR/ADDR_PTR/DAC/LFO/REG0–31 inspection.
+- Physical circular Delay RAM viewer.
+- Hardware validation comparison and deterministic validation-pack generation.
+- Linux-equivalent themes, accent colors, and four application-icon variants.
+- Linux-style File / Audio / Analysis / View / Help menu organization.
 
-### Current interaction model
+## Phase 8D automated release gate
 
-1. Launch FV-1 Lab.
-2. Splash is displayed.
-3. Dashboard opens in the stopped/ready state.
-4. Select Test Generator or Audio Interface.
-5. Open/load an FV-1 program.
-6. Press Start manually.
-7. Press Stop manually when finished.
+`tools/macos-phase8d-gate.sh` is the canonical macOS completion gate.
 
-This intentionally matches laboratory/testbench behavior: loading a program
-does not implicitly start audio.
+It verifies:
 
-### Known Apple frontend work remaining
+1. `git diff --check`.
+2. Apple frontend architectural boundary.
+3. Full platform-neutral host CTest suite.
+4. Native compilation and Apple-bridge execution of every shipped SpinASM demo.
+5. Configurable accelerated Apple realtime bridge soak.
+6. macOS Debug build.
+7. macOS Release build.
+8. Application bundle metadata and linkage.
+9. DMG construction.
+10. Optional production Developer ID signing and Apple notarization/stapling.
 
-- Complete visual and functional parity with all Linux analyzer panels.
-- Port/wire Spectrum analyzer.
-- Port/wire Spectrogram.
-- Port/wire Levels analysis.
-- Port/wire Validation/testbench panel.
-- Expand Delay RAM viewer to the full Linux implementation.
-- Continue polishing console, resource, and chip-inspection parity.
-- Add explicit macOS audio-device selection rather than relying only on system
-  default devices.
-- Perform longer-duration realtime audio stability testing.
-- Validate more SpinASM programs against Linux/reference behavior.
-- Complete and validate the landscape-only iPadOS frontend.
-- Test native audio on physical iPad hardware.
-- Add production code signing, entitlements, packaging, and notarization.
-- Run final Apple regression testing before release-candidate status.
+The eight Steal This DSP programs plus `examples/simple_passthrough.spn` form the
+shipped-program regression set.
+
+## Production release acceptance still requires human/live validation
+
+The automated bridge soak is intentionally not claimed to be a substitute for a
+real Core Audio session. Before declaring the macOS build production-ready,
+complete `docs/MACOS-RELEASE-CHECKLIST.md`, including:
+
+- real audio-interface live soak;
+- Test Generator live soak;
+- Audio File Loop live soak;
+- analyzer/recording observation during the soak;
+- visual regression across every theme and accent;
+- Open Program / Paste SpinASM / Open Audio Loop regression;
+- debugger and Delay RAM smoke;
+- validation-tab smoke;
+- final Developer ID signing/notarization/stapling.
+
+## Test commands
+
+Fast host-only Apple regression:
+
+```bash
+./tools/test-apple.sh host
+```
+
+Host + native macOS Debug build:
+
+```bash
+./tools/test-apple.sh macos Debug
+```
+
+Full Phase 8D Mac gate with a 60-second accelerated bridge soak:
+
+```bash
+FV1_MACOS_SOAK_SECONDS=60 ./tools/macos-phase8d-gate.sh
+```
+
+Longer candidate gate:
+
+```bash
+FV1_MACOS_SOAK_SECONDS=1800 ./tools/macos-phase8d-gate.sh
+```
+
+Ad-hoc DMG:
+
+```bash
+./tools/package-macos.sh adhoc
+```
+
+Production signing/notarization:
+
+```bash
+export FV1_CODESIGN_IDENTITY="Developer ID Application: YOUR NAME (TEAMID)"
+export FV1_NOTARY_PROFILE="fv1lab-notary"
+./tools/package-macos.sh developer-id
+```
 
 ## Architecture
 
-The Apple frontend remains a client of the public FV-1 SDK/realtime bridge.
-The emulator core and public SDK ABI remain platform-independent.
+Phase 8D does not alter the FV-1 execution model or frozen public SDK ABI.
 
-The realtime audio path is kept separate from SwiftUI and MainActor work.
-Generator/audio processing remains in the realtime-safe native bridge rather
-than being implemented as UI-thread DSP.
+The macOS frontend remains a client of the public FV-1 SDK plus the deliberately
+separate Apple/testbench bridge. Realtime processing remains outside SwiftUI and
+MainActor work. Phase 8D adds release verification and distribution tooling
+around the already-established engine/frontend boundaries.

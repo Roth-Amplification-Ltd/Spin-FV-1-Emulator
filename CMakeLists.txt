@@ -547,6 +547,35 @@ if(FV1_BUILD_TESTS)
     fv1_strict_warnings(fv1-apple-realtime-bridge-tests)
     add_test(NAME fv1-apple-realtime-bridge-tests
         COMMAND fv1-apple-realtime-bridge-tests)
+
+    # -------------------------------------------------------------------------
+    # Phase 8D: macOS release/completion regression.
+    #
+    # These stay platform-neutral so Linux/macOS host CI can prove the native
+    # Apple bridge against every shipped SpinASM demo. The accelerated soak is
+    # an explicit release-gate target rather than a default CTest because its
+    # duration is user-configurable and intentionally heavyweight.
+    # -------------------------------------------------------------------------
+    add_executable(fv1-apple-release-program-tests
+        tests/apple/test_apple_release_programs.c)
+    target_link_libraries(fv1-apple-release-program-tests PRIVATE
+        fv1-apple-realtime-bridge
+        FV1::sdk)
+    set_target_properties(fv1-apple-release-program-tests PROPERTIES
+        LINKER_LANGUAGE CXX)
+    fv1_strict_warnings(fv1-apple-release-program-tests)
+    add_test(NAME fv1-apple-release-program-tests
+        COMMAND fv1-apple-release-program-tests
+            ${CMAKE_CURRENT_SOURCE_DIR})
+
+    add_executable(fv1-apple-realtime-soak
+        tests/apple/test_apple_realtime_soak.c)
+    target_link_libraries(fv1-apple-realtime-soak PRIVATE
+        fv1-apple-realtime-bridge
+        FV1::sdk)
+    set_target_properties(fv1-apple-realtime-soak PROPERTIES
+        LINKER_LANGUAGE CXX)
+    fv1_strict_warnings(fv1-apple-realtime-soak)
     add_test(NAME phase8-apple-frontend-boundary
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_apple_frontend_boundary.py)
 
