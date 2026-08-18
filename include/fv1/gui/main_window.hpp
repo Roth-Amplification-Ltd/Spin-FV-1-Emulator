@@ -11,9 +11,13 @@
 #include <memory>
 
 class QAction;
+class QCloseEvent;
 class QComboBox;
 class QDoubleSpinBox;
+class QDragEnterEvent;
+class QDropEvent;
 class QLabel;
+class QMenu;
 class QPlainTextEdit;
 class QProgressBar;
 class QPushButton;
@@ -33,6 +37,15 @@ public:
                         std::function<void(int, const QString&)> startup_progress = {});
     ~MainWindow() override;
 
+    // Shared desktop workflow entry point used by command-line/Open-With and
+    // drag/drop. Loading never starts realtime audio.
+    bool open_external_path(const QString& path);
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
+
 private:
     void build_menus();
     void build_toolbar();
@@ -47,9 +60,18 @@ private:
     void show_loop_region_settings();
     void show_about();
     void choose_program();
+    bool load_program_path(const QString& path);
     void paste_spinasm();
     bool install_program_image(const QByteArray& bytes, const QString& display_name, const QString& source_path = {});
     void choose_audio_file();
+    bool load_audio_path(const QString& path);
+    void remember_recent_path(const QString& settings_key, const QString& path);
+    void rebuild_recent_menus();
+    QString dialog_directory(const QString& settings_key, const QString& fallback = {}) const;
+    void remember_directory(const QString& settings_key, const QString& selected_path);
+    void restore_workspace_state();
+    void save_workspace_state();
+    void reset_workspace_layout();
     void inspect_program();
     void start_session();
     void stop_session();
@@ -107,6 +129,9 @@ private:
     QAction* dsp_action_{};
     QAction* compare_action_{};
     QAction* record_action_{};
+    QMenu* recent_programs_menu_{};
+    QMenu* recent_audio_menu_{};
+    QByteArray default_window_state_;
 
     QComboBox* source_combo_{};
     QComboBox* playback_combo_{};

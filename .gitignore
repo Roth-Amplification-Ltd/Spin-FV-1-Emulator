@@ -15,3 +15,6 @@ __pycache__/
 # Xcode per-user state
 xcuserdata/
 *.xcuserstate
+
+# Bootstrap-fetched local audio dependency
+/third_party/miniaudio/

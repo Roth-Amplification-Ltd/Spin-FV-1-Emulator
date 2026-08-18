@@ -17,7 +17,10 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QClipboard>
+#include <QCloseEvent>
 #include <QComboBox>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QCoreApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -37,7 +40,9 @@
 #include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
+#include <QKeySequence>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPixmap>
@@ -54,6 +59,7 @@
 #include <QTextStream>
 #include <QTimer>
 #include <QToolBar>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -362,6 +368,7 @@ MainWindow::MainWindow(QWidget* parent, std::function<void(int, const QString&)>
       debugger_(std::make_unique<fv1::Debugger>()) {
     setWindowTitle(QStringLiteral("Spin FV-1 Emulator — FV-1 Lab"));
     resize(1680, 980);
+    setAcceptDrops(true);
     setDockOptions(QMainWindow::AnimatedDocks | QMainWindow::AllowNestedDocks |
                    QMainWindow::AllowTabbedDocks | QMainWindow::GroupedDragging);
 
@@ -403,6 +410,20 @@ MainWindow::MainWindow(QWidget* parent, std::function<void(int, const QString&)>
     startup(70, QStringLiteral("Building virtual-chip inspector…"));
     build_right_dock();
     build_status_footer();
+
+    default_window_state_ = saveState(1);
+    restore_workspace_state();
+
+    source_combo_->setCurrentText(
+        settings.value(QStringLiteral("session/sourceMode"), QStringLiteral("Test Generator")).toString());
+    generator_combo_->setCurrentText(
+        settings.value(QStringLiteral("generator/kind"), QStringLiteral("Sine")).toString());
+    generator_frequency_->setValue(
+        settings.value(QStringLiteral("generator/frequencyHz"), 440.0).toDouble());
+    pot0_->setValue(settings.value(QStringLiteral("session/pot0"), 600).toInt());
+    pot1_->setValue(settings.value(QStringLiteral("session/pot1"), 500).toInt());
+    pot2_->setValue(settings.value(QStringLiteral("session/pot2"), 700).toInt());
+
     startup(80, QStringLiteral("Enumerating audio devices…"));
     refresh_audio_devices();
 
@@ -427,12 +448,12 @@ MainWindow::MainWindow(QWidget* parent, std::function<void(int, const QString&)>
     telemetry_timer_->setInterval(50);
     connect(telemetry_timer_, &QTimer::timeout, this, [this]{ update_telemetry(); });
 
-    startup(96, QStringLiteral("Finalizing Phase 5B validation testbench…"));
-    statusBar()->showMessage(QStringLiteral("Phase 5B hardware validation — ready"));
+    startup(96, QStringLiteral("Finalizing FV-1 Lab desktop testbench…"));
+    statusBar()->showMessage(QStringLiteral("FV-1 Lab desktop testbench — ready"));
     log(QStringLiteral("FV-1 Lab GUI initialized."));
     log(QStringLiteral("Runtime connected: live input, file loop, test generator, virtual-clock SRC and dual raw/processed analyzers."));
-    log(QStringLiteral("Phase 5B focus: reproducible physical-FV-1 capture packs, comparison and accuracy refinement."));
-    log(QStringLiteral("External capture-interface acceptance remains deferred; playback path accepted on Cortana."));
+    log(QStringLiteral("Workflow ready: program/file loading, analyzers, debugger, validation and persistent desktop workspace."));
+    log(QStringLiteral("Audio backend: ") + QString::fromStdString(fv1::AudioHost::backend_name()));
 }
 
 MainWindow::~MainWindow() { stop_session(); }
@@ -440,17 +461,36 @@ MainWindow::~MainWindow() { stop_session(); }
 void MainWindow::build_menus() {
     auto* file = menuBar()->addMenu(QStringLiteral("&File"));
     auto* open_program = file->addAction(QStringLiteral("Open FV-1 Program…"));
+    open_program->setShortcut(QKeySequence::Open);
     connect(open_program, &QAction::triggered, this, [this]{ choose_program(); });
+
     auto* paste_program = file->addAction(QStringLiteral("Paste SpinASM…"));
+    paste_program->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+V")));
     connect(paste_program, &QAction::triggered, this, [this]{ paste_spinasm(); });
+
+    recent_programs_menu_ = file->addMenu(QStringLiteral("Open Recent Program"));
+    connect(recent_programs_menu_, &QMenu::aboutToShow, this, [this] {
+        rebuild_recent_menus();
+    });
+
     auto* open_audio = file->addAction(QStringLiteral("Open Audio Loop…"));
+    open_audio->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+O")));
     connect(open_audio, &QAction::triggered, this, [this]{ choose_audio_file(); });
+
+    recent_audio_menu_ = file->addMenu(QStringLiteral("Open Recent Audio Loop"));
+    connect(recent_audio_menu_, &QMenu::aboutToShow, this, [this] {
+        rebuild_recent_menus();
+    });
+    rebuild_recent_menus();
+
     file->addSeparator();
     auto* quit = file->addAction(QStringLiteral("Quit"));
+    quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, qApp, &QApplication::quit);
 
     auto* audio = menuBar()->addMenu(QStringLiteral("&Audio"));
     auto* audio_settings = audio->addAction(QStringLiteral("Audio Settings…"));
+    audio_settings->setShortcut(QKeySequence(QStringLiteral("Ctrl+,")));
     connect(audio_settings, &QAction::triggered, this, [this]{ show_audio_settings(); });
     auto* refresh_devices = audio->addAction(QStringLiteral("Refresh Audio Devices"));
     connect(refresh_devices, &QAction::triggered, this, [this]{ refresh_audio_devices(); });
@@ -542,6 +582,10 @@ void MainWindow::build_menus() {
         connect(action, &QAction::triggered, this, [this, name]{ set_app_icon(name); });
     }
 
+    view->addSeparator();
+    auto* reset_workspace = view->addAction(QStringLiteral("Reset Workspace Layout"));
+    connect(reset_workspace, &QAction::triggered, this, [this]{ reset_workspace_layout(); });
+
     auto* help = menuBar()->addMenu(QStringLiteral("&Help"));
     auto* about = help->addAction(QStringLiteral("About FV-1 Lab…"));
     about->setObjectName(QStringLiteral("aboutFv1LabAction"));
@@ -568,7 +612,9 @@ void MainWindow::build_toolbar() {
     auto* bar = addToolBar(QStringLiteral("Transport"));
     bar->setMovable(false);
     auto* start = bar->addAction(QStringLiteral("▶ Start"));
+    start->setShortcut(QKeySequence(QStringLiteral("F5")));
     auto* stop = bar->addAction(QStringLiteral("■ Stop"));
+    stop->setShortcut(QKeySequence(QStringLiteral("Shift+F5")));
     record_action_ = bar->addAction(QStringLiteral("● Record"));
     record_action_->setCheckable(true);
     connect(record_action_, &QAction::toggled, this, [this](bool enabled) {
@@ -627,6 +673,9 @@ void MainWindow::build_left_dock() {
     source_combo_ = new QComboBox(source);
     source_combo_->addItems({QStringLiteral("Audio Interface"), QStringLiteral("Audio File Loop"), QStringLiteral("Test Generator")});
     source_combo_->setCurrentText(QStringLiteral("Test Generator"));
+    connect(source_combo_, &QComboBox::currentTextChanged, this, [](const QString& value) {
+        QSettings().setValue(QStringLiteral("session/sourceMode"), value);
+    });
     source_layout->addWidget(source_combo_);
 
     file_label_ = new QLabel(QStringLiteral("No audio file selected"), source);
@@ -688,6 +737,12 @@ void MainWindow::build_left_dock() {
     generator_frequency_->setRange(1.0, 20000.0);
     generator_frequency_->setValue(440.0);
     generator_frequency_->setSuffix(QStringLiteral(" Hz"));
+    connect(generator_combo_, &QComboBox::currentTextChanged, this, [](const QString& value) {
+        QSettings().setValue(QStringLiteral("generator/kind"), value);
+    });
+    connect(generator_frequency_, &QDoubleSpinBox::valueChanged, this, [](double value) {
+        QSettings().setValue(QStringLiteral("generator/frequencyHz"), value);
+    });
     generator_row->addWidget(generator_combo_);
     generator_row->addWidget(generator_frequency_);
     source_layout->addLayout(generator_row);
@@ -719,6 +774,10 @@ void MainWindow::build_left_dock() {
         if (session_) session_->set_pots(static_cast<float>(pot0_->value()) / 1000.0f,
                                          static_cast<float>(pot1_->value()) / 1000.0f,
                                          static_cast<float>(pot2_->value()) / 1000.0f);
+        QSettings settings;
+        settings.setValue(QStringLiteral("session/pot0"), pot0_->value());
+        settings.setValue(QStringLiteral("session/pot1"), pot1_->value());
+        settings.setValue(QStringLiteral("session/pot2"), pot2_->value());
     };
     connect(pot0_, &QSlider::valueChanged, this, [pot_update](int){ pot_update(); });
     connect(pot1_, &QSlider::valueChanged, this, [pot_update](int){ pot_update(); });
@@ -1126,18 +1185,37 @@ void MainWindow::install_plot_context_menu(InstrumentPlot* plot) {
 
 void MainWindow::refresh_audio_devices() {
     if (!playback_combo_ || !capture_combo_) return;
-    playback_combo_->clear(); capture_combo_->clear();
+
+    const QString selected_playback = playback_combo_->currentText();
+    const QString selected_capture = capture_combo_->currentText();
+
+    playback_combo_->clear();
+    capture_combo_->clear();
     playback_combo_->addItem(QStringLiteral("OS Default"), -1);
     capture_combo_->addItem(QStringLiteral("OS Default"), -1);
+
     std::string error;
     const auto devices = fv1::AudioHost::enumerate(&error);
     for (const auto& d : devices) {
-        const QString label = QString::fromStdString(d.name) + (d.is_default ? QStringLiteral("  (default)") : QString());
-        if (d.direction == fv1::AudioDeviceDirection::Playback) playback_combo_->addItem(label, static_cast<int>(d.index));
-        else capture_combo_->addItem(label, static_cast<int>(d.index));
+        const QString label = QString::fromStdString(d.name)
+            + (d.is_default ? QStringLiteral("  (default)") : QString());
+        if (d.direction == fv1::AudioDeviceDirection::Playback)
+            playback_combo_->addItem(label, static_cast<int>(d.index));
+        else
+            capture_combo_->addItem(label, static_cast<int>(d.index));
     }
-    if (!error.empty()) log(QStringLiteral("Audio enumeration: ") + QString::fromStdString(error));
-    else log(QStringLiteral("Audio devices enumerated through Phase-2 miniaudio backend."));
+
+    const int playback_index = playback_combo_->findText(selected_playback);
+    if (playback_index >= 0) playback_combo_->setCurrentIndex(playback_index);
+    const int capture_index = capture_combo_->findText(selected_capture);
+    if (capture_index >= 0) capture_combo_->setCurrentIndex(capture_index);
+
+    if (!error.empty()) {
+        log(QStringLiteral("Audio enumeration: ") + QString::fromStdString(error));
+    } else {
+        log(QStringLiteral("Audio devices enumerated: ")
+            + QString::fromStdString(fv1::AudioHost::backend_name()));
+    }
 }
 
 void MainWindow::show_audio_settings() {
@@ -1149,13 +1227,13 @@ void MainWindow::show_audio_settings() {
     auto* note = new QLabel(
         session_ && session_->running()
             ? QStringLiteral("The current audio session keeps its existing settings. Changes below apply the next time Start is pressed.")
-            : QStringLiteral("Configure the Linux audio host and virtual FV-1 clock. These settings are remembered between launches."),
+            : QStringLiteral("Configure the desktop audio host and virtual FV-1 clock. These settings are remembered between launches."),
         &dialog);
     note->setWordWrap(true);
     outer->addWidget(note);
 
     auto* form = new QFormLayout;
-    auto* backend = new QLabel(QStringLiteral("miniaudio / system audio"), &dialog);
+    auto* backend = new QLabel(QString::fromStdString(fv1::AudioHost::backend_name()), &dialog);
     auto* playback = new QComboBox(&dialog);
     auto* capture = new QComboBox(&dialog);
     auto* host_rate = new QComboBox(&dialog);
@@ -1164,7 +1242,7 @@ void MainWindow::show_audio_settings() {
     auto* quality = new QSpinBox(&dialog);
     quality->setRange(0, 10);
     quality->setValue(resampler_quality_);
-    quality->setToolTip(QStringLiteral("SpeexDSP resampler quality: 0 = lightest CPU load, 10 = highest quality."));
+    quality->setToolTip(QStringLiteral("SRC quality: used by SpeexDSP when available; the deterministic fallback ignores this setting."));
 
     const auto clone_combo = [](QComboBox* dst, const QComboBox* src) {
         dst->clear();
@@ -1375,18 +1453,28 @@ void MainWindow::show_loop_region_settings() {
 
 
 void MainWindow::choose_program() {
-    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("Open FV-1 Program"), {},
+    const QString path = QFileDialog::getOpenFileName(
+        this,
+        QStringLiteral("Open FV-1 Program"),
+        dialog_directory(QStringLiteral("paths/programDir"), QDir::homePath()),
         QStringLiteral("FV-1 Programs (*.spn *.bin);;All files (*)"));
-    if (path.isEmpty()) return;
+    if (!path.isEmpty()) load_program_path(path);
+}
 
+bool MainWindow::load_program_path(const QString& path) {
     QByteArray bytes;
     QString error;
     if (!load_program_image(path, bytes, error)) {
         QMessageBox::warning(this, QStringLiteral("FV-1 Program"), error);
         log(QStringLiteral("Program load failed: ") + error);
-        return;
+        return false;
     }
-    install_program_image(bytes, path, path);
+
+    if (!install_program_image(bytes, path, path)) return false;
+
+    remember_directory(QStringLiteral("paths/programDir"), path);
+    remember_recent_path(QStringLiteral("recent/programs"), path);
+    return true;
 }
 
 bool MainWindow::install_program_image(const QByteArray& bytes, const QString& display_name, const QString& source_path) {
@@ -1490,16 +1578,21 @@ void MainWindow::paste_spinasm() {
 }
 
 void MainWindow::choose_audio_file() {
-    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("Open Test Audio"), {},
+    const QString path = QFileDialog::getOpenFileName(
+        this,
+        QStringLiteral("Open Test Audio"),
+        dialog_directory(QStringLiteral("paths/audioDir"), QDir::homePath()),
         QStringLiteral("Wave audio (*.wav);;All files (*)"));
-    if (path.isEmpty()) return;
+    if (!path.isEmpty()) load_audio_path(path);
+}
 
+bool MainWindow::load_audio_path(const QString& path) {
     fv1::FileLoopSource probe;
     std::string error;
     if (!probe.load(path_from_qstring(path), &error)) {
         QMessageBox::warning(this, QStringLiteral("Audio File"), QString::fromStdString(error));
         log(QStringLiteral("Audio loop load failed: ") + QString::fromStdString(error));
-        return;
+        return false;
     }
 
     audio_file_path_ = path;
@@ -1511,8 +1604,206 @@ void MainWindow::choose_audio_file() {
     file_position_slider_->setValue(0);
     update_file_transport_ui();
     source_combo_->setCurrentText(QStringLiteral("Audio File Loop"));
+
+    remember_directory(QStringLiteral("paths/audioDir"), path);
+    remember_recent_path(QStringLiteral("recent/audioLoops"), path);
+
     log(QStringLiteral("Loop source selected: %1 (%2 Hz, %3 s).")
         .arg(path).arg(probe.file_sample_rate()).arg(file_duration_seconds_, 0, 'f', 3));
+    return true;
+}
+
+bool MainWindow::open_external_path(const QString& supplied_path) {
+    const QFileInfo info(supplied_path);
+    if (!info.exists() || !info.isFile()) {
+        log(QStringLiteral("Open path rejected: file does not exist: ") + supplied_path);
+        return false;
+    }
+
+    const QString path = info.absoluteFilePath();
+    const QString suffix = info.suffix().toLower();
+
+    if (suffix == QStringLiteral("spn") || suffix == QStringLiteral("bin"))
+        return load_program_path(path);
+
+    if (suffix == QStringLiteral("wav"))
+        return load_audio_path(path);
+
+    log(QStringLiteral("Unsupported dropped/opened file: ") + path);
+    statusBar()->showMessage(
+        QStringLiteral("FV-1 Lab opens .spn, .bin and .wav files"),
+        4000);
+    return false;
+}
+
+QString MainWindow::dialog_directory(
+    const QString& settings_key,
+    const QString& fallback
+) const {
+    const QString saved = QSettings().value(settings_key).toString();
+    if (!saved.isEmpty() && QFileInfo(saved).isDir()) return saved;
+    if (!fallback.isEmpty() && QFileInfo(fallback).isDir()) return fallback;
+    return QDir::homePath();
+}
+
+void MainWindow::remember_directory(
+    const QString& settings_key,
+    const QString& selected_path
+) {
+    const QFileInfo info(selected_path);
+    const QString directory = info.isDir()
+        ? info.absoluteFilePath()
+        : info.absolutePath();
+    if (!directory.isEmpty())
+        QSettings().setValue(settings_key, directory);
+}
+
+void MainWindow::remember_recent_path(
+    const QString& settings_key,
+    const QString& supplied_path
+) {
+    const QFileInfo info(supplied_path);
+    QString path = info.exists()
+        ? info.canonicalFilePath()
+        : QDir::cleanPath(supplied_path);
+    if (path.isEmpty()) path = QDir::cleanPath(supplied_path);
+
+    QSettings settings;
+    QStringList paths = settings.value(settings_key).toStringList();
+
+    for (qsizetype i = paths.size(); i > 0; --i) {
+        if (QFileInfo(paths.at(i - 1)).absoluteFilePath()
+            == QFileInfo(path).absoluteFilePath()) {
+            paths.removeAt(i - 1);
+        }
+    }
+
+    paths.prepend(path);
+    while (paths.size() > 10) paths.removeLast();
+    settings.setValue(settings_key, paths);
+}
+
+void MainWindow::rebuild_recent_menus() {
+    const auto rebuild = [this](
+        QMenu* menu,
+        const QString& settings_key,
+        bool programs
+    ) {
+        if (!menu) return;
+
+        menu->clear();
+
+        QSettings settings;
+        const QStringList stored = settings.value(settings_key).toStringList();
+        QStringList valid;
+
+        for (const QString& path : stored) {
+            const QFileInfo info(path);
+            if (!info.exists() || !info.isFile()) continue;
+
+            valid << info.absoluteFilePath();
+            auto* action = menu->addAction(info.fileName());
+            action->setToolTip(info.absoluteFilePath());
+            action->setStatusTip(info.absoluteFilePath());
+
+            if (programs) {
+                connect(action, &QAction::triggered, this, [this, path] {
+                    load_program_path(path);
+                });
+            } else {
+                connect(action, &QAction::triggered, this, [this, path] {
+                    load_audio_path(path);
+                });
+            }
+        }
+
+        if (valid != stored)
+            settings.setValue(settings_key, valid);
+
+        if (valid.isEmpty()) {
+            auto* empty = menu->addAction(QStringLiteral("(No Recent Files)"));
+            empty->setEnabled(false);
+        } else {
+            menu->addSeparator();
+            auto* clear = menu->addAction(QStringLiteral("Clear Recent Files"));
+            connect(clear, &QAction::triggered, this, [this, settings_key] {
+                QSettings().remove(settings_key);
+                QTimer::singleShot(0, this, [this] {
+                    rebuild_recent_menus();
+                });
+            });
+        }
+    };
+
+    rebuild(
+        recent_programs_menu_,
+        QStringLiteral("recent/programs"),
+        true);
+    rebuild(
+        recent_audio_menu_,
+        QStringLiteral("recent/audioLoops"),
+        false);
+}
+
+void MainWindow::restore_workspace_state() {
+    QSettings settings;
+    const QByteArray geometry =
+        settings.value(QStringLiteral("ui/mainGeometry")).toByteArray();
+    const QByteArray state =
+        settings.value(QStringLiteral("ui/mainWindowStateV1")).toByteArray();
+
+    if (!geometry.isEmpty()) restoreGeometry(geometry);
+    if (!state.isEmpty()) restoreState(state, 1);
+}
+
+void MainWindow::save_workspace_state() {
+    QSettings settings;
+    settings.setValue(QStringLiteral("ui/mainGeometry"), saveGeometry());
+    settings.setValue(QStringLiteral("ui/mainWindowStateV1"), saveState(1));
+}
+
+void MainWindow::reset_workspace_layout() {
+    QSettings settings;
+    settings.remove(QStringLiteral("ui/mainGeometry"));
+    settings.remove(QStringLiteral("ui/mainWindowStateV1"));
+
+    if (!default_window_state_.isEmpty())
+        restoreState(default_window_state_, 1);
+
+    resize(1680, 980);
+    statusBar()->showMessage(QStringLiteral("Workspace layout reset"), 3000);
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+    save_workspace_state();
+    QMainWindow::closeEvent(event);
+}
+
+void MainWindow::dragEnterEvent(QDragEnterEvent* event) {
+    if (!event || !event->mimeData() || !event->mimeData()->hasUrls()) return;
+
+    for (const QUrl& url : event->mimeData()->urls()) {
+        if (!url.isLocalFile()) continue;
+        const QString suffix = QFileInfo(url.toLocalFile()).suffix().toLower();
+        if (suffix == QStringLiteral("spn")
+            || suffix == QStringLiteral("bin")
+            || suffix == QStringLiteral("wav")) {
+            event->acceptProposedAction();
+            return;
+        }
+    }
+}
+
+void MainWindow::dropEvent(QDropEvent* event) {
+    if (!event || !event->mimeData() || !event->mimeData()->hasUrls()) return;
+
+    for (const QUrl& url : event->mimeData()->urls()) {
+        if (!url.isLocalFile()) continue;
+        if (open_external_path(url.toLocalFile())) {
+            event->acceptProposedAction();
+            return;
+        }
+    }
 }
 
 void MainWindow::inspect_program() {
@@ -1667,8 +1958,14 @@ void MainWindow::start_recording() {
         return;
     }
 
-    QString suggested = QDir::home().filePath(QStringLiteral("fv1-capture.wav"));
-    const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("Record FV-1 Audio"), suggested,
+    const QString record_dir =
+        dialog_directory(QStringLiteral("paths/recordDir"), QDir::homePath());
+    const QString suggested =
+        QDir(record_dir).filePath(QStringLiteral("fv1-capture.wav"));
+    const QString path = QFileDialog::getSaveFileName(
+        this,
+        QStringLiteral("Record FV-1 Audio"),
+        suggested,
         QStringLiteral("Wave audio (*.wav)"));
     if (path.isEmpty()) {
         if (record_action_) {
@@ -1678,6 +1975,8 @@ void MainWindow::start_recording() {
         }
         return;
     }
+
+    remember_directory(QStringLiteral("paths/recordDir"), path);
 
     fv1::AudioRecordMode mode = fv1::AudioRecordMode::RawAndProcessed;
     if (choice == choices[0]) mode = fv1::AudioRecordMode::Processed;
@@ -1702,8 +2001,8 @@ void MainWindow::start_recording() {
         record_action_->blockSignals(blocked);
     }
     QStringList paths;
-    if (!session_->raw_record_path().empty()) paths << QString::fromStdString(session_->raw_record_path().string());
-    if (!session_->processed_record_path().empty()) paths << QString::fromStdString(session_->processed_record_path().string());
+    if (!session_->raw_record_path().empty()) paths << qstring_from_path(session_->raw_record_path());
+    if (!session_->processed_record_path().empty()) paths << qstring_from_path(session_->processed_record_path());
     log(QStringLiteral("Audio recording started: %1").arg(paths.join(QStringLiteral(" | "))));
     statusBar()->showMessage(QStringLiteral("RECORDING — realtime-safe WAV capture"), 3000);
 }
@@ -1731,8 +2030,8 @@ void MainWindow::stop_recording() {
     log(QStringLiteral("Recording stopped: raw %1 frames (%2 dropped), processed %3 frames (%4 dropped).")
         .arg(stats.raw_frames_written).arg(stats.raw_frames_dropped)
         .arg(stats.processed_frames_written).arg(stats.processed_frames_dropped));
-    if (!raw_path.empty()) log(QStringLiteral("Raw capture: ") + QString::fromStdString(raw_path.string()));
-    if (!processed_path.empty()) log(QStringLiteral("Processed capture: ") + QString::fromStdString(processed_path.string()));
+    if (!raw_path.empty()) log(QStringLiteral("Raw capture: ") + qstring_from_path(raw_path));
+    if (!processed_path.empty()) log(QStringLiteral("Processed capture: ") + qstring_from_path(processed_path));
     statusBar()->showMessage(QStringLiteral("Recording finalized"), 2500);
 }
 

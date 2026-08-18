@@ -106,19 +106,17 @@ Audio: miniaudio / WASAPI
 Set-Content -Path (Join-Path $stage "BUILD-INFO.txt") -Value $manifest -Encoding UTF8
 
 Write-Host ""
-Write-Host "=== Smoke deployed package ==="
-& $installedExe --smoke
-if ($LASTEXITCODE -ne 0) {
-    throw "Deployed FV1Lab.exe smoke test failed."
-}
-& $installedExe --smoke-splash
-if ($LASTEXITCODE -ne 0) {
-    throw "Deployed splash smoke test failed."
-}
-
-Write-Host ""
 Write-Host "=== Portable ZIP ==="
 Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -CompressionLevel Optimal
+
+Write-Host ""
+Write-Host "=== Verify truly portable package ==="
+& (Join-Path $PSScriptRoot "check-windows-portable.ps1") `
+    -ZipPath $zip `
+    -ProgramPath (Join-Path $Root "examples\simple_passthrough.spn")
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
 
 $hash = Get-FileHash -Algorithm SHA256 $zip
 Set-Content -Path "$zip.sha256" -Value "$($hash.Hash.ToLower())  $([IO.Path]::GetFileName($zip))"

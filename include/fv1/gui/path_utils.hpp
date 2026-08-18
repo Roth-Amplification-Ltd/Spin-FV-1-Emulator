@@ -21,4 +21,16 @@ inline std::filesystem::path path_from_qstring(const QString& value) {
 #endif
 }
 
+/*
+ * Convert filesystem paths back to Qt without narrowing UTF-16 on Windows.
+ * This is primarily used for recorder/report paths returned by shared C++ code.
+ */
+inline QString qstring_from_path(const std::filesystem::path& value) {
+#if defined(Q_OS_WIN)
+    return QString::fromStdWString(value.wstring());
+#else
+    return QString::fromStdString(value.string());
+#endif
+}
+
 } // namespace fv1::gui

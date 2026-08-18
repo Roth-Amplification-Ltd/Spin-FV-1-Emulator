@@ -41,8 +41,8 @@ struct AudioHostStats {
     std::uint64_t source_frames{};
 };
 
-/* Linux-first miniaudio host.  The public class intentionally contains no
-   miniaudio types so the rest of the application never depends on that API. */
+/* Desktop miniaudio host. The public class intentionally contains no
+   miniaudio types so the application never depends directly on that API. */
 class AudioHost {
 public:
     AudioHost();
@@ -51,6 +51,7 @@ public:
     AudioHost& operator=(const AudioHost&) = delete;
 
     static bool available() noexcept;
+    static std::string backend_name();
     static std::vector<AudioDeviceInfo> enumerate(std::string* error = nullptr);
 
     bool open(const AudioHostConfig& config,

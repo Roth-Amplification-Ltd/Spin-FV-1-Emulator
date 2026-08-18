@@ -338,7 +338,7 @@ void ValidationPanel::generate_hardware_pack() {
         QMessageBox::warning(this, QStringLiteral("Hardware Validation Pack"), QString::fromStdString(error));
         return;
     }
-    const QString created = QString::fromStdString(pack_dir.string());
+    const QString created = qstring_from_path(pack_dir);
     QMessageBox::information(this, QStringLiteral("Hardware Validation Pack"),
         QStringLiteral("Created deterministic Phase 5B hardware-validation pack:\n%1").arg(created));
     if (log_callback_) log_callback_(QStringLiteral("Hardware validation stimulus pack generated: ") + created);

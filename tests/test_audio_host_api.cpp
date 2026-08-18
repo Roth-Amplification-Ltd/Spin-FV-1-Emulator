@@ -10,6 +10,13 @@ int main() {
     assert(!host.dsp_enabled());
     host.set_dsp_enabled(true);
     assert(host.dsp_enabled());
-    std::cout << "audio-host realtime DSP bypass API: PASS\n";
+
+    const std::string backend = fv1::AudioHost::backend_name();
+    assert(!backend.empty());
+#if defined(_WIN32)
+    assert(backend.find("WASAPI") != std::string::npos);
+#endif
+
+    std::cout << "audio-host realtime DSP bypass/backend API: PASS\n";
     return 0;
 }

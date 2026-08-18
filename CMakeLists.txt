@@ -543,6 +543,13 @@ if(FV1_BUILD_GUI)
                 NOMINMAX)
             set_target_properties(fv1-lab PROPERTIES
                 OUTPUT_NAME "FV1Lab")
+
+            # MSVC already creates the executable's manifest resource. Merge
+            # the FV-1 Lab Windows capabilities into that single manifest
+            # instead of compiling a second RT_MANIFEST resource into the .rc.
+            target_link_options(fv1-lab PRIVATE
+                "/MANIFEST:EMBED"
+                "/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/fv1-lab-qt.manifest")
         endif()
 
         fv1_strict_warnings(fv1-lab)

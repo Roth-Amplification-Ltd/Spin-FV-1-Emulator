@@ -144,6 +144,18 @@ bool AudioHost::available() noexcept {
 #endif
 }
 
+std::string AudioHost::backend_name() {
+#if !defined(FV1_HAVE_MINIAUDIO)
+    return "Unavailable (miniaudio not compiled)";
+#elif defined(_WIN32)
+    return "WASAPI via miniaudio";
+#elif defined(__APPLE__)
+    return "Core Audio via miniaudio";
+#else
+    return "miniaudio / system audio";
+#endif
+}
+
 std::vector<AudioDeviceInfo> AudioHost::enumerate(std::string* error) {
     std::vector<AudioDeviceInfo> out;
 #if defined(FV1_HAVE_MINIAUDIO)

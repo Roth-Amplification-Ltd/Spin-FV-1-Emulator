@@ -1,15 +1,15 @@
 # Windows Qt Frontend Status
 
-## Phase 9A — Windows Qt Desktop Parity Bring-up
+## Phase 9B — Windows Workflow + Platform Parity
 
-The Windows product frontend is now intentionally the **same Qt 6 Widgets
-frontend used by Linux**.
+Phase 9A established the Windows product as the same Qt 6 Widgets FV-1 Lab
+frontend used by Linux and proved the MSVC/WASAPI build, 39/39 automated tests,
+Release packaging and standalone portable execution.
 
-The earlier hand-written `fv1-lab-win32` application remains available as an
-opt-in WASAPI/SDK reference harness, but it is no longer the default Windows
-product UI.
+Phase 9B keeps that architecture intact and focuses on Windows product workflow,
+desktop integration and regression quality rather than reimplementing features.
 
-## Architecture
+## Architecture remains unchanged
 
 ```text
 Linux / Windows
@@ -17,103 +17,91 @@ Linux / Windows
        v
 same src/gui Qt 6 Widgets frontend
        |
-       +-- MainWindow / menus / themes / splash
-       +-- Scope / Spectrum / Spectrogram / Levels
-       +-- File Loop / generator / audio-interface workflow
+       +-- program / audio workflow
+       +-- analyzer/testbench
        +-- debugger / Delay RAM / validation
+       +-- persistent desktop workspace
        |
        v
 shared runtime / analysis / validation / audio
        |
-       +-- Linux: miniaudio Linux backend
-       +-- Windows: miniaudio forced to WASAPI
+       +-- Linux: miniaudio system backend
+       +-- Windows: miniaudio -> WASAPI
        |
        v
 locked FV-1 engine / native SpinASM compiler
 ```
 
-The Qt layer is kept platform-neutral. `tools/check_qt_frontend_boundary.py`
-rejects Win32, WASAPI, X11/ALSA/Pulse, and Apple-native headers from
-`src/gui` and `include/fv1/gui`.
+The legacy `fv1-lab-win32` shell remains an opt-in diagnostic harness only.
 
-## Phase 9A mega chunk
+## Phase 9B workflow additions
 
-This phase establishes:
+- persistent main-window geometry and dock layout;
+- View -> Reset Workspace Layout;
+- persistent source mode, generator selection/frequency and POT0/POT1/POT2;
+- Open Recent Program and Open Recent Audio Loop menus;
+- remembered native file-dialog directories;
+- drag-and-drop `.spn`, `.bin` and `.wav` files;
+- command-line/open-with handling for `.spn`, `.bin` and `.wav`;
+- common keyboard shortcuts for Open, Start, Stop and related workflow actions;
+- Windows-aware audio backend labeling (`WASAPI via miniaudio`);
+- audio-device refresh that preserves the currently selected endpoint when it
+  is still present;
+- Unicode-safe conversion in both directions between `QString` and
+  `std::filesystem::path`;
+- Windows PerMonitorV2 DPI-awareness manifest;
+- Windows long-path-aware manifest;
+- bootstrap-downloaded miniaudio ignored as local dependency material;
+- command-line program-open smoke coverage;
+- stronger portable verification that removes `QTDIR`, `QT_PLUGIN_PATH` and Qt
+  development-kit paths before launching the packaged executable.
 
-- Qt 6 Widgets as the Windows product frontend.
-- MSVC 2022 x64 build path.
-- same themes, icons, splash and engineering dashboard as Linux.
-- Test Generator, Audio Interface and Audio File Loop UI inherited from Linux.
-- raw/processed analyzers inherited from Linux.
-- debugger, Delay RAM and validation inherited from Linux.
-- miniaudio forced to WASAPI on Windows.
-- pinned miniaudio 0.11.21 bootstrap.
-- optional SpeexDSP parity through vcpkg.
-- Unicode-safe Windows filesystem paths for WAV/report workflows.
-- Windows `.exe` icon and version resource.
-- cross-platform product-install CTest.
-- Windows Debug/Release build helpers.
-- Qt `windeployqt` portable deployment.
-- Windows portable ZIP + SHA-256 generation.
+## Manual Start invariant
 
-## First build on Windows 11
+Phase 9B does not change the audio-start contract.
 
-Open PowerShell in the repository root:
+Opening a program by dialog, recent-file menu, drag-and-drop, command line or
+Windows Open With loads/inspects the program but does **not** start realtime
+audio. The user must press Start.
+
+## Windows build/test
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 
-.\tools\bootstrap-windows.ps1
-.\tools\test-windows.ps1
-.\tools\run-windows.ps1
+.\tools\test-windows.ps1 -QtDir "C:\Qt\6.11.1\msvc2022_64"
 ```
 
-If Qt is not autodetected:
+Complete Phase 9B automated gate:
 
 ```powershell
-.\tools\bootstrap-windows.ps1 -QtDir "C:\Qt\<version>\msvc2022_64"
-.\tools\test-windows.ps1 -QtDir "C:\Qt\<version>\msvc2022_64"
+.\tools\phase9b-windows-gate.ps1 -QtDir "C:\Qt\6.11.1\msvc2022_64"
 ```
 
-## Portable package
+## Portable verification
 
-```powershell
-.\tools\package-windows.ps1
-```
+`tools/package-windows.ps1` now builds the Release package and invokes
+`tools/check-windows-portable.ps1`.
 
-The package is written beneath `dist\windows` and includes the application,
-shared FV-1 SDK DLL, Qt runtime/plugin deployment, icons/splash assets, build
-metadata, license, README and SHA-256.
+The verifier extracts the ZIP to a new temporary directory, removes Qt
+development environment variables, reduces PATH to Windows system directories,
+changes the working directory away from the repository, then verifies:
 
-## Existing native Win32 harness
+- `FV1Lab.exe`;
+- `Qt6Core.dll`, `Qt6Gui.dll`, `Qt6Widgets.dll`;
+- `platforms\qwindows.dll`;
+- installed splash and icon assets;
+- application version metadata;
+- normal Qt smoke;
+- splash smoke;
+- About smoke;
+- command-line `.spn` loading.
 
-The older native frontend is still buildable explicitly:
+This catches packages that appear portable only because a Qt SDK happens to be
+installed on the development machine.
 
-```powershell
-cmake -S . -B build-win32-reference `
-  -G "Visual Studio 17 2022" -A x64 `
-  -DFV1_BUILD_GUI=OFF `
-  -DFV1_BUILD_WINDOWS_FRONTEND=ON
+## Remaining acceptance
 
-cmake --build build-win32-reference --config Debug
-```
-
-It is retained for low-level SDK/WASAPI diagnosis only.
-
-## Next Windows work after first real build
-
-Phase 9A is deliberately large because the Linux Qt UI already contains the
-product functionality. The first Windows machine pass should therefore focus on
-real platform defects rather than rebuilding GUI features:
-
-- MSVC compile corrections, if any;
-- Qt Windows rendering/DPI quirks;
-- WASAPI device enumeration/selection;
-- actual capture/render stability;
-- Windows taskbar/icon behavior;
-- filesystem dialogs and Unicode paths;
-- recording/export on NTFS;
-- packaged execution outside the build tree.
-
-Once those are clean, later Windows work is primarily platform polish,
-regression/soak testing and installer/signing rather than feature reimplementation.
+Automated success is not the same as live audio acceptance. Complete
+`docs/WINDOWS-PHASE9B-CHECKLIST.md` before committing the phase-complete
+checkpoint.

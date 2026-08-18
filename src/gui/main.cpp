@@ -7,6 +7,7 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QSettings>
 #include <QStringList>
@@ -26,10 +27,12 @@ int main(int argc, char** argv) {
     QCoreApplication::setApplicationVersion(QString::fromLatin1(FV1_PRODUCT_VERSION_STRING));
     QGuiApplication::setDesktopFileName(QStringLiteral("roth-fv1-emulator"));
 
-    const bool smoke = QCoreApplication::arguments().contains(QStringLiteral("--smoke"));
-    const bool splash_smoke = QCoreApplication::arguments().contains(QStringLiteral("--smoke-splash"));
-    const bool about_smoke = QCoreApplication::arguments().contains(QStringLiteral("--smoke-about"));
-    const bool no_splash = QCoreApplication::arguments().contains(QStringLiteral("--no-splash"));
+    const QStringList args = QCoreApplication::arguments();
+    const bool smoke = args.contains(QStringLiteral("--smoke"));
+    const bool splash_smoke = args.contains(QStringLiteral("--smoke-splash"));
+    const bool about_smoke = args.contains(QStringLiteral("--smoke-about"));
+    const bool no_splash = args.contains(QStringLiteral("--no-splash"));
+    const int smoke_open_index = args.indexOf(QStringLiteral("--smoke-open"));
     QSettings settings;
     const QString theme = settings.value(QStringLiteral("ui/theme"), QStringLiteral("Dark")).toString();
     const QString accent = settings.value(QStringLiteral("ui/accent"), QStringLiteral("Cyan")).toString();
@@ -40,6 +43,11 @@ int main(int argc, char** argv) {
         app.processEvents();
         if (!window.findChild<QAction*>(QStringLiteral("aboutFv1LabAction"))) return 4;
         return 0;
+    }
+    if (smoke_open_index >= 0) {
+        if (smoke_open_index + 1 >= args.size()) return 6;
+        fv1::gui::MainWindow window;
+        return window.open_external_path(args.at(smoke_open_index + 1)) ? 0 : 6;
     }
     if (splash_smoke) {
         fv1::gui::StartupSplash splash(accent);
@@ -59,8 +67,20 @@ int main(int argc, char** argv) {
         about.close();
         return 0;
     }
+    QString startup_path;
+    for (int i = 1; i < args.size(); ++i) {
+        const QString arg = args.at(i);
+        if (arg.startsWith(QLatin1Char('-'))) continue;
+        const QFileInfo info(arg);
+        if (info.exists() && info.isFile()) {
+            startup_path = info.absoluteFilePath();
+            break;
+        }
+    }
+
     if (no_splash) {
         fv1::gui::MainWindow window;
+        if (!startup_path.isEmpty()) window.open_external_path(startup_path);
         window.show();
         return app.exec();
     }
@@ -79,6 +99,11 @@ int main(int argc, char** argv) {
     fv1::gui::MainWindow window(nullptr, [&splash](int percent, const QString& status) {
         splash.set_progress(percent, status);
     });
+
+    if (!startup_path.isEmpty()) {
+        splash.set_progress(92, QStringLiteral("Opening startup file…"));
+        window.open_external_path(startup_path);
+    }
 
     splash.set_progress(98, QStringLiteral("FV-1 Lab ready — preparing workspace…"));
     const qint64 remaining = std::max<qint64>(0, minimum_splash_ms - splash_timer.elapsed());

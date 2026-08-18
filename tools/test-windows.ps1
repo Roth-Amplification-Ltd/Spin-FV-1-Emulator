@@ -61,6 +61,13 @@ foreach ($arg in @("--smoke", "--smoke-splash", "--smoke-about")) {
     }
 }
 
+$SmokeProgram = Join-Path $Root "examples\simple_passthrough.spn"
+Write-Host "  --smoke-open $SmokeProgram"
+& $exe --smoke-open $SmokeProgram
+if ($LASTEXITCODE -ne 0) {
+    throw "FV1Lab.exe command-line program-open smoke failed with exit code $LASTEXITCODE"
+}
+
 Write-Host ""
 Write-Host "WINDOWS QT TEST GATE PASSED"
 Write-Host "Executable: $exe"
