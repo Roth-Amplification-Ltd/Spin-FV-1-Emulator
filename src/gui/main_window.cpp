@@ -1,4 +1,5 @@
 #include <fv1/gui/main_window.hpp>
+#include <fv1/gui/path_utils.hpp>
 
 #include <fv1/analysis.hpp>
 #include <fv1/debugger.hpp>
@@ -172,7 +173,7 @@ public:
             }
             auto file = std::make_unique<fv1::FileLoopSource>();
             std::string source_error;
-            if (!file->load(std::filesystem::path(audio_file.toStdString()), &source_error)) {
+            if (!file->load(path_from_qstring(audio_file), &source_error)) {
                 error = QString::fromStdString(source_error);
                 return false;
             }
@@ -1495,7 +1496,7 @@ void MainWindow::choose_audio_file() {
 
     fv1::FileLoopSource probe;
     std::string error;
-    if (!probe.load(std::filesystem::path(path.toStdString()), &error)) {
+    if (!probe.load(path_from_qstring(path), &error)) {
         QMessageBox::warning(this, QStringLiteral("Audio File"), QString::fromStdString(error));
         log(QStringLiteral("Audio loop load failed: ") + QString::fromStdString(error));
         return;
@@ -1683,7 +1684,7 @@ void MainWindow::start_recording() {
     else if (choice == choices[1]) mode = fv1::AudioRecordMode::Raw;
 
     QString error;
-    if (!session_->start_recording(std::filesystem::path(path.toStdString()), mode, error)) {
+    if (!session_->start_recording(path_from_qstring(path), mode, error)) {
         QMessageBox::warning(this, QStringLiteral("Record Audio"), error);
         log(QStringLiteral("Recording failed: ") + error);
         if (record_action_) {

@@ -1,4 +1,5 @@
 #include <fv1/gui/validation_panel.hpp>
+#include <fv1/gui/path_utils.hpp>
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -197,8 +198,8 @@ void ValidationPanel::analyze() {
     }
     fv1::ValidationAudio reference, capture;
     std::string error;
-    if (!fv1::load_validation_wav(std::filesystem::path(ref_path.toStdString()), reference, &error) ||
-        !fv1::load_validation_wav(std::filesystem::path(cap_path.toStdString()), capture, &error)) {
+    if (!fv1::load_validation_wav(path_from_qstring(ref_path), reference, &error) ||
+        !fv1::load_validation_wav(path_from_qstring(cap_path), capture, &error)) {
         QMessageBox::warning(this, QStringLiteral("FV-1 Validation"), QString::fromStdString(error));
         return;
     }
@@ -276,7 +277,7 @@ void ValidationPanel::export_report() {
     if (path.isEmpty()) return;
     if (path.endsWith(QStringLiteral(".md"), Qt::CaseInsensitive)) path.chop(3);
     std::string error;
-    if (!fv1::write_validation_report_bundle(std::filesystem::path(path.toStdString()), *result_, &error)) {
+    if (!fv1::write_validation_report_bundle(path_from_qstring(path), *result_, &error)) {
         QMessageBox::warning(this, QStringLiteral("FV-1 Validation"), QString::fromStdString(error));
         return;
     }
@@ -331,7 +332,7 @@ void ValidationPanel::generate_hardware_pack() {
     cfg.standard_seconds = seconds->value();
     cfg.level = level->value();
     cfg.seed = static_cast<std::uint32_t>(seed->value());
-    const std::filesystem::path pack_dir = std::filesystem::path(directory.toStdString()) / "fv1-hardware-validation-pack";
+    const std::filesystem::path pack_dir = path_from_qstring(directory) / "fv1-hardware-validation-pack";
     std::string error;
     if (!fv1::write_validation_stimulus_pack(pack_dir, cfg, &error)) {
         QMessageBox::warning(this, QStringLiteral("Hardware Validation Pack"), QString::fromStdString(error));
@@ -386,7 +387,7 @@ void ValidationPanel::generate_stimulus() {
     if (!fv1::generate_validation_stimulus(audio, static_cast<std::uint32_t>(rate->currentData().toUInt()),
             seconds->value(), kind->currentText().toStdString(), level->value(), frequency->value(),
             sweep_end->value(), static_cast<std::uint32_t>(seed->value()), &error) ||
-        !fv1::write_validation_wav(std::filesystem::path(path.toStdString()), audio, &error)) {
+        !fv1::write_validation_wav(path_from_qstring(path), audio, &error)) {
         QMessageBox::warning(this, QStringLiteral("FV-1 Validation"), QString::fromStdString(error));
         return;
     }

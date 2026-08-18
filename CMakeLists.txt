@@ -21,15 +21,11 @@ include(CMakePackageConfigHelpers)
 
 option(FV1_BUILD_TESTS "Build emulator tests" ON)
 option(FV1_ENABLE_WARNINGS "Enable strict compiler warnings" ON)
-option(FV1_ENABLE_LIVE_AUDIO "Build Linux realtime audio host when miniaudio is available" ON)
-option(FV1_BUILD_GUI "Build the Qt FV-1 emulator/testbench application" ON)
-if(WIN32)
-    set(FV1_WINDOWS_FRONTEND_DEFAULT ON)
-else()
-    set(FV1_WINDOWS_FRONTEND_DEFAULT OFF)
-endif()
-option(FV1_BUILD_WINDOWS_FRONTEND "Build the native Win32 FV-1 Lab frontend on Windows" ${FV1_WINDOWS_FRONTEND_DEFAULT})
-unset(FV1_WINDOWS_FRONTEND_DEFAULT)
+option(FV1_ENABLE_LIVE_AUDIO "Build the realtime audio host when miniaudio is available" ON)
+option(FV1_BUILD_GUI "Build the shared Qt 6 FV-1 Lab desktop application" ON)
+option(FV1_BUILD_WINDOWS_FRONTEND
+       "Build the legacy/native Win32 FV-1 Lab reference harness"
+       OFF)
 option(FV1_BUILD_FUZZERS "Build Clang/libFuzzer hardening targets" OFF)
 option(FV1_SDK_BUILD_SHARED "Build the embeddable FV-1 SDK as a shared library" ON)
 option(FV1_SDK_ONLY "Build/install only the embeddable FV-1 SDK and SDK-facing tests" OFF)
@@ -43,6 +39,42 @@ if(NOT FV1_SDK_ONLY)
     if(PkgConfig_FOUND)
         pkg_check_modules(SPEEXDSP QUIET IMPORTED_TARGET speexdsp)
     endif()
+
+    # Windows does not normally have a system pkg-config path. Allow the
+    # Windows bootstrap/vcpkg workflow to provide config-specific SpeexDSP
+    # libraries directly while preserving the existing Linux pkg-config path.
+    set(SPEEXDSP_INCLUDE_DIR "" CACHE PATH
+        "Optional SpeexDSP include directory for non-pkg-config hosts")
+    set(SPEEXDSP_LIBRARY_RELEASE "" CACHE FILEPATH
+        "Optional release SpeexDSP library")
+    set(SPEEXDSP_LIBRARY_DEBUG "" CACHE FILEPATH
+        "Optional debug SpeexDSP library")
+
+    if(NOT TARGET PkgConfig::SPEEXDSP
+       AND SPEEXDSP_INCLUDE_DIR
+       AND (SPEEXDSP_LIBRARY_RELEASE OR SPEEXDSP_LIBRARY_DEBUG))
+        add_library(fv1-speexdsp-external UNKNOWN IMPORTED)
+
+        set_target_properties(fv1-speexdsp-external PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${SPEEXDSP_INCLUDE_DIR}")
+
+        if(SPEEXDSP_LIBRARY_RELEASE)
+            set_property(TARGET fv1-speexdsp-external APPEND PROPERTY
+                IMPORTED_CONFIGURATIONS RELEASE RELWITHDEBINFO MINSIZEREL)
+            set_target_properties(fv1-speexdsp-external PROPERTIES
+                IMPORTED_LOCATION_RELEASE "${SPEEXDSP_LIBRARY_RELEASE}"
+                IMPORTED_LOCATION_RELWITHDEBINFO "${SPEEXDSP_LIBRARY_RELEASE}"
+                IMPORTED_LOCATION_MINSIZEREL "${SPEEXDSP_LIBRARY_RELEASE}")
+        endif()
+
+        if(SPEEXDSP_LIBRARY_DEBUG)
+            set_property(TARGET fv1-speexdsp-external APPEND PROPERTY
+                IMPORTED_CONFIGURATIONS DEBUG)
+            set_target_properties(fv1-speexdsp-external PROPERTIES
+                IMPORTED_LOCATION_DEBUG "${SPEEXDSP_LIBRARY_DEBUG}")
+        endif()
+    endif()
+
     find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h
         HINTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniaudio")
 endif()
@@ -270,22 +302,29 @@ if(FV1_SDK_ONLY)
 endif()
 
 # -----------------------------------------------------------------------------
-# Phase 8: Apple frontend realtime bridge.  This C11 target is intentionally
-# platform-neutral so Linux CI can exercise the macOS/iPadOS audio bridge logic
-# while proving that it consumes only the public FV-1 SDK boundary.
+# Phase 8: Apple frontend realtime bridge.
+#
+# This C11 bridge remains intentionally host-testable on Unix so Linux CI can
+# exercise the macOS/iPadOS bridge without Apple hardware.  MSVC's C frontend
+# does not provide the C11 stdatomic semantics used by this implementation, and
+# the bridge is not part of the Windows product.  Therefore Windows excludes
+# this Apple-only integration target rather than compiling irrelevant code with
+# platform-specific compiler extensions.
 # -----------------------------------------------------------------------------
-add_library(fv1-apple-realtime-bridge STATIC
-    src/apple/fv1_apple_realtime.c
-    src/apple/fv1_apple_analysis.cpp
-    src/analysis/analysis.cpp
-    src/audio/audio_recorder.cpp)
-target_include_directories(fv1-apple-realtime-bridge PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/apple
-    ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(fv1-apple-realtime-bridge PUBLIC
-    FV1::sdk
-    Threads::Threads)
-fv1_strict_warnings(fv1-apple-realtime-bridge)
+if(NOT WIN32)
+    add_library(fv1-apple-realtime-bridge STATIC
+        src/apple/fv1_apple_realtime.c
+        src/apple/fv1_apple_analysis.cpp
+        src/analysis/analysis.cpp
+        src/audio/audio_recorder.cpp)
+    target_include_directories(fv1-apple-realtime-bridge PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/apple
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(fv1-apple-realtime-bridge PUBLIC
+        FV1::sdk
+        Threads::Threads)
+    fv1_strict_warnings(fv1-apple-realtime-bridge)
+endif()
 
 # -----------------------------------------------------------------------------
 # Phase 7: native Windows frontend SDK boundary.  The session wrapper is kept
@@ -334,9 +373,16 @@ target_link_libraries(fv1-runtime PRIVATE FV1::sdk)
 if(TARGET PkgConfig::SPEEXDSP)
     target_link_libraries(fv1-runtime PRIVATE PkgConfig::SPEEXDSP)
     target_compile_definitions(fv1-runtime PRIVATE FV1_HAVE_SPEEXDSP=1)
-    message(STATUS "Phase 2 SRC: SpeexDSP enabled")
+    message(STATUS "Phase 2 SRC: SpeexDSP enabled through pkg-config")
+elseif(TARGET fv1-speexdsp-external)
+    target_link_libraries(fv1-runtime PRIVATE fv1-speexdsp-external)
+    target_compile_definitions(fv1-runtime PRIVATE FV1_HAVE_SPEEXDSP=1)
+    message(STATUS "Phase 2 SRC: SpeexDSP enabled through explicit Windows/library paths")
 else()
-    message(WARNING "SpeexDSP not found: building the deterministic linear SRC fallback. Run bootstrap-dev.sh on Linux for production realtime SRC.")
+    message(WARNING
+        "SpeexDSP not found: building the deterministic linear SRC fallback. "
+        "Linux bootstrap installs SpeexDSP automatically; Windows can use "
+        "tools/bootstrap-windows.ps1 for the vcpkg-backed parity path.")
 endif()
 fv1_strict_warnings(fv1-runtime)
 
@@ -407,9 +453,11 @@ target_link_libraries(fv1-live PRIVATE FV1::audio FV1::analysis FV1::runtime FV1
 fv1_strict_warnings(fv1-live)
 
 # -----------------------------------------------------------------------------
-# Phase 7: complete native Windows product frontend.  This target deliberately links
-# only the public SDK wrapper plus Windows system libraries; it does not reuse
-# Qt, the Linux runtime/audio stack, or private emulator libraries.
+# Phase 7 legacy/native Windows reference harness.
+#
+# The shipping Windows product now uses the same Qt 6 Widgets frontend as Linux.
+# This small Win32/WASAPI shell remains opt-in because it is still useful for
+# low-level SDK/audio diagnosis without Qt or the shared desktop testbench.
 # -----------------------------------------------------------------------------
 if(WIN32 AND FV1_BUILD_WINDOWS_FRONTEND)
     configure_file(
@@ -439,30 +487,80 @@ if(WIN32 AND FV1_BUILD_WINDOWS_FRONTEND)
         uuid
         avrt)
     fv1_strict_warnings(fv1-lab-win32)
-    message(STATUS "Phase 7 native Windows frontend enabled")
+    message(STATUS "Phase 7 native Win32/WASAPI reference harness enabled")
 endif()
 
 # -----------------------------------------------------------------------------
-# Qt FV-1 emulator/testbench application (Linux product frontend)
+# Shared Qt 6 desktop FV-1 Lab product frontend.
+#
+# Linux and Windows deliberately compile these exact same GUI sources. Native
+# audio/backend differences stay below the Qt layer so feature parity is a
+# property of one desktop application instead of two independent UIs.
 # -----------------------------------------------------------------------------
+set(FV1_GUI_BUILT OFF)
 if(FV1_BUILD_GUI)
     find_package(Qt6 COMPONENTS Widgets QUIET)
     if(Qt6_FOUND)
-        add_executable(fv1-lab
+        set(FV1_LAB_GUI_SOURCES
             src/gui/main.cpp
             src/gui/main_window.cpp
             src/gui/startup_splash.cpp
             src/gui/theme_manager.cpp
             src/gui/instrument_plot.cpp
             src/gui/validation_panel.cpp)
+
+        if(WIN32)
+            configure_file(
+                packaging/windows/fv1-lab-qt.rc.in
+                ${CMAKE_CURRENT_BINARY_DIR}/fv1-lab-qt.rc
+                @ONLY)
+            list(APPEND FV1_LAB_GUI_SOURCES
+                ${CMAKE_CURRENT_BINARY_DIR}/fv1-lab-qt.rc)
+            add_executable(fv1-lab WIN32 ${FV1_LAB_GUI_SOURCES})
+        else()
+            add_executable(fv1-lab ${FV1_LAB_GUI_SOURCES})
+        endif()
+
         target_link_libraries(fv1-lab PRIVATE
-            Qt6::Widgets FV1::audio FV1::analysis FV1::validation FV1::runtime FV1::debugger FV1::core FV1::spinasm)
-        target_include_directories(fv1-lab PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-        target_compile_definitions(fv1-lab PRIVATE FV1_PRODUCT_VERSION_STRING=\"${FV1_RELEASE_STRING}\")
+            Qt6::Widgets
+            FV1::audio
+            FV1::analysis
+            FV1::validation
+            FV1::runtime
+            FV1::debugger
+            FV1::core
+            FV1::spinasm)
+        target_include_directories(fv1-lab PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_compile_definitions(fv1-lab PRIVATE
+            FV1_PRODUCT_VERSION_STRING=\"${FV1_RELEASE_STRING}\")
+
+        if(WIN32)
+            target_compile_definitions(fv1-lab PRIVATE
+                UNICODE
+                _UNICODE
+                WIN32_LEAN_AND_MEAN
+                NOMINMAX)
+            set_target_properties(fv1-lab PROPERTIES
+                OUTPUT_NAME "FV1Lab")
+        endif()
+
         fv1_strict_warnings(fv1-lab)
-        message(STATUS "Phase 5B hardware-validation/testbench GUI: Qt ${Qt6_VERSION} enabled")
+        set(FV1_GUI_BUILT ON)
+        message(STATUS
+            "Shared FV-1 Lab desktop frontend: Qt ${Qt6_VERSION} enabled "
+            "for ${CMAKE_SYSTEM_NAME}")
     else()
-        message(WARNING "Qt 6 Widgets not found: fv1-lab GUI will not be built. Run bootstrap-dev.sh on Linux to install qt6-base-dev.")
+        if(WIN32)
+            message(WARNING
+                "Qt 6 Widgets not found: FV1Lab.exe will not be built. "
+                "Install a Qt 6 MSVC 2022 x64 kit or run "
+                "tools/bootstrap-windows.ps1.")
+        else()
+            message(WARNING
+                "Qt 6 Widgets not found: fv1-lab GUI will not be built. "
+                "Run bootstrap-dev.sh on Linux to install qt6-base-dev.")
+        endif()
     endif()
 endif()
 
@@ -537,47 +635,53 @@ if(FV1_BUILD_TESTS)
         COMMAND fv1-native-frontend-realtime-tests)
     add_test(NAME phase7-windows-frontend-boundary
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_windows_frontend_boundary.py)
-
-    add_executable(fv1-apple-realtime-bridge-tests
-        tests/apple/test_apple_realtime_bridge.c)
-    target_link_libraries(fv1-apple-realtime-bridge-tests PRIVATE
-        fv1-apple-realtime-bridge
-        FV1::sdk)
-    set_target_properties(fv1-apple-realtime-bridge-tests PROPERTIES LINKER_LANGUAGE CXX)
-    fv1_strict_warnings(fv1-apple-realtime-bridge-tests)
-    add_test(NAME fv1-apple-realtime-bridge-tests
-        COMMAND fv1-apple-realtime-bridge-tests)
-
-    # -------------------------------------------------------------------------
-    # Phase 8D: macOS release/completion regression.
-    #
-    # These stay platform-neutral so Linux/macOS host CI can prove the native
-    # Apple bridge against every shipped SpinASM demo. The accelerated soak is
-    # an explicit release-gate target rather than a default CTest because its
-    # duration is user-configurable and intentionally heavyweight.
-    # -------------------------------------------------------------------------
-    add_executable(fv1-apple-release-program-tests
-        tests/apple/test_apple_release_programs.c)
-    target_link_libraries(fv1-apple-release-program-tests PRIVATE
-        fv1-apple-realtime-bridge
-        FV1::sdk)
-    set_target_properties(fv1-apple-release-program-tests PROPERTIES
-        LINKER_LANGUAGE CXX)
-    fv1_strict_warnings(fv1-apple-release-program-tests)
-    add_test(NAME fv1-apple-release-program-tests
-        COMMAND fv1-apple-release-program-tests
+    add_test(NAME phase9-qt-desktop-frontend-boundary
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_qt_frontend_boundary.py
             ${CMAKE_CURRENT_SOURCE_DIR})
 
-    add_executable(fv1-apple-realtime-soak
-        tests/apple/test_apple_realtime_soak.c)
-    target_link_libraries(fv1-apple-realtime-soak PRIVATE
-        fv1-apple-realtime-bridge
-        FV1::sdk)
-    set_target_properties(fv1-apple-realtime-soak PROPERTIES
-        LINKER_LANGUAGE CXX)
-    fv1_strict_warnings(fv1-apple-realtime-soak)
-    add_test(NAME phase8-apple-frontend-boundary
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_apple_frontend_boundary.py)
+    # Apple integration regression is host-tested on Linux/macOS, but is not
+    # part of the Windows Qt product or Windows MSVC build.
+    if(TARGET fv1-apple-realtime-bridge)
+        add_executable(fv1-apple-realtime-bridge-tests
+            tests/apple/test_apple_realtime_bridge.c)
+        target_link_libraries(fv1-apple-realtime-bridge-tests PRIVATE
+            fv1-apple-realtime-bridge
+            FV1::sdk)
+        set_target_properties(fv1-apple-realtime-bridge-tests PROPERTIES
+            LINKER_LANGUAGE CXX)
+        fv1_strict_warnings(fv1-apple-realtime-bridge-tests)
+        add_test(NAME fv1-apple-realtime-bridge-tests
+            COMMAND fv1-apple-realtime-bridge-tests)
+
+        # ---------------------------------------------------------------------
+        # Phase 8D: macOS release/completion regression.
+        # ---------------------------------------------------------------------
+        add_executable(fv1-apple-release-program-tests
+            tests/apple/test_apple_release_programs.c)
+        target_link_libraries(fv1-apple-release-program-tests PRIVATE
+            fv1-apple-realtime-bridge
+            FV1::sdk)
+        set_target_properties(fv1-apple-release-program-tests PROPERTIES
+            LINKER_LANGUAGE CXX)
+        fv1_strict_warnings(fv1-apple-release-program-tests)
+        add_test(NAME fv1-apple-release-program-tests
+            COMMAND fv1-apple-release-program-tests
+                ${CMAKE_CURRENT_SOURCE_DIR})
+
+        add_executable(fv1-apple-realtime-soak
+            tests/apple/test_apple_realtime_soak.c)
+        target_link_libraries(fv1-apple-realtime-soak PRIVATE
+            fv1-apple-realtime-bridge
+            FV1::sdk)
+        set_target_properties(fv1-apple-realtime-soak PROPERTIES
+            LINKER_LANGUAGE CXX)
+        fv1_strict_warnings(fv1-apple-realtime-soak)
+
+        add_test(NAME phase8-apple-frontend-boundary
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_apple_frontend_boundary.py)
+    endif()
 
     add_test(NAME native-spinasm-python-equivalence
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_native_spinasm_equivalence.py
@@ -649,20 +753,34 @@ if(FV1_BUILD_TESTS)
             -DPROJECT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
             -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/phase6c-product-install
             -DBUILD_CONFIG=$<CONFIG>
+            -DEXPECTED_VERSION=${FV1_RELEASE_STRING}
+            -DEXPECT_GUI=${FV1_GUI_BUILT}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_product_install.cmake)
     set_tests_properties(phase6c-product-install PROPERTIES TIMEOUT 60)
 
     if(TARGET fv1-lab)
+        # Build-tree smoke tests need the source-tree assets (splash/icons).
+        # Installed/packaged products resolve the same assets through
+        # ../share/spin-fv1-emulator from the executable directory.
         add_test(NAME fv1-lab-smoke COMMAND fv1-lab --smoke)
-        set_tests_properties(fv1-lab-smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        set_tests_properties(fv1-lab-smoke PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
         add_test(NAME fv1-lab-hidpi-smoke COMMAND fv1-lab --smoke)
         set_tests_properties(fv1-lab-hidpi-smoke PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=2")
-        add_test(NAME fv1-lab-splash-background-smoke COMMAND fv1-lab --smoke-splash)
+
+        add_test(NAME fv1-lab-splash-background-smoke
+            COMMAND fv1-lab --smoke-splash)
         set_tests_properties(fv1-lab-splash-background-smoke PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
         add_test(NAME fv1-lab-about-smoke COMMAND fv1-lab --smoke-about)
         set_tests_properties(fv1-lab-about-smoke PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()
 endif()
@@ -770,7 +888,11 @@ install(TARGETS ${FV1_INSTALL_TARGETS}
 install(DIRECTORY assets/icons/ DESTINATION share/spin-fv1-emulator/icons
         PATTERN "hicolor" EXCLUDE)
 install(DIRECTORY assets/splash/ DESTINATION share/spin-fv1-emulator/splash)
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/roth-fv1-emulator.desktop")
-    install(FILES packaging/linux/roth-fv1-emulator.desktop DESTINATION share/applications)
+if(UNIX AND NOT APPLE)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/roth-fv1-emulator.desktop")
+        install(FILES packaging/linux/roth-fv1-emulator.desktop
+                DESTINATION share/applications)
+    endif()
+    install(DIRECTORY assets/icons/hicolor/
+            DESTINATION share/icons/hicolor)
 endif()
-install(DIRECTORY assets/icons/hicolor/ DESTINATION share/icons/hicolor)

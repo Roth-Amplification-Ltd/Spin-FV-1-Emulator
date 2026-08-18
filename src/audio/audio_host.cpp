@@ -13,6 +13,25 @@
 namespace fv1 {
 
 #if defined(FV1_HAVE_MINIAUDIO)
+namespace {
+
+ma_result init_platform_audio_context(ma_context* context) {
+#if defined(_WIN32)
+    const ma_backend backends[] = {
+        ma_backend_wasapi
+    };
+    return ma_context_init(
+        backends,
+        static_cast<ma_uint32>(sizeof(backends) / sizeof(backends[0])),
+        nullptr,
+        context);
+#else
+    return ma_context_init(nullptr, 0, nullptr, context);
+#endif
+}
+
+} // namespace
+
 class AudioHost::Impl {
 public:
     ma_context context{};
@@ -129,7 +148,7 @@ std::vector<AudioDeviceInfo> AudioHost::enumerate(std::string* error) {
     std::vector<AudioDeviceInfo> out;
 #if defined(FV1_HAVE_MINIAUDIO)
     ma_context ctx{};
-    const ma_result init = ma_context_init(nullptr, 0, nullptr, &ctx);
+    const ma_result init = init_platform_audio_context(&ctx);
     if (init != MA_SUCCESS) {
         if (error) *error = std::string("miniaudio context init failed: ") + ma_result_description(init);
         return out;
@@ -151,7 +170,7 @@ std::vector<AudioDeviceInfo> AudioHost::enumerate(std::string* error) {
         out.push_back({i, AudioDeviceDirection::Capture, capture[i].name, capture[i].isDefault == MA_TRUE});
     ma_context_uninit(&ctx);
 #else
-    if (error) *error = "this build does not include miniaudio; install libminiaudio-dev and rebuild";
+    if (error) *error = "this build does not include miniaudio; install/vendor miniaudio.h and rebuild";
 #endif
     return out;
 }
@@ -176,7 +195,7 @@ bool AudioHost::open(const AudioHostConfig& config,
         if (error) *error = "invalid audio-host sample rate or period size";
         return false;
     }
-    const ma_result ctx_rc = ma_context_init(nullptr, 0, nullptr, &impl_->context);
+    const ma_result ctx_rc = init_platform_audio_context(&impl_->context);
     if (ctx_rc != MA_SUCCESS) {
         if (error) *error = std::string("miniaudio context init failed: ") + ma_result_description(ctx_rc);
         return false;
@@ -246,7 +265,7 @@ bool AudioHost::open(const AudioHostConfig& config,
     return true;
 #else
     (void)config; (void)source; (void)runtime; (void)analyzer; (void)raw_analyzer;
-    if (error) *error = "this build does not include miniaudio; run ./bootstrap-dev.sh and rebuild";
+    if (error) *error = "this build does not include miniaudio; run the platform development bootstrap and rebuild";
     return false;
 #endif
 }
