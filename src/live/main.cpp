@@ -123,7 +123,7 @@ std::vector<std::uint8_t> load_program(const fs::path& source, unsigned slot) {
 }
 
 void usage() {
-    std::cout << R"(Spin FV-1 Emulator - Phase 2 Linux realtime host
+    std::cout << R"(Spin FV-1 Emulator - desktop realtime audio host
 
 Usage:
   fv1-live devices
@@ -144,6 +144,8 @@ Sources (choose one; default is --live):
 Audio/runtime:
   --input-device N            Capture index from `fv1-live devices`.
   --output-device N           Playback index; default OS device.
+  --input-id ID               Stable capture endpoint ID (preferred on Windows).
+  --output-id ID              Stable playback endpoint ID (preferred on Windows).
   --host-rate HZ              Audio interface rate (default 48000).
   --buffer FRAMES             Requested period size (default 256).
   --clock HZ                  Virtual FV-1 sample rate (default 32768).
@@ -210,19 +212,44 @@ void print_meter(const fv1::AudioHost& host, const fv1::Runtime& runtime,
               << "corr=" << a.correlation << " "
               << "dominant=" << std::setprecision(1) << a.dominant_frequency_hz << "Hz "
               << "underrun=" << r.output_underrun_frames << " "
-              << "analysis-drop=" << analyzer.dropped_frames() << "\n";
+              << "analysis-drop=" << analyzer.dropped_frames() << " "
+              << "callback=" << h.min_callback_frames << ".."
+              << h.max_callback_frames << " "
+              << "reroute=" << h.device_reroute_events << " "
+              << "device-lost=" << (h.unexpected_device_stop ? "yes" : "no")
+              << "\n";
 }
 
 int cmd_devices() {
     std::string error;
     const auto devices = fv1::AudioHost::enumerate(&error);
     if (!error.empty() && devices.empty()) throw Error(error);
+    const auto print_device = [](const fv1::AudioDeviceInfo& d) {
+        std::cout << "  [" << d.index << "] " << d.name
+                  << (d.is_default ? "  (default)" : "") << "\n";
+        if (!d.persistent_id.empty())
+            std::cout << "       id=" << d.persistent_id << "\n";
+        if (!d.native_sample_rates.empty()) {
+            std::cout << "       native-rates=";
+            for (std::size_t i = 0; i < d.native_sample_rates.size(); ++i) {
+                if (i != 0) std::cout << ",";
+                std::cout << d.native_sample_rates[i];
+            }
+            std::cout << " Hz";
+            if (d.max_channels != 0)
+                std::cout << ", max-channels=" << d.max_channels;
+            std::cout << "\n";
+        }
+    };
+
     std::cout << "Playback devices:\n";
-    for (const auto& d : devices) if (d.direction == fv1::AudioDeviceDirection::Playback)
-        std::cout << "  [" << d.index << "] " << d.name << (d.is_default ? "  (default)" : "") << "\n";
+    for (const auto& d : devices)
+        if (d.direction == fv1::AudioDeviceDirection::Playback)
+            print_device(d);
     std::cout << "Capture devices:\n";
-    for (const auto& d : devices) if (d.direction == fv1::AudioDeviceDirection::Capture)
-        std::cout << "  [" << d.index << "] " << d.name << (d.is_default ? "  (default)" : "") << "\n";
+    for (const auto& d : devices)
+        if (d.direction == fv1::AudioDeviceDirection::Capture)
+            print_device(d);
     return 0;
 }
 
@@ -260,6 +287,8 @@ int cmd_run(const Args& args) {
     host_cfg.needs_capture = needs_capture;
     host_cfg.playback_device = std::stoi(args.get("--output-device", "-1"));
     host_cfg.capture_device = std::stoi(args.get("--input-device", "-1"));
+    host_cfg.playback_device_id = args.get("--output-id");
+    host_cfg.capture_device_id = args.get("--input-id");
     const double seconds = std::stod(args.get("--seconds", "0"));
     if (seconds > 0.0)
         host_cfg.stop_after_frames = static_cast<std::uint64_t>(std::llround(seconds * static_cast<double>(host_rate)));
@@ -267,18 +296,24 @@ int cmd_run(const Args& args) {
     if (!host.open(host_cfg, *source, runtime, &analyzer, &error)) throw Error(error);
     if (!host.start(&error)) throw Error(error);
 
+    const auto opened_host = host.stats();
     std::cout << "FV-1 realtime session started\n"
               << "  source:       " << source->name() << "\n"
               << "  host rate:    " << host_rate << " Hz\n"
               << "  virtual FV-1: " << fv1_rate << " Hz\n"
-              << "  buffer:       " << buffer << " frames\n"
+              << "  buffer req:   " << buffer << " frames\n"
+              << "  native play:  " << opened_host.playback_native_sample_rate
+              << " Hz / " << opened_host.playback_period_frames << " frames\n"
+              << "  native cap:   " << opened_host.capture_native_sample_rate
+              << " Hz / " << opened_host.capture_period_frames << " frames\n"
               << "  SRC:          " << (std::abs(static_cast<double>(host_rate) - fv1_rate) < 0.01
                                             ? "bypass (same rate)"
                                             : (runtime.using_speexdsp() ? "SpeexDSP" : "built-in linear fallback")) << "\n";
 
     if (seconds > 0.0) {
         auto next_meter = std::chrono::steady_clock::now();
-        while (!host.is_finished()) {
+        while (!host.is_finished() &&
+               !host.stats().unexpected_device_stop) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             if (args.has("--meter") && std::chrono::steady_clock::now() >= next_meter) {
                 print_meter(host, runtime, analyzer);
@@ -302,7 +337,15 @@ int cmd_run(const Args& args) {
               << "  virtual FV-1 frames: " << rs.fv1_frames << "\n"
               << "  output underruns:    " << rs.output_underrun_frames << " frames\n"
               << "  analyzer drops:      " << analyzer.dropped_frames() << " frames\n"
+              << "  callback frames:     " << hs.min_callback_frames
+              << ".." << hs.max_callback_frames << "\n"
+              << "  device reroutes:     " << hs.device_reroute_events << "\n"
+              << "  device stops:        " << hs.device_stopped_events << "\n"
               << "  final RMS:           " << as.rms_left << " / " << as.rms_right << "\n";
+
+    if (hs.unexpected_device_stop)
+        throw Error("audio endpoint stopped unexpectedly during realtime run");
+
     return 0;
 }
 

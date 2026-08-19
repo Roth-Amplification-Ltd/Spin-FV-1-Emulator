@@ -50,7 +50,9 @@
 #include <QRegularExpression>
 #include <QSettings>
 #include <QSlider>
+#include <QSignalBlocker>
 #include <QSpinBox>
+#include <QStringList>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -71,6 +73,61 @@
 
 namespace fv1::gui {
 namespace {
+
+constexpr int kDevicePersistentIdRole = Qt::UserRole + 1;
+
+QString device_tooltip(const fv1::AudioDeviceInfo& device) {
+    QStringList lines;
+    lines << QString::fromStdString(device.name);
+    if (!device.persistent_id.empty())
+        lines << QStringLiteral("Stable ID: %1")
+            .arg(QString::fromStdString(device.persistent_id));
+
+    if (!device.native_sample_rates.empty()) {
+        QStringList rates;
+        for (const auto rate : device.native_sample_rates)
+            rates << QString::number(rate);
+        lines << QStringLiteral("Native rates: %1 Hz")
+            .arg(rates.join(QStringLiteral(", ")));
+    }
+
+    if (device.max_channels != 0)
+        lines << QStringLiteral("Max advertised channels: %1")
+            .arg(device.max_channels);
+
+    return lines.join(QLatin1Char('\n'));
+}
+
+void add_audio_device_item(
+    QComboBox* combo,
+    const fv1::AudioDeviceInfo& device
+) {
+    const QString label =
+        QString::fromStdString(device.name)
+        + (device.is_default
+            ? QStringLiteral("  (default)")
+            : QString());
+
+    combo->addItem(label, static_cast<int>(device.index));
+    const int row = combo->count() - 1;
+    combo->setItemData(
+        row,
+        QString::fromStdString(device.persistent_id),
+        kDevicePersistentIdRole);
+    combo->setItemData(
+        row,
+        device_tooltip(device),
+        Qt::ToolTipRole);
+}
+
+int find_device_id(QComboBox* combo, const QString& id) {
+    if (!combo || id.isEmpty()) return -1;
+    for (int i = 0; i < combo->count(); ++i) {
+        if (combo->itemData(i, kDevicePersistentIdRole).toString() == id)
+            return i;
+    }
+    return -1;
+}
 
 QSlider* make_parameter_slider(int value, QWidget* parent) {
     auto* slider = new QSlider(Qt::Horizontal, parent);
@@ -165,6 +222,8 @@ public:
                std::size_t analyzer_fft_size,
                int playback_device,
                int capture_device,
+               const QString& playback_device_id,
+               const QString& capture_device_id,
                int resampler_quality,
                bool dsp_enabled,
                float pot0, float pot1, float pot2,
@@ -251,6 +310,8 @@ public:
         hc.needs_capture = needs_capture_;
         hc.playback_device = playback_device;
         hc.capture_device = capture_device;
+        hc.playback_device_id = playback_device_id.toStdString();
+        hc.capture_device_id = capture_device_id.toStdString();
         std::string host_error;
         if (!host_.open(hc, *source_, runtime_, &analyzer_, &raw_analyzer_, &host_error)) {
             error = QString::fromStdString(host_error);
@@ -432,11 +493,11 @@ MainWindow::MainWindow(QWidget* parent, std::function<void(int, const QString&)>
     clock_combo_->setCurrentText(settings.value(QStringLiteral("audio/fv1Clock"), QStringLiteral("32768")).toString());
     const QString saved_playback = settings.value(QStringLiteral("audio/playbackName")).toString();
     const QString saved_capture = settings.value(QStringLiteral("audio/captureName")).toString();
-    if (!saved_playback.isEmpty()) {
+    if (playback_combo_->currentIndex() == 0 && !saved_playback.isEmpty()) {
         const int i = playback_combo_->findText(saved_playback);
         if (i >= 0) playback_combo_->setCurrentIndex(i);
     }
-    if (!saved_capture.isEmpty()) {
+    if (capture_combo_->currentIndex() == 0 && !saved_capture.isEmpty()) {
         const int i = capture_combo_->findText(saved_capture);
         if (i >= 0) capture_combo_->setCurrentIndex(i);
     }
@@ -788,6 +849,34 @@ void MainWindow::build_left_dock() {
     auto* audio_form = new QFormLayout(audio);
     playback_combo_ = new QComboBox(audio);
     capture_combo_ = new QComboBox(audio);
+
+    const auto persist_endpoint = [](QComboBox* combo, const QString& prefix) {
+        if (!combo) return;
+        QSettings settings;
+        settings.setValue(prefix + QStringLiteral("Name"), combo->currentText());
+        settings.setValue(
+            prefix + QStringLiteral("DeviceId"),
+            combo->currentData(kDevicePersistentIdRole).toString());
+    };
+    connect(
+        playback_combo_,
+        &QComboBox::currentIndexChanged,
+        this,
+        [this, persist_endpoint](int) {
+            persist_endpoint(
+                playback_combo_,
+                QStringLiteral("audio/playback"));
+        });
+    connect(
+        capture_combo_,
+        &QComboBox::currentIndexChanged,
+        this,
+        [this, persist_endpoint](int) {
+            persist_endpoint(
+                capture_combo_,
+                QStringLiteral("audio/capture"));
+        });
+
     host_rate_combo_ = new QComboBox(audio);
     host_rate_combo_->addItems({QStringLiteral("44100"), QStringLiteral("48000"), QStringLiteral("96000"), QStringLiteral("192000")});
     host_rate_combo_->setCurrentText(QStringLiteral("48000"));
@@ -1186,29 +1275,86 @@ void MainWindow::install_plot_context_menu(InstrumentPlot* plot) {
 void MainWindow::refresh_audio_devices() {
     if (!playback_combo_ || !capture_combo_) return;
 
-    const QString selected_playback = playback_combo_->currentText();
-    const QString selected_capture = capture_combo_->currentText();
+    QSettings settings;
+    const QSignalBlocker playback_blocker(playback_combo_);
+    const QSignalBlocker capture_blocker(capture_combo_);
+
+    QString selected_playback_id =
+        playback_combo_->currentData(kDevicePersistentIdRole).toString();
+    QString selected_capture_id =
+        capture_combo_->currentData(kDevicePersistentIdRole).toString();
+
+    if (selected_playback_id.isEmpty())
+        selected_playback_id =
+            settings.value(QStringLiteral("audio/playbackDeviceId")).toString();
+    if (selected_capture_id.isEmpty())
+        selected_capture_id =
+            settings.value(QStringLiteral("audio/captureDeviceId")).toString();
+
+    QString selected_playback = playback_combo_->currentText();
+    QString selected_capture = capture_combo_->currentText();
+
+    if (selected_playback.isEmpty() ||
+        selected_playback == QStringLiteral("OS Default"))
+        selected_playback =
+            settings.value(QStringLiteral("audio/playbackName")).toString();
+    if (selected_capture.isEmpty() ||
+        selected_capture == QStringLiteral("OS Default"))
+        selected_capture =
+            settings.value(QStringLiteral("audio/captureName")).toString();
 
     playback_combo_->clear();
     capture_combo_->clear();
+
     playback_combo_->addItem(QStringLiteral("OS Default"), -1);
     capture_combo_->addItem(QStringLiteral("OS Default"), -1);
+    playback_combo_->setItemData(
+        0,
+        QStringLiteral(
+            "Use the current operating-system default playback endpoint."),
+        Qt::ToolTipRole);
+    capture_combo_->setItemData(
+        0,
+        QStringLiteral(
+            "Use the current operating-system default capture endpoint."),
+        Qt::ToolTipRole);
 
     std::string error;
     const auto devices = fv1::AudioHost::enumerate(&error);
     for (const auto& d : devices) {
-        const QString label = QString::fromStdString(d.name)
-            + (d.is_default ? QStringLiteral("  (default)") : QString());
         if (d.direction == fv1::AudioDeviceDirection::Playback)
-            playback_combo_->addItem(label, static_cast<int>(d.index));
+            add_audio_device_item(playback_combo_, d);
         else
-            capture_combo_->addItem(label, static_cast<int>(d.index));
+            add_audio_device_item(capture_combo_, d);
     }
 
-    const int playback_index = playback_combo_->findText(selected_playback);
-    if (playback_index >= 0) playback_combo_->setCurrentIndex(playback_index);
-    const int capture_index = capture_combo_->findText(selected_capture);
-    if (capture_index >= 0) capture_combo_->setCurrentIndex(capture_index);
+    const int playback_by_id =
+        find_device_id(playback_combo_, selected_playback_id);
+    const int capture_by_id =
+        find_device_id(capture_combo_, selected_capture_id);
+
+    if (playback_by_id >= 0) {
+        playback_combo_->setCurrentIndex(playback_by_id);
+    } else if (!selected_playback.isEmpty()) {
+        const int by_name = playback_combo_->findText(selected_playback);
+        if (by_name >= 0) playback_combo_->setCurrentIndex(by_name);
+    }
+
+    if (capture_by_id >= 0) {
+        capture_combo_->setCurrentIndex(capture_by_id);
+    } else if (!selected_capture.isEmpty()) {
+        const int by_name = capture_combo_->findText(selected_capture);
+        if (by_name >= 0) capture_combo_->setCurrentIndex(by_name);
+    }
+
+    if (!selected_playback_id.isEmpty() && playback_by_id < 0)
+        log(QStringLiteral(
+            "Previously selected playback endpoint is unavailable; "
+            "using the best available selection."));
+    if (!selected_capture_id.isEmpty() && capture_by_id < 0)
+        log(QStringLiteral(
+            "Previously selected capture endpoint is unavailable; "
+            "using the best available selection."));
 
     if (!error.empty()) {
         log(QStringLiteral("Audio enumeration: ") + QString::fromStdString(error));
@@ -1246,7 +1392,18 @@ void MainWindow::show_audio_settings() {
 
     const auto clone_combo = [](QComboBox* dst, const QComboBox* src) {
         dst->clear();
-        for (int i = 0; i < src->count(); ++i) dst->addItem(src->itemText(i), src->itemData(i));
+        for (int i = 0; i < src->count(); ++i) {
+            dst->addItem(src->itemText(i), src->itemData(i));
+            const int row = dst->count() - 1;
+            dst->setItemData(
+                row,
+                src->itemData(i, kDevicePersistentIdRole),
+                kDevicePersistentIdRole);
+            dst->setItemData(
+                row,
+                src->itemData(i, Qt::ToolTipRole),
+                Qt::ToolTipRole);
+        }
         dst->setCurrentIndex(std::max(0, src->currentIndex()));
     };
     clone_combo(playback, playback_combo_);
@@ -1268,20 +1425,44 @@ void MainWindow::show_audio_settings() {
     connect(refresh, &QPushButton::clicked, &dialog, [this, playback, capture] {
         const QString playback_name = playback->currentText();
         const QString capture_name = capture->currentText();
-        playback->clear(); capture->clear();
+        const QString playback_id =
+            playback->currentData(kDevicePersistentIdRole).toString();
+        const QString capture_id =
+            capture->currentData(kDevicePersistentIdRole).toString();
+
+        playback->clear();
+        capture->clear();
         playback->addItem(QStringLiteral("OS Default"), -1);
         capture->addItem(QStringLiteral("OS Default"), -1);
+
         std::string error;
         const auto devices = fv1::AudioHost::enumerate(&error);
         for (const auto& d : devices) {
-            const QString label = QString::fromStdString(d.name) + (d.is_default ? QStringLiteral("  (default)") : QString());
-            if (d.direction == fv1::AudioDeviceDirection::Playback) playback->addItem(label, static_cast<int>(d.index));
-            else capture->addItem(label, static_cast<int>(d.index));
+            if (d.direction == fv1::AudioDeviceDirection::Playback)
+                add_audio_device_item(playback, d);
+            else
+                add_audio_device_item(capture, d);
         }
-        const int p = playback->findText(playback_name); if (p >= 0) playback->setCurrentIndex(p);
-        const int c = capture->findText(capture_name); if (c >= 0) capture->setCurrentIndex(c);
-        if (!error.empty()) log(QStringLiteral("Audio enumeration: ") + QString::fromStdString(error));
-        else log(QStringLiteral("Audio devices refreshed from Audio Settings dialog."));
+
+        const int p_id = find_device_id(playback, playback_id);
+        const int c_id = find_device_id(capture, capture_id);
+        if (p_id >= 0) playback->setCurrentIndex(p_id);
+        else {
+            const int p = playback->findText(playback_name);
+            if (p >= 0) playback->setCurrentIndex(p);
+        }
+        if (c_id >= 0) capture->setCurrentIndex(c_id);
+        else {
+            const int c = capture->findText(capture_name);
+            if (c >= 0) capture->setCurrentIndex(c);
+        }
+
+        if (!error.empty())
+            log(QStringLiteral("Audio enumeration: ")
+                + QString::fromStdString(error));
+        else
+            log(QStringLiteral(
+                "Audio devices refreshed from Audio Settings dialog."));
     });
     outer->addWidget(refresh);
 
@@ -1293,6 +1474,14 @@ void MainWindow::show_audio_settings() {
     if (dialog.exec() != QDialog::Accepted) return;
 
     const auto apply_combo = [](QComboBox* dst, const QComboBox* src) {
+        const QString device_id =
+            src->currentData(kDevicePersistentIdRole).toString();
+        const int by_id = find_device_id(dst, device_id);
+        if (by_id >= 0) {
+            dst->setCurrentIndex(by_id);
+            return;
+        }
+
         const QVariant device_data = src->currentData();
         const int by_data = dst->findData(device_data);
         if (by_data >= 0) dst->setCurrentIndex(by_data);
@@ -1308,6 +1497,12 @@ void MainWindow::show_audio_settings() {
     QSettings settings;
     settings.setValue(QStringLiteral("audio/playbackName"), playback_combo_->currentText());
     settings.setValue(QStringLiteral("audio/captureName"), capture_combo_->currentText());
+    settings.setValue(
+        QStringLiteral("audio/playbackDeviceId"),
+        playback_combo_->currentData(kDevicePersistentIdRole).toString());
+    settings.setValue(
+        QStringLiteral("audio/captureDeviceId"),
+        capture_combo_->currentData(kDevicePersistentIdRole).toString());
     settings.setValue(QStringLiteral("audio/hostRate"), host_rate_combo_->currentText());
     settings.setValue(QStringLiteral("audio/buffer"), buffer_combo_->currentText());
     settings.setValue(QStringLiteral("audio/fv1Clock"), clock_combo_->currentText());
@@ -1873,6 +2068,10 @@ void MainWindow::start_session() {
     const double clock = clock_combo_->currentText().toDouble();
     const int playback = playback_combo_->currentData().toInt();
     const int capture = capture_combo_->currentData().toInt();
+    const QString playback_id =
+        playback_combo_->currentData(kDevicePersistentIdRole).toString();
+    const QString capture_id =
+        capture_combo_->currentData(kDevicePersistentIdRole).toString();
     if (!session_->start(bytes,
                          source_combo_->currentText(),
                          audio_file_path_,
@@ -1892,6 +2091,8 @@ void MainWindow::start_session() {
                          analyzer_fft_size_,
                          playback,
                          capture,
+                         playback_id,
+                         capture_id,
                          resampler_quality_,
                          dsp_enabled_,
                          static_cast<float>(pot0_->value()) / 1000.0f,
@@ -1902,6 +2103,8 @@ void MainWindow::start_session() {
         statusBar()->showMessage(QStringLiteral("Session start failed"), 5000);
         return;
     }
+    device_fault_reported_ = false;
+    last_device_reroute_events_ = 0;
     telemetry_timer_->start();
     log(QStringLiteral(
         "Realtime session started: %1, host %2 Hz, virtual FV-1 %3 Hz, buffer %4, FFT %5, %6.")
@@ -2051,6 +2254,34 @@ void MainWindow::update_telemetry() {
 
     const auto hs = session_->host_stats();
     const auto rs = session_->runtime_stats();
+
+    if (hs.device_reroute_events > last_device_reroute_events_) {
+        const auto delta =
+            hs.device_reroute_events - last_device_reroute_events_;
+        last_device_reroute_events_ = hs.device_reroute_events;
+        log(QStringLiteral(
+            "Audio backend reported %1 device reroute event(s). "
+            "The current stream remains active.")
+            .arg(delta));
+    }
+
+    if (hs.unexpected_device_stop && !device_fault_reported_) {
+        device_fault_reported_ = true;
+        log(QStringLiteral(
+            "Audio endpoint stopped unexpectedly. "
+            "Scheduling realtime teardown and endpoint refresh."));
+        QTimer::singleShot(0, this, [this] {
+            if (session_ && session_->running())
+                stop_session();
+            refresh_audio_devices();
+            statusBar()->showMessage(
+                QStringLiteral(
+                    "Audio endpoint was lost — refresh/reselect and press Start"),
+                8000);
+        });
+        return;
+    }
+
     runtime_status_->setText(QStringLiteral(
         "RUNNING — %10\n"
         "Host frames      %1\n"
@@ -2083,6 +2314,27 @@ void MainWindow::update_telemetry() {
             const auto r = session_->recorder_stats();
             return r.raw_frames_dropped + r.processed_frames_dropped;
         }()));
+
+    if (hs.callback_sample_rate != 0) {
+        runtime_status_->setText(
+            runtime_status_->text()
+            + QStringLiteral(
+                "\nDevice host      %1 Hz"
+                "\nNative play/cap %2 / %3 Hz"
+                "\nNative periods  %4 / %5"
+                "\nCallback frames %6..%7"
+                "\nDevice events   start %8, stop %9, reroute %10")
+                .arg(hs.callback_sample_rate)
+                .arg(hs.playback_native_sample_rate)
+                .arg(hs.capture_native_sample_rate)
+                .arg(hs.playback_period_frames)
+                .arg(hs.capture_period_frames)
+                .arg(hs.min_callback_frames)
+                .arg(hs.max_callback_frames)
+                .arg(hs.device_started_events)
+                .arg(hs.device_stopped_events)
+                .arg(hs.device_reroute_events));
+    }
 
     update_file_transport_ui();
 }

@@ -21,13 +21,28 @@ struct AudioDeviceInfo {
     AudioDeviceDirection direction{AudioDeviceDirection::Playback};
     std::string name;
     bool is_default{};
+
+    // Stable platform endpoint token when the backend exposes one. On Windows
+    // this is the WASAPI endpoint ID and survives enumeration-order changes.
+    std::string persistent_id;
+
+    // Detailed native capabilities are best-effort. Empty/zero means the
+    // backend did not report detailed information.
+    std::vector<std::uint32_t> native_sample_rates;
+    std::uint32_t max_channels{};
 };
 
 struct AudioHostConfig {
     std::uint32_t host_sample_rate{48000};
     std::uint32_t period_frames{256};
-    int playback_device{-1}; // -1 = OS default
-    int capture_device{-1};  // -1 = OS default
+    int playback_device{-1}; // -1 = OS default / legacy index fallback
+    int capture_device{-1};  // -1 = OS default / legacy index fallback
+
+    // Preferred stable endpoint selectors. If non-empty these take precedence
+    // over the legacy enumeration indices above.
+    std::string playback_device_id;
+    std::string capture_device_id;
+
     bool needs_capture{true};
     // 0 = unlimited.  For timed/reproducible sessions the callback processes
     // exactly this many host frames, zero-fills the remainder of the final
@@ -39,6 +54,24 @@ struct AudioHostStats {
     double callback_cpu_load{}; // callback wall time / available audio time
     std::uint64_t callbacks{};
     std::uint64_t source_frames{};
+
+    // Host/device geometry actually observed after backend negotiation.
+    std::uint32_t callback_sample_rate{};
+    std::uint32_t playback_native_sample_rate{};
+    std::uint32_t capture_native_sample_rate{};
+    std::uint32_t playback_period_frames{};
+    std::uint32_t capture_period_frames{};
+    std::uint32_t min_callback_frames{};
+    std::uint32_t max_callback_frames{};
+
+    // Device notifications are collected atomically. No start/stop/reopen
+    // operation is performed from the notification callback.
+    std::uint64_t device_started_events{};
+    std::uint64_t device_stopped_events{};
+    std::uint64_t device_reroute_events{};
+    std::uint64_t device_interruption_events{};
+    bool device_running{};
+    bool unexpected_device_stop{};
 };
 
 /* Desktop miniaudio host. The public class intentionally contains no

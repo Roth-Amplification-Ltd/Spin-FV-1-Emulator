@@ -8,6 +8,7 @@
 #include <fv1/debugger.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 
 class QAction;
@@ -107,6 +108,8 @@ private:
     std::size_t analyzer_fft_size_{4096};
     bool dsp_enabled_{true};
     bool compare_raw_processed_{true};
+    bool device_fault_reported_{};
+    std::uint64_t last_device_reroute_events_{};
 
     // Test stimulus settings live outside the realtime callback and are copied
     // into TestSignalConfig when a session starts.
