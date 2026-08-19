@@ -24,6 +24,7 @@
 #include <QCoreApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDateTime>
 #include <QDir>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
@@ -75,6 +76,11 @@ namespace fv1::gui {
 namespace {
 
 constexpr int kDevicePersistentIdRole = Qt::UserRole + 1;
+
+bool smoke_open_mode() {
+    return qApp
+        && qApp->property("fv1SmokeOpen").toBool();
+}
 
 QString device_tooltip(const fv1::AudioDeviceInfo& device) {
     QStringList lines;
@@ -407,9 +413,18 @@ public:
     }
 
     bool recording() const noexcept { return recorder_.recording(); }
-    fv1::AudioRecorderStats recorder_stats() const noexcept { return recorder_.stats(); }
-    std::filesystem::path raw_record_path() const { return recorder_.raw_path(); }
-    std::filesystem::path processed_record_path() const { return recorder_.processed_path(); }
+    fv1::AudioRecorderStats recorder_stats() const noexcept {
+        return recorder_.stats();
+    }
+    std::filesystem::path raw_record_path() const {
+        return recorder_.raw_path();
+    }
+    std::filesystem::path processed_record_path() const {
+        return recorder_.processed_path();
+    }
+    std::string recorder_error() const {
+        return recorder_.last_error();
+    }
 
 private:
     fv1::Runtime runtime_;
@@ -1660,7 +1675,12 @@ bool MainWindow::load_program_path(const QString& path) {
     QByteArray bytes;
     QString error;
     if (!load_program_image(path, bytes, error)) {
-        QMessageBox::warning(this, QStringLiteral("FV-1 Program"), error);
+        if (!smoke_open_mode()) {
+            QMessageBox::warning(
+                this,
+                QStringLiteral("FV-1 Program"),
+                error);
+        }
         log(QStringLiteral("Program load failed: ") + error);
         return false;
     }
@@ -1785,8 +1805,18 @@ bool MainWindow::load_audio_path(const QString& path) {
     fv1::FileLoopSource probe;
     std::string error;
     if (!probe.load(path_from_qstring(path), &error)) {
-        QMessageBox::warning(this, QStringLiteral("Audio File"), QString::fromStdString(error));
-        log(QStringLiteral("Audio loop load failed: ") + QString::fromStdString(error));
+        const QString message = QString::fromUtf8(
+            error.data(),
+            static_cast<qsizetype>(error.size()));
+        if (!smoke_open_mode()) {
+            QMessageBox::warning(
+                this,
+                QStringLiteral("Audio File"),
+                message);
+        }
+        log(
+            QStringLiteral("Audio loop load failed: ")
+            + message);
         return false;
     }
 
@@ -2164,7 +2194,13 @@ void MainWindow::start_recording() {
     const QString record_dir =
         dialog_directory(QStringLiteral("paths/recordDir"), QDir::homePath());
     const QString suggested =
-        QDir(record_dir).filePath(QStringLiteral("fv1-capture.wav"));
+        QDir(record_dir).filePath(
+            QStringLiteral("fv1-capture-%1.wav")
+                .arg(
+                    QDateTime::currentDateTime()
+                        .toString(
+                            QStringLiteral(
+                                "yyyyMMdd-HHmmss"))));
     const QString path = QFileDialog::getSaveFileName(
         this,
         QStringLiteral("Record FV-1 Audio"),
@@ -2224,6 +2260,7 @@ void MainWindow::stop_recording() {
     const auto processed_path = session_->processed_record_path();
     session_->stop_recording();
     const auto stats = session_->recorder_stats();
+    const std::string finalize_error = session_->recorder_error();
     if (record_action_) {
         const bool blocked = record_action_->blockSignals(true);
         record_action_->setChecked(false);
@@ -2233,8 +2270,29 @@ void MainWindow::stop_recording() {
     log(QStringLiteral("Recording stopped: raw %1 frames (%2 dropped), processed %3 frames (%4 dropped).")
         .arg(stats.raw_frames_written).arg(stats.raw_frames_dropped)
         .arg(stats.processed_frames_written).arg(stats.processed_frames_dropped));
-    if (!raw_path.empty()) log(QStringLiteral("Raw capture: ") + qstring_from_path(raw_path));
-    if (!processed_path.empty()) log(QStringLiteral("Processed capture: ") + qstring_from_path(processed_path));
+    if (!raw_path.empty())
+        log(QStringLiteral("Raw capture: ") + qstring_from_path(raw_path));
+    if (!processed_path.empty())
+        log(QStringLiteral("Processed capture: ") + qstring_from_path(processed_path));
+
+    if (!finalize_error.empty()) {
+        const QString message = QString::fromUtf8(
+            finalize_error.data(),
+            static_cast<qsizetype>(finalize_error.size()));
+        log(QStringLiteral("Recording finalization failed: ") + message);
+        statusBar()->showMessage(
+            QStringLiteral("Recording finalization FAILED"),
+            6000);
+        QMessageBox::warning(
+            this,
+            QStringLiteral("Record Audio"),
+            QStringLiteral(
+                "The realtime capture stopped, but the final WAV "
+                "could not be committed:\n\n%1")
+                .arg(message));
+        return;
+    }
+
     statusBar()->showMessage(QStringLiteral("Recording finalized"), 2500);
 }
 

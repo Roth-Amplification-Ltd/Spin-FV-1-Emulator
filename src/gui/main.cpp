@@ -46,8 +46,12 @@ int main(int argc, char** argv) {
     }
     if (smoke_open_index >= 0) {
         if (smoke_open_index + 1 >= args.size()) return 6;
+        app.setProperty("fv1SmokeOpen", true);
         fv1::gui::MainWindow window;
-        return window.open_external_path(args.at(smoke_open_index + 1)) ? 0 : 6;
+        return window.open_external_path(
+            args.at(smoke_open_index + 1))
+            ? 0
+            : 6;
     }
     if (splash_smoke) {
         fv1::gui::StartupSplash splash(accent);

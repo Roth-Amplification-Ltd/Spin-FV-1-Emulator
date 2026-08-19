@@ -10,6 +10,35 @@
 namespace fs = std::filesystem;
 
 namespace {
+
+fs::path unicode_component() {
+    return fs::path(
+        std::u8string(u8"FV1-Ünicode-測試"));
+}
+
+bool contains_partial_file(const fs::path& root) {
+    std::error_code ec;
+    if (!fs::exists(root, ec))
+        return false;
+
+    for (fs::recursive_directory_iterator it(
+             root,
+             fs::directory_options::skip_permission_denied,
+             ec),
+         end;
+         !ec && it != end;
+         it.increment(ec)) {
+        if (!it->is_regular_file(ec))
+            continue;
+        const auto name = it->path().filename().u8string();
+        if (name.find(std::u8string(u8".partial-"))
+            != std::u8string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
 int failures = 0;
 void check(bool value, const char* message) {
     if (!value) { std::cerr << "FAIL: " << message << '\n'; ++failures; }
@@ -126,6 +155,73 @@ int main() {
     check(fs::exists(pack / "05-white-noise.wav"), "validation pack white noise exists");
     check(fs::exists(pack / "06-pink-noise.wav"), "validation pack pink noise exists");
     check(fs::exists(pack / "manifest.json") && fs::exists(pack / "README.txt"), "validation pack manifest/readme exist");
+
+    const fs::path unicode_dir =
+        dir / unicode_component() / "validation export";
+    fs::create_directories(unicode_dir);
+
+    const fs::path unicode_wav =
+        unicode_dir
+        / fs::path(std::u8string(u8"référence-測試.wav"));
+    check(
+        fv1::write_validation_wav(
+            unicode_wav,
+            reference,
+            &error),
+        "write Unicode validation WAV");
+
+    fv1::ValidationAudio unicode_reread;
+    check(
+        fv1::load_validation_wav(
+            unicode_wav,
+            unicode_reread,
+            &error),
+        "read Unicode validation WAV");
+    check(
+        unicode_reread.frames.size() == reference.frames.size(),
+        "Unicode validation WAV shape");
+
+    const fs::path unicode_prefix =
+        unicode_dir
+        / fs::path(std::u8string(u8"rapport-Áudio-測試"));
+    check(
+        fv1::write_validation_report_bundle(
+            unicode_prefix,
+            result,
+            &error),
+        "write Unicode validation report bundle");
+
+    fs::path unicode_json = unicode_prefix;
+    unicode_json += ".json";
+    fs::path unicode_md = unicode_prefix;
+    unicode_md += ".md";
+    fs::path unicode_csv = unicode_prefix;
+    unicode_csv += "-frequency.csv";
+    fs::path unicode_residual = unicode_prefix;
+    unicode_residual += "-residual.wav";
+
+    check(fs::exists(unicode_json), "Unicode JSON report exists");
+    check(fs::exists(unicode_md), "Unicode Markdown report exists");
+    check(fs::exists(unicode_csv), "Unicode frequency CSV exists");
+    check(fs::exists(unicode_residual), "Unicode residual WAV exists");
+
+    const fs::path unicode_pack =
+        unicode_dir
+        / fs::path(std::u8string(u8"hardware-pack-測試"));
+    check(
+        fv1::write_validation_stimulus_pack(
+            unicode_pack,
+            pack_cfg,
+            &error),
+        "write Unicode validation pack");
+    check(
+        fs::exists(unicode_pack / "manifest.json")
+            && fs::exists(unicode_pack / "README.txt"),
+        "Unicode validation pack metadata exists");
+
+    check(
+        !contains_partial_file(unicode_dir),
+        "validation exports leave no .partial artifacts");
 
     auto broken = capture;
     for (std::size_t i = delay; i < broken.frames.size(); i += 11) broken.frames[i].left += 0.2f;

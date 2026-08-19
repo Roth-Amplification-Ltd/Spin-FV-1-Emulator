@@ -14,6 +14,13 @@
 #include <utility>
 #include <vector>
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 namespace fv1 {
 namespace {
 
@@ -83,22 +90,123 @@ void write_u32(std::ostream& out, std::uint32_t value) {
     out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
 }
 
+std::string path_utf8(const std::filesystem::path& path) {
+    const auto bytes = path.u8string();
+    return std::string(
+        reinterpret_cast<const char*>(bytes.data()),
+        bytes.size());
+}
+
+std::filesystem::path with_ascii_suffix(
+    const std::filesystem::path& base,
+    const char* suffix
+) {
+    std::filesystem::path out = base;
+    auto extension = out.extension();
+    if (extension.empty()) extension = std::filesystem::path(".wav");
+    out.replace_extension();
+    out += std::filesystem::path(suffix);
+    out += extension;
+    return out;
+}
+
+std::filesystem::path ensure_wav_extension(
+    const std::filesystem::path& base
+) {
+    if (!base.extension().empty()) return base;
+    std::filesystem::path out = base;
+    out += std::filesystem::path(".wav");
+    return out;
+}
+
+std::filesystem::path make_temp_sibling(
+    const std::filesystem::path& final_path
+) {
+    static std::atomic<std::uint64_t> sequence{0};
+    const auto id = sequence.fetch_add(1, std::memory_order_relaxed);
+    const auto ticks = static_cast<std::uint64_t>(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+
+    std::filesystem::path temp = final_path;
+    temp += std::filesystem::path(".partial-");
+    temp += std::filesystem::path(
+        std::to_string(ticks) + "-" + std::to_string(id));
+    return temp;
+}
+
+bool replace_completed_file(
+    const std::filesystem::path& temp,
+    const std::filesystem::path& final_path,
+    std::string* error
+) noexcept {
+#if defined(_WIN32)
+    if (::MoveFileExW(
+            temp.c_str(),
+            final_path.c_str(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0) {
+        return true;
+    }
+
+    if (error) {
+        *error =
+            "could not finalize WAV file "
+            + path_utf8(final_path)
+            + " (Windows error "
+            + std::to_string(::GetLastError())
+            + ")";
+    }
+    return false;
+#else
+    std::error_code ec;
+    std::filesystem::rename(temp, final_path, ec);
+    if (!ec) return true;
+
+    if (error) {
+        *error =
+            "could not finalize WAV file "
+            + path_utf8(final_path)
+            + ": "
+            + ec.message();
+    }
+    return false;
+#endif
+}
+
 class FloatWavWriter {
 public:
-    bool open(const std::filesystem::path& path, std::uint32_t sample_rate, std::string* error) {
-        close();
-        path_ = path;
-        stream_.open(path, std::ios::binary | std::ios::trunc);
+    bool open(
+        const std::filesystem::path& path,
+        std::uint32_t sample_rate,
+        std::string* error
+    ) {
+        abort();
+        final_path_ = path;
+        temp_path_ = make_temp_sibling(path);
+
+        std::error_code remove_ec;
+        std::filesystem::remove(temp_path_, remove_ec);
+
+        stream_.open(
+            temp_path_,
+            std::ios::binary | std::ios::trunc);
         if (!stream_) {
-            if (error) *error = "could not create WAV file: " + path.string();
+            if (error)
+                *error =
+                    "could not create WAV staging file for "
+                    + path_utf8(path);
+            abort();
             return false;
         }
+
         sample_rate_ = sample_rate;
         frames_written_ = 0;
         write_header(0);
         if (!stream_) {
-            if (error) *error = "could not write WAV header: " + path.string();
-            close();
+            if (error)
+                *error =
+                    "could not write WAV header for "
+                    + path_utf8(path);
+            abort();
             return false;
         }
         return true;
@@ -106,40 +214,92 @@ public:
 
     void write(const StereoFrame* frames, std::size_t count) {
         if (!stream_ || !frames || count == 0) return;
-        static_assert(sizeof(StereoFrame) == sizeof(float) * 2,
-                      "StereoFrame must be two packed float values for WAV output");
-        stream_.write(reinterpret_cast<const char*>(frames),
-                      static_cast<std::streamsize>(count * sizeof(StereoFrame)));
+        static_assert(
+            sizeof(StereoFrame) == sizeof(float) * 2,
+            "StereoFrame must be two packed float values for WAV output");
+        stream_.write(
+            reinterpret_cast<const char*>(frames),
+            static_cast<std::streamsize>(
+                count * sizeof(StereoFrame)));
         if (stream_) frames_written_ += count;
     }
 
-    void close() noexcept {
-        if (!stream_.is_open()) return;
+    bool close(std::string* error = nullptr) noexcept {
+        if (!stream_.is_open()) return true;
+
+        bool write_ok = false;
         try {
             stream_.flush();
             stream_.seekp(0, std::ios::beg);
             write_header(frames_written_);
             stream_.flush();
+            write_ok = static_cast<bool>(stream_);
             stream_.close();
         } catch (...) {
-            // Destructors/stop paths must stay noexcept. Any I/O error simply
-            // leaves the best-effort capture file on disk.
-            try { stream_.close(); } catch (...) {}
+            try {
+                stream_.close();
+            } catch (...) {
+            }
         }
+
+        if (!write_ok) {
+            if (error)
+                *error =
+                    "failed while finalizing WAV staging file for "
+                    + path_utf8(final_path_);
+            std::error_code ec;
+            std::filesystem::remove(temp_path_, ec);
+            return false;
+        }
+
+        std::string commit_error;
+        if (!replace_completed_file(
+                temp_path_,
+                final_path_,
+                &commit_error)) {
+            std::error_code ec;
+            std::filesystem::remove(temp_path_, ec);
+            if (error) *error = commit_error;
+            return false;
+        }
+
+        temp_path_.clear();
+        return true;
     }
 
-    std::uint64_t frames_written() const noexcept { return frames_written_; }
+    void abort() noexcept {
+        if (stream_.is_open()) {
+            try {
+                stream_.close();
+            } catch (...) {
+            }
+        }
+        if (!temp_path_.empty()) {
+            std::error_code ec;
+            std::filesystem::remove(temp_path_, ec);
+        }
+        temp_path_.clear();
+    }
+
+    std::uint64_t frames_written() const noexcept {
+        return frames_written_;
+    }
 
 private:
     void write_header(std::uint64_t frames) {
         constexpr std::uint16_t channels = 2;
         constexpr std::uint16_t bits_per_sample = 32;
         constexpr std::uint16_t format_ieee_float = 3;
-        constexpr std::uint16_t block_align = channels * bits_per_sample / 8;
+        constexpr std::uint16_t block_align =
+            channels * bits_per_sample / 8;
         const std::uint64_t data_bytes64 = frames * block_align;
-        const std::uint32_t data_bytes = static_cast<std::uint32_t>(
-            std::min<std::uint64_t>(data_bytes64, 0xffffffffu - 36u));
-        const std::uint32_t byte_rate = sample_rate_ * block_align;
+        const std::uint32_t data_bytes =
+            static_cast<std::uint32_t>(
+                std::min<std::uint64_t>(
+                    data_bytes64,
+                    0xffffffffu - 36u));
+        const std::uint32_t byte_rate =
+            sample_rate_ * block_align;
 
         stream_.write("RIFF", 4);
         write_u32(stream_, 36u + data_bytes);
@@ -156,19 +316,12 @@ private:
         write_u32(stream_, data_bytes);
     }
 
-    std::filesystem::path path_;
+    std::filesystem::path final_path_;
+    std::filesystem::path temp_path_;
     std::ofstream stream_;
     std::uint32_t sample_rate_{};
     std::uint64_t frames_written_{};
 };
-
-std::filesystem::path with_suffix(const std::filesystem::path& base, const std::string& suffix) {
-    auto parent = base.parent_path();
-    auto stem = base.stem().string();
-    auto ext = base.extension().string();
-    if (ext.empty()) ext = ".wav";
-    return parent / (stem + suffix + ext);
-}
 
 } // namespace
 
@@ -190,6 +343,7 @@ public:
     std::atomic<std::uint64_t> processed_written{0};
     std::atomic<std::uint64_t> raw_dropped{0};
     std::atomic<std::uint64_t> processed_dropped{0};
+    std::string last_error;
 
     bool wants_raw() const noexcept {
         return mode == AudioRecordMode::Raw || mode == AudioRecordMode::RawAndProcessed;
@@ -230,8 +384,20 @@ public:
     }
 
     void close_writers() noexcept {
-        raw_writer.close();
-        processed_writer.close();
+        std::string writer_error;
+        if (!raw_writer.close(&writer_error) && last_error.empty())
+            last_error = writer_error;
+
+        writer_error.clear();
+        if (!processed_writer.close(&writer_error) &&
+            last_error.empty()) {
+            last_error = writer_error;
+        }
+    }
+
+    void abort_writers() noexcept {
+        raw_writer.abort();
+        processed_writer.abort();
     }
 };
 
@@ -252,6 +418,7 @@ bool AudioRecorder::prepare(const std::filesystem::path& base_path,
 
     impl_->mode = mode;
     impl_->sample_rate = sample_rate;
+    impl_->last_error.clear();
     impl_->raw_path.clear();
     impl_->processed_path.clear();
     impl_->raw_written.store(0, std::memory_order_relaxed);
@@ -263,12 +430,14 @@ bool AudioRecorder::prepare(const std::filesystem::path& base_path,
     impl_->scratch.assign(std::min<std::size_t>(queue_frames / 4, 16384), {});
 
     if (mode == AudioRecordMode::RawAndProcessed) {
-        impl_->raw_path = with_suffix(base_path, "-raw");
-        impl_->processed_path = with_suffix(base_path, "-processed");
+        impl_->raw_path =
+            with_ascii_suffix(base_path, "-raw");
+        impl_->processed_path =
+            with_ascii_suffix(base_path, "-processed");
     } else if (mode == AudioRecordMode::Raw) {
-        impl_->raw_path = base_path.extension().empty() ? std::filesystem::path(base_path.string() + ".wav") : base_path;
+        impl_->raw_path = ensure_wav_extension(base_path);
     } else {
-        impl_->processed_path = base_path.extension().empty() ? std::filesystem::path(base_path.string() + ".wav") : base_path;
+        impl_->processed_path = ensure_wav_extension(base_path);
     }
 
     std::error_code ec;
@@ -280,14 +449,25 @@ bool AudioRecorder::prepare(const std::filesystem::path& base_path,
     }
 
     std::string local_error;
-    if (impl_->wants_raw() && !impl_->raw_writer.open(impl_->raw_path, sample_rate, &local_error)) {
+    if (impl_->wants_raw() &&
+        !impl_->raw_writer.open(
+            impl_->raw_path,
+            sample_rate,
+            &local_error)) {
+        impl_->last_error = local_error;
         if (error) *error = local_error;
-        impl_->close_writers();
+        impl_->abort_writers();
         return false;
     }
-    if (impl_->wants_processed() && !impl_->processed_writer.open(impl_->processed_path, sample_rate, &local_error)) {
+
+    if (impl_->wants_processed() &&
+        !impl_->processed_writer.open(
+            impl_->processed_path,
+            sample_rate,
+            &local_error)) {
+        impl_->last_error = local_error;
         if (error) *error = local_error;
-        impl_->close_writers();
+        impl_->abort_writers();
         return false;
     }
 
@@ -305,7 +485,12 @@ bool AudioRecorder::start(std::string* error) {
         impl_->worker = std::thread([this]{ impl_->loop(); });
     } catch (const std::exception& ex) {
         impl_->running.store(false, std::memory_order_release);
-        if (error) *error = std::string("could not start recorder worker: ") + ex.what();
+        impl_->prepared.store(false, std::memory_order_release);
+        impl_->last_error =
+            std::string("could not start recorder worker: ")
+            + ex.what();
+        impl_->abort_writers();
+        if (error) *error = impl_->last_error;
         return false;
     }
     return true;
@@ -345,7 +530,16 @@ AudioRecorderStats AudioRecorder::stats() const noexcept {
         impl_->processed_dropped.load(std::memory_order_relaxed)};
 }
 
-std::filesystem::path AudioRecorder::raw_path() const { return impl_->raw_path; }
-std::filesystem::path AudioRecorder::processed_path() const { return impl_->processed_path; }
+std::filesystem::path AudioRecorder::raw_path() const {
+    return impl_->raw_path;
+}
+
+std::filesystem::path AudioRecorder::processed_path() const {
+    return impl_->processed_path;
+}
+
+std::string AudioRecorder::last_error() const {
+    return impl_->last_error;
+}
 
 } // namespace fv1

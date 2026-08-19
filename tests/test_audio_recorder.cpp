@@ -12,6 +12,36 @@
 
 namespace {
 
+std::filesystem::path unicode_component() {
+    return std::filesystem::path(
+        std::u8string(u8"FV1-Ünicode-測試"));
+}
+
+bool contains_partial_file(
+    const std::filesystem::path& root
+) {
+    std::error_code ec;
+    if (!std::filesystem::exists(root, ec))
+        return false;
+
+    for (std::filesystem::recursive_directory_iterator it(
+             root,
+             std::filesystem::directory_options::skip_permission_denied,
+             ec),
+         end;
+         !ec && it != end;
+         it.increment(ec)) {
+        if (!it->is_regular_file(ec))
+            continue;
+        const auto name = it->path().filename().u8string();
+        if (name.find(std::u8string(u8".partial-"))
+            != std::u8string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::uint32_t read_u32(std::ifstream& in) {
     std::array<unsigned char, 4> b{};
     in.read(reinterpret_cast<char*>(b.data()), 4);
@@ -96,6 +126,71 @@ int main() {
 
     std::filesystem::remove(raw, ec);
     std::filesystem::remove(processed, ec);
+
+    const auto unicode_dir =
+        std::filesystem::temp_directory_path()
+        / unicode_component()
+        / "nested recording folder";
+    std::filesystem::remove_all(unicode_dir, ec);
+    std::filesystem::create_directories(unicode_dir, ec);
+    if (ec) {
+        std::cerr << "could not create Unicode recorder test directory\n";
+        return 1;
+    }
+
+    const auto unicode_base =
+        unicode_dir
+        / std::filesystem::path(
+            std::u8string(u8"capture-Áudio-測試.wav"));
+    const auto unicode_raw =
+        unicode_dir
+        / std::filesystem::path(
+            std::u8string(u8"capture-Áudio-測試-raw.wav"));
+    const auto unicode_processed =
+        unicode_dir
+        / std::filesystem::path(
+            std::u8string(u8"capture-Áudio-測試-processed.wav"));
+
+    if (!recorder.prepare(
+            unicode_base,
+            rate,
+            fv1::AudioRecordMode::RawAndProcessed,
+            16384,
+            &error)
+        || !recorder.start(&error)) {
+        std::cerr
+            << "Unicode recorder prepare/start failed: "
+            << error
+            << '\n';
+        return 1;
+    }
+
+    recorder.push_raw(block.data(), block.size());
+    recorder.push_processed(block.data(), block.size());
+    recorder.stop();
+
+    if (!recorder.last_error().empty()) {
+        std::cerr
+            << "Unicode recorder finalization failed: "
+            << recorder.last_error()
+            << '\n';
+        return 1;
+    }
+
+    if (!valid_float_wav(unicode_raw, rate, bytes)
+        || !valid_float_wav(unicode_processed, rate, bytes)) {
+        std::cerr << "Unicode recorder WAV output invalid\n";
+        return 1;
+    }
+
+    if (contains_partial_file(unicode_dir)) {
+        std::cerr
+            << "transactional recorder left a .partial file\n";
+        return 1;
+    }
+
+    std::filesystem::remove_all(unicode_dir, ec);
+
     std::cout << "fv1 recorder tests passed\n";
     return 0;
 }

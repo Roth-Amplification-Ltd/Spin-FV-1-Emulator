@@ -5,6 +5,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -18,6 +19,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSettings>
 #include <QSpinBox>
 #include <QStyle>
 #include <QStringList>
@@ -44,6 +46,25 @@ QTableWidgetItem* item(const QString& text) {
     auto* i = new QTableWidgetItem(text);
     i->setFlags(i->flags() & ~Qt::ItemIsEditable);
     return i;
+}
+
+QString remembered_directory(const QString& key) {
+    const QString saved = QSettings().value(key).toString();
+    if (!saved.isEmpty() && QFileInfo(saved).isDir())
+        return saved;
+    return QDir::homePath();
+}
+
+void remember_directory(
+    const QString& key,
+    const QString& selected_path
+) {
+    const QFileInfo info(selected_path);
+    const QString directory = info.isDir()
+        ? info.absoluteFilePath()
+        : info.absolutePath();
+    if (!directory.isEmpty())
+        QSettings().setValue(key, directory);
 }
 
 } // namespace
@@ -177,15 +198,33 @@ void ValidationPanel::set_reference_path(const QString& path) { reference_path_-
 void ValidationPanel::set_capture_path(const QString& path) { capture_path_->setText(path); }
 
 void ValidationPanel::choose_reference() {
-    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("Open Virtual / Reference WAV"), {},
-                                                      QStringLiteral("WAV audio (*.wav);;All files (*)"));
-    if (!path.isEmpty()) reference_path_->setText(path);
+    const QString path = QFileDialog::getOpenFileName(
+        this,
+        QStringLiteral("Open Virtual / Reference WAV"),
+        remembered_directory(
+            QStringLiteral("paths/validationReferenceDir")),
+        QStringLiteral("WAV audio (*.wav);;All files (*)"));
+    if (!path.isEmpty()) {
+        reference_path_->setText(path);
+        remember_directory(
+            QStringLiteral("paths/validationReferenceDir"),
+            path);
+    }
 }
 
 void ValidationPanel::choose_capture() {
-    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("Open Hardware / Capture WAV"), {},
-                                                      QStringLiteral("WAV audio (*.wav);;All files (*)"));
-    if (!path.isEmpty()) capture_path_->setText(path);
+    const QString path = QFileDialog::getOpenFileName(
+        this,
+        QStringLiteral("Open Hardware / Capture WAV"),
+        remembered_directory(
+            QStringLiteral("paths/validationCaptureDir")),
+        QStringLiteral("WAV audio (*.wav);;All files (*)"));
+    if (!path.isEmpty()) {
+        capture_path_->setText(path);
+        remember_directory(
+            QStringLiteral("paths/validationCaptureDir"),
+            path);
+    }
 }
 
 void ValidationPanel::analyze() {
@@ -271,25 +310,65 @@ void ValidationPanel::refresh_result() {
 
 void ValidationPanel::export_report() {
     if (!result_) return;
-    QString path = QFileDialog::getSaveFileName(this, QStringLiteral("Export FV-1 Validation Report Bundle"),
-                                                QStringLiteral("fv1-validation.md"),
-                                                QStringLiteral("Markdown report (*.md)"));
+
+    const QString suggested =
+        QDir(
+            remembered_directory(
+                QStringLiteral("paths/validationReportDir")))
+            .filePath(QStringLiteral("fv1-validation.md"));
+
+    QString path = QFileDialog::getSaveFileName(
+        this,
+        QStringLiteral("Export FV-1 Validation Report Bundle"),
+        suggested,
+        QStringLiteral("Markdown report (*.md)"));
     if (path.isEmpty()) return;
-    if (path.endsWith(QStringLiteral(".md"), Qt::CaseInsensitive)) path.chop(3);
+
+    remember_directory(
+        QStringLiteral("paths/validationReportDir"),
+        path);
+
+    if (path.endsWith(QStringLiteral(".md"), Qt::CaseInsensitive))
+        path.chop(3);
+
     std::string error;
-    if (!fv1::write_validation_report_bundle(path_from_qstring(path), *result_, &error)) {
-        QMessageBox::warning(this, QStringLiteral("FV-1 Validation"), QString::fromStdString(error));
+    if (!fv1::write_validation_report_bundle(
+            path_from_qstring(path),
+            *result_,
+            &error)) {
+        QMessageBox::warning(
+            this,
+            QStringLiteral("FV-1 Validation"),
+            QString::fromUtf8(
+                error.data(),
+                static_cast<qsizetype>(error.size())));
         return;
     }
-    if (log_callback_) log_callback_(QStringLiteral("Validation report bundle exported: ") + path);
-    QMessageBox::information(this, QStringLiteral("FV-1 Validation"),
-        QStringLiteral("Exported JSON, Markdown, frequency CSV and residual WAV using prefix:\n%1").arg(path));
+
+    if (log_callback_)
+        log_callback_(
+            QStringLiteral("Validation report bundle exported: ")
+            + path);
+
+    QMessageBox::information(
+        this,
+        QStringLiteral("FV-1 Validation"),
+        QStringLiteral(
+            "Exported JSON, Markdown, frequency CSV and residual WAV "
+            "using prefix:\n%1")
+            .arg(path));
 }
 
 void ValidationPanel::generate_hardware_pack() {
     const QString directory = QFileDialog::getExistingDirectory(
-        this, QStringLiteral("Create Phase 5B Hardware Validation Pack"));
+        this,
+        QStringLiteral("Create Phase 5B Hardware Validation Pack"),
+        remembered_directory(
+            QStringLiteral("paths/validationPackDir")));
     if (directory.isEmpty()) return;
+    remember_directory(
+        QStringLiteral("paths/validationPackDir"),
+        directory);
 
     QDialog dialog(this);
     dialog.setWindowTitle(QStringLiteral("Hardware Validation Pack"));
@@ -379,9 +458,22 @@ void ValidationPanel::generate_stimulus() {
     outer->addWidget(buttons);
     if (dialog.exec() != QDialog::Accepted) return;
 
-    const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("Save Validation Stimulus"),
-        QStringLiteral("fv1-validation-%1.wav").arg(kind->currentText()), QStringLiteral("WAV audio (*.wav)"));
+    const QString suggested =
+        QDir(
+            remembered_directory(
+                QStringLiteral("paths/validationStimulusDir")))
+            .filePath(
+                QStringLiteral("fv1-validation-%1.wav")
+                    .arg(kind->currentText()));
+    const QString path = QFileDialog::getSaveFileName(
+        this,
+        QStringLiteral("Save Validation Stimulus"),
+        suggested,
+        QStringLiteral("WAV audio (*.wav)"));
     if (path.isEmpty()) return;
+    remember_directory(
+        QStringLiteral("paths/validationStimulusDir"),
+        path);
     fv1::ValidationAudio audio;
     std::string error;
     if (!fv1::generate_validation_stimulus(audio, static_cast<std::uint32_t>(rate->currentData().toUInt()),

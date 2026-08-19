@@ -13,6 +13,48 @@ namespace {
 
 constexpr double kPi = 3.14159265358979323846264338327950288;
 
+std::filesystem::path filesystem_io_path(
+    const std::filesystem::path& supplied
+) {
+#if defined(_WIN32)
+    std::error_code ec;
+    auto path = std::filesystem::absolute(supplied, ec);
+    if (ec) path = supplied;
+    path = path.lexically_normal();
+
+    const std::wstring native = path.native();
+
+    if (native.rfind(LR"(\\?\)", 0) == 0 ||
+        native.rfind(LR"(\\.\)", 0) == 0) {
+        return path;
+    }
+
+    if (native.size() < 240)
+        return path;
+
+    if (native.rfind(LR"(\\)", 0) == 0) {
+        return std::filesystem::path(
+            std::wstring(LR"(\\?\UNC\)")
+            + native.substr(2));
+    }
+
+    return std::filesystem::path(
+        std::wstring(LR"(\\?\)")
+        + native);
+#else
+    return supplied;
+#endif
+}
+
+std::string path_utf8(
+    const std::filesystem::path& path
+) {
+    const auto bytes = path.u8string();
+    return std::string(
+        reinterpret_cast<const char*>(bytes.data()),
+        bytes.size());
+}
+
 std::uint16_t rd16(const std::uint8_t* p) {
     return static_cast<std::uint16_t>(p[0] | (static_cast<std::uint16_t>(p[1]) << 8));
 }
@@ -34,8 +76,13 @@ bool read_wav(const std::filesystem::path& path, DecodedWav& out, std::string* e
         return false;
     };
 
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return fail("cannot open WAV: " + path.string());
+    std::ifstream f(
+        filesystem_io_path(path),
+        std::ios::binary);
+    if (!f)
+        return fail(
+            "cannot open WAV: "
+            + path_utf8(path));
     f.seekg(0, std::ios::end);
     const std::streamoff n = f.tellg();
     f.seekg(0, std::ios::beg);

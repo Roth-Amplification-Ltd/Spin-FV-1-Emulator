@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -13,7 +15,15 @@
 #include <numeric>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace fv1 {
 namespace {
@@ -25,6 +35,119 @@ bool fail(std::string* error, const std::string& message) {
     if (error) *error = message;
     return false;
 }
+
+std::string path_utf8(const std::filesystem::path& path) {
+    const auto bytes = path.u8string();
+    return std::string(
+        reinterpret_cast<const char*>(bytes.data()),
+        bytes.size());
+}
+
+std::filesystem::path append_ascii_suffix(
+    const std::filesystem::path& base,
+    const char* suffix
+) {
+    std::filesystem::path out = base;
+    out += std::filesystem::path(suffix);
+    return out;
+}
+
+std::filesystem::path make_temp_sibling(
+    const std::filesystem::path& final_path
+) {
+    static std::atomic<std::uint64_t> sequence{0};
+    const auto id =
+        sequence.fetch_add(1, std::memory_order_relaxed);
+    const auto ticks = static_cast<std::uint64_t>(
+        std::chrono::steady_clock::now()
+            .time_since_epoch()
+            .count());
+
+    std::filesystem::path temp = final_path;
+    temp += std::filesystem::path(".partial-");
+    temp += std::filesystem::path(
+        std::to_string(ticks)
+        + "-"
+        + std::to_string(id));
+    return temp;
+}
+
+bool replace_completed_file(
+    const std::filesystem::path& temp,
+    const std::filesystem::path& final_path,
+    std::string* error
+) {
+#if defined(_WIN32)
+    if (::MoveFileExW(
+            temp.c_str(),
+            final_path.c_str(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0) {
+        return true;
+    }
+
+    return fail(
+        error,
+        "cannot finalize "
+            + path_utf8(final_path)
+            + " (Windows error "
+            + std::to_string(::GetLastError())
+            + ")");
+#else
+    std::error_code ec;
+    std::filesystem::rename(temp, final_path, ec);
+    if (!ec) return true;
+    return fail(
+        error,
+        "cannot finalize "
+            + path_utf8(final_path)
+            + ": "
+            + ec.message());
+#endif
+}
+
+void remove_quietly(
+    const std::filesystem::path& path
+) noexcept {
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
+class FileTransaction {
+public:
+    ~FileTransaction() {
+        if (committed_) return;
+        for (const auto& entry : files_)
+            remove_quietly(entry.first);
+    }
+
+    std::filesystem::path stage(
+        const std::filesystem::path& final_path
+    ) {
+        auto temp = make_temp_sibling(final_path);
+        remove_quietly(temp);
+        files_.push_back({temp, final_path});
+        return temp;
+    }
+
+    bool commit(std::string* error) {
+        for (const auto& entry : files_) {
+            if (!replace_completed_file(
+                    entry.first,
+                    entry.second,
+                    error)) {
+                return false;
+            }
+        }
+        committed_ = true;
+        return true;
+    }
+
+private:
+    std::vector<std::pair<
+        std::filesystem::path,
+        std::filesystem::path>> files_;
+    bool committed_{};
+};
 
 std::uint16_t rd16(const std::uint8_t* p) {
     return static_cast<std::uint16_t>(p[0] | (static_cast<std::uint16_t>(p[1]) << 8));
@@ -288,7 +411,10 @@ bool load_validation_wav(const std::filesystem::path& path,
                          ValidationAudio& audio,
                          std::string* error) {
     std::ifstream f(path, std::ios::binary);
-    if (!f) return fail(error, "cannot open " + path.string());
+    if (!f)
+        return fail(
+            error,
+            "cannot open " + path_utf8(path));
     f.seekg(0, std::ios::end);
     const auto size = f.tellg();
     f.seekg(0, std::ios::beg);
@@ -381,23 +507,90 @@ bool load_validation_wav(const std::filesystem::path& path,
 bool write_validation_wav(const std::filesystem::path& path,
                           const ValidationAudio& audio,
                           std::string* error) {
-    if (audio.sample_rate == 0) return fail(error, "sample rate must be nonzero");
-    if (audio.frames.size() > (std::numeric_limits<std::uint32_t>::max() - 36u) / 8u)
+    if (audio.sample_rate == 0)
+        return fail(error, "sample rate must be nonzero");
+    if (audio.frames.size() >
+        (std::numeric_limits<std::uint32_t>::max() - 36u) / 8u) {
         return fail(error, "WAV is too large for RIFF32");
-    std::ofstream o(path, std::ios::binary);
-    if (!o) return fail(error, "cannot create " + path.string());
-    const auto data_size = static_cast<std::uint32_t>(audio.frames.size() * 8u);
-    o.write("RIFF", 4); wr32(o, 36u + data_size); o.write("WAVE", 4);
-    o.write("fmt ", 4); wr32(o, 16); wr16(o, 3); wr16(o, 2); wr32(o, audio.sample_rate);
-    wr32(o, audio.sample_rate * 8u); wr16(o, 8); wr16(o, 32);
-    o.write("data", 4); wr32(o, data_size);
-    for (const auto& frame : audio.frames) {
-        const float l = std::isfinite(frame.left) ? frame.left : 0.0f;
-        const float r = std::isfinite(frame.right) ? frame.right : 0.0f;
-        o.write(reinterpret_cast<const char*>(&l), sizeof(l));
-        o.write(reinterpret_cast<const char*>(&r), sizeof(r));
     }
-    if (!o) return fail(error, "failed while writing " + path.string());
+
+    std::error_code ec;
+    if (!path.parent_path().empty())
+        std::filesystem::create_directories(
+            path.parent_path(),
+            ec);
+    if (ec) {
+        return fail(
+            error,
+            "cannot create WAV directory for "
+                + path_utf8(path)
+                + ": "
+                + ec.message());
+    }
+
+    const auto temp = make_temp_sibling(path);
+    remove_quietly(temp);
+
+    std::ofstream o(
+        temp,
+        std::ios::binary | std::ios::trunc);
+    if (!o) {
+        return fail(
+            error,
+            "cannot create WAV staging file for "
+                + path_utf8(path));
+    }
+
+    const auto data_size =
+        static_cast<std::uint32_t>(
+            audio.frames.size() * 8u);
+    o.write("RIFF", 4);
+    wr32(o, 36u + data_size);
+    o.write("WAVE", 4);
+    o.write("fmt ", 4);
+    wr32(o, 16);
+    wr16(o, 3);
+    wr16(o, 2);
+    wr32(o, audio.sample_rate);
+    wr32(o, audio.sample_rate * 8u);
+    wr16(o, 8);
+    wr16(o, 32);
+    o.write("data", 4);
+    wr32(o, data_size);
+
+    for (const auto& frame : audio.frames) {
+        const float l =
+            std::isfinite(frame.left)
+                ? frame.left
+                : 0.0f;
+        const float r =
+            std::isfinite(frame.right)
+                ? frame.right
+                : 0.0f;
+        o.write(
+            reinterpret_cast<const char*>(&l),
+            sizeof(l));
+        o.write(
+            reinterpret_cast<const char*>(&r),
+            sizeof(r));
+    }
+
+    o.flush();
+    const bool write_ok = static_cast<bool>(o);
+    o.close();
+
+    if (!write_ok) {
+        remove_quietly(temp);
+        return fail(
+            error,
+            "failed while writing "
+                + path_utf8(path));
+    }
+
+    if (!replace_completed_file(temp, path, error)) {
+        remove_quietly(temp);
+        return false;
+    }
     return true;
 }
 
@@ -478,17 +671,34 @@ bool write_validation_report_bundle(const std::filesystem::path& prefix,
                                     const ValidationResult& result,
                                     std::string* error) {
     std::error_code ec;
-    if (!prefix.parent_path().empty()) std::filesystem::create_directories(prefix.parent_path(), ec);
-    if (ec) return fail(error, "cannot create report directory: " + ec.message());
+    if (!prefix.parent_path().empty())
+        std::filesystem::create_directories(
+            prefix.parent_path(),
+            ec);
+    if (ec)
+        return fail(
+            error,
+            "cannot create report directory: "
+                + ec.message());
 
-    const auto json_path = prefix.string() + ".json";
-    const auto md_path = prefix.string() + ".md";
-    const auto csv_path = prefix.string() + "-frequency.csv";
-    const auto wav_path = prefix.string() + "-residual.wav";
+    const auto json_path = append_ascii_suffix(prefix, ".json");
+    const auto md_path = append_ascii_suffix(prefix, ".md");
+    const auto csv_path = append_ascii_suffix(prefix, "-frequency.csv");
+    const auto wav_path = append_ascii_suffix(prefix, "-residual.wav");
+
+    FileTransaction transaction;
+    const auto json_stage = transaction.stage(json_path);
+    const auto md_stage = transaction.stage(md_path);
+    const auto csv_stage = transaction.stage(csv_path);
+    const auto wav_stage = transaction.stage(wav_path);
 
     {
-        std::ofstream o(json_path);
-        if (!o) return fail(error, "cannot create " + json_path);
+        std::ofstream o(json_stage);
+        if (!o)
+            return fail(
+                error,
+                "cannot create report staging file for "
+                    + path_utf8(json_path));
         o << std::fixed << std::setprecision(9);
         o << "{\n"
           << "  \"schema\": \"spin-fv1-validation-1\",\n"
@@ -510,29 +720,49 @@ bool write_validation_report_bundle(const std::filesystem::path& prefix,
           << "  \"spectral_rms_magnitude_error_db\": " << result.spectral_rms_magnitude_error_db << ",\n"
           << "  \"spectral_worst_magnitude_error_db\": " << result.spectral_worst_magnitude_error_db << ",\n"
           << "  \"spectral_worst_phase_error_degrees\": " << result.spectral_worst_phase_error_degrees << ",\n";
-        auto channel = [&o](const char* name, const ValidationChannelMetrics& m, bool comma) {
-            o << "  \"" << name << "\": {\n"
-              << "    \"reference_rms_dbfs\": " << m.reference_rms_dbfs << ",\n"
-              << "    \"capture_rms_dbfs\": " << m.capture_rms_dbfs << ",\n"
-              << "    \"gain_error_db\": " << m.gain_error_db << ",\n"
-              << "    \"correlation\": " << m.correlation << ",\n"
-              << "    \"residual_rms_dbfs\": " << m.residual_rms_dbfs << ",\n"
-              << "    \"residual_peak_dbfs\": " << m.residual_peak_dbfs << ",\n"
-              << "    \"snr_db\": " << m.snr_db << "\n"
-              << "  }" << (comma ? "," : "") << "\n";
-        };
+
+        auto channel =
+            [&o](
+                const char* name,
+                const ValidationChannelMetrics& m,
+                bool comma
+            ) {
+                o << "  \"" << name << "\": {\n"
+                  << "    \"reference_rms_dbfs\": " << m.reference_rms_dbfs << ",\n"
+                  << "    \"capture_rms_dbfs\": " << m.capture_rms_dbfs << ",\n"
+                  << "    \"gain_error_db\": " << m.gain_error_db << ",\n"
+                  << "    \"correlation\": " << m.correlation << ",\n"
+                  << "    \"residual_rms_dbfs\": " << m.residual_rms_dbfs << ",\n"
+                  << "    \"residual_peak_dbfs\": " << m.residual_peak_dbfs << ",\n"
+                  << "    \"snr_db\": " << m.snr_db << "\n"
+                  << "  }" << (comma ? "," : "") << "\n";
+            };
+
         channel("left", result.left, true);
         channel("right", result.right, true);
+
         o << "  \"failures\": [";
         for (std::size_t i = 0; i < result.failures.size(); ++i) {
             if (i) o << ", ";
             o << "\"" << json_escape(result.failures[i]) << "\"";
         }
         o << "]\n}\n";
+        o.flush();
+        if (!o)
+            return fail(
+                error,
+                "failed while writing report staging file for "
+                    + path_utf8(json_path));
     }
+
     {
-        std::ofstream o(md_path);
-        if (!o) return fail(error, "cannot create " + md_path);
+        std::ofstream o(md_stage);
+        if (!o)
+            return fail(
+                error,
+                "cannot create report staging file for "
+                    + path_utf8(md_path));
+
         o << "# Spin FV-1 Validation Report\n\n"
           << "**Result:** " << (result.passed ? "PASS" : "FAIL") << "\n\n"
           << "- Sample rate: " << result.sample_rate << " Hz\n"
@@ -556,25 +786,48 @@ bool write_validation_report_bundle(const std::filesystem::path& prefix,
           << "| Residual RMS (dBFS) | " << result.left.residual_rms_dbfs << " | " << result.right.residual_rms_dbfs << " |\n"
           << "| Residual peak (dBFS) | " << result.left.residual_peak_dbfs << " | " << result.right.residual_peak_dbfs << " |\n"
           << "| SNR (dB) | " << result.left.snr_db << " | " << result.right.snr_db << " |\n\n";
+
         if (!result.failures.empty()) {
             o << "## Failed limits\n\n";
             for (const auto& f : result.failures) o << "- " << f << "\n";
             o << '\n';
         }
-        o << "Frequency-response data: `" << std::filesystem::path(csv_path).filename().string() << "`  \n"
-          << "Residual audio: `" << std::filesystem::path(wav_path).filename().string() << "`\n";
+
+        o << "Frequency-response data: `" << path_utf8(csv_path.filename()) << "`  \n"
+          << "Residual audio: `" << path_utf8(wav_path.filename()) << "`\n";
+        o.flush();
+        if (!o)
+            return fail(
+                error,
+                "failed while writing report staging file for "
+                    + path_utf8(md_path));
     }
+
     {
-        std::ofstream o(csv_path);
-        if (!o) return fail(error, "cannot create " + csv_path);
+        std::ofstream o(csv_stage);
+        if (!o)
+            return fail(
+                error,
+                "cannot create report staging file for "
+                    + path_utf8(csv_path));
         o << "frequency_hz,magnitude_error_db,phase_error_degrees,reference_level_dbfs\n";
         o << std::setprecision(10);
         for (const auto& p : result.frequency_response)
-            o << p.frequency_hz << ',' << p.magnitude_error_db << ',' << p.phase_error_degrees
-              << ',' << p.reference_level_dbfs << '\n';
+            o << p.frequency_hz << ',' << p.magnitude_error_db << ','
+              << p.phase_error_degrees << ',' << p.reference_level_dbfs << '\n';
+        o.flush();
+        if (!o)
+            return fail(
+                error,
+                "failed while writing report staging file for "
+                    + path_utf8(csv_path));
     }
+
     ValidationAudio residual{result.sample_rate, result.residual};
-    return write_validation_wav(wav_path, residual, error);
+    if (!write_validation_wav(wav_stage, residual, error))
+        return false;
+
+    return transaction.commit(error);
 }
 
 bool generate_validation_stimulus(ValidationAudio& audio,
@@ -691,8 +944,11 @@ bool write_validation_stimulus_pack(const std::filesystem::path& directory,
     }
 
     const auto manifest_path = directory / "manifest.json";
-    std::ofstream manifest(manifest_path);
-    if (!manifest) return fail(error, "cannot create " + manifest_path.string());
+    const auto manifest_stage = make_temp_sibling(manifest_path);
+    remove_quietly(manifest_stage);
+    std::ofstream manifest(manifest_stage);
+    if (!manifest)
+        return fail(error, "cannot create " + path_utf8(manifest_path));
     manifest << std::fixed << std::setprecision(6);
     manifest << "{\n"
              << "  \"schema\": \"spin-fv1-hardware-validation-pack-1\",\n"
@@ -715,11 +971,24 @@ bool write_validation_stimulus_pack(const std::filesystem::path& directory,
                  << (i + 1 == stimuli.size() ? "\n" : ",\n");
     }
     manifest << "  ]\n}\n";
-    if (!manifest) return fail(error, "failed while writing " + manifest_path.string());
+    manifest.flush();
+    const bool manifest_ok = static_cast<bool>(manifest);
+    manifest.close();
+    if (!manifest_ok) {
+        remove_quietly(manifest_stage);
+        return fail(error, "failed while writing " + path_utf8(manifest_path));
+    }
+    if (!replace_completed_file(manifest_stage, manifest_path, error)) {
+        remove_quietly(manifest_stage);
+        return false;
+    }
 
     const auto readme_path = directory / "README.txt";
-    std::ofstream readme(readme_path);
-    if (!readme) return fail(error, "cannot create " + readme_path.string());
+    const auto readme_stage = make_temp_sibling(readme_path);
+    remove_quietly(readme_stage);
+    std::ofstream readme(readme_stage);
+    if (!readme)
+        return fail(error, "cannot create " + path_utf8(readme_path));
     readme << "Spin FV-1 Emulator — Phase 5B Hardware Validation Pack\n\n"
            << "1. Use the same FV-1 program, clock and POT settings for virtual and physical runs.\n"
            << "2. Render each stimulus through the emulator to create reference output.\n"
@@ -727,7 +996,19 @@ bool write_validation_stimulus_pack(const std::filesystem::path& directory,
            << "4. Capture at " << config.sample_rate << " Hz without normalization, limiting or post-processing.\n"
            << "5. Compare each reference/capture pair with fv1-cli validate or the VALIDATION tab.\n"
            << "6. Preserve the manifest with the captures so regressions remain reproducible.\n";
-    return static_cast<bool>(readme);
+
+    readme.flush();
+    const bool readme_ok = static_cast<bool>(readme);
+    readme.close();
+    if (!readme_ok) {
+        remove_quietly(readme_stage);
+        return fail(error, "failed while writing " + path_utf8(readme_path));
+    }
+    if (!replace_completed_file(readme_stage, readme_path, error)) {
+        remove_quietly(readme_stage);
+        return false;
+    }
+    return true;
 }
 
 } // namespace fv1

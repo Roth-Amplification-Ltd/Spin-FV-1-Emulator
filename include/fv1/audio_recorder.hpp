@@ -30,6 +30,9 @@ struct AudioRecorderStats {
  * background thread performs all filesystem I/O and finalizes the RIFF/WAVE
  * headers when recording stops. Files are written as stereo 32-bit IEEE-float
  * WAV at the host sample rate so no additional quantization is introduced.
+ *
+ * Output is staged in same-directory .partial-* files and promoted to the
+ * requested final name only after the WAV header and payload are complete.
  */
 class AudioRecorder {
 public:
@@ -62,6 +65,10 @@ public:
     AudioRecorderStats stats() const noexcept;
     std::filesystem::path raw_path() const;
     std::filesystem::path processed_path() const;
+
+    // Non-empty after a prepare/start/finalization failure. Intended for UI
+    // diagnostics after stop(); never called by the realtime audio callback.
+    std::string last_error() const;
 
 private:
     class Impl;
