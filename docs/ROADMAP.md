@@ -1,258 +1,267 @@
 # Spin FV-1 Emulator Roadmap
 
+> **Status snapshot: August 20, 2026**
+>
+> The FV-1 execution model and public FV1SDK ABI are treated as locked platform
+> boundaries. Current work is finishing the standalone FV-1 Lab desktop
+> products, not redesigning the virtual chip.
+
 ## Product definition
 
-**Spin FV-1 Emulator is first and foremost a standalone FV-1 emulator and electronic testbench.**
-It should feel like a useful virtual DSP instrument: load a program, feed it a live interface,
-repeatable audio loop, or generated stimulus, and inspect what the virtual chip is doing.
+**Spin FV-1 Emulator is a standalone FV-1 emulator and electronic testbench.**
 
-Some IDE-like conveniences are welcome when they directly improve emulation or debugging (for
-example instruction stepping, register inspection, disassembly, or convenient `.spn` loading), but
-this application is **not intended to become the future full FV-1 IDE**. The dedicated IDE will be
-a separate application that reuses the platform-neutral libraries developed here.
+FV-1 Lab behaves like a virtual DSP instrument: load SpinASM or a program image,
+feed the virtual chip from a real audio interface, repeatable WAV loop, or
+deterministic test generator, and inspect/measure the virtual FV-1.
 
-Development remains **Linux-first** while the core/runtime APIs mature. Keep platform boundaries
-clean so Windows and a native macOS frontend can be added later without changing the chip model.
+Debugger/inspection conveniences belong here when they directly support
+emulation and measurement. A future full source-code IDE remains a separate
+application that consumes the public SDK.
 
-The approved GUI identity is the existing wide engineering dashboard: program/source/parameter
-controls at left; scope, spectrum, spectrogram, delay/resource/status instrumentation in the center;
-and a large vertically stacked Console + virtual-chip Inspector on the right. Refine this layout
-rather than replacing it.
+DAW/VST/AU/CLAP plugins are **not part of this standalone application project**.
 
-## Phase 1 — Emulator foundation — COMPLETE
+## Current platform status
 
-- zero-GUI `libfv1-core`;
-- C API + C++ convenience wrapper;
-- FV-1 instruction decoder/interpreter;
-- fixed-point state, delay RAM and LFOs;
-- SpinASM-compatible assembler/program loader;
-- instruction-debug primitives and snapshots;
-- resource analyzer;
-- deterministic `fv1-cli` and offline WAV rendering;
-- Linux CMake/CTest regression suite.
+| Platform | Frontend | Audio | Status |
+|---|---|---|---|
+| Linux | Qt 6 Widgets | miniaudio + system backend | **Feature-complete reference desktop** |
+| macOS | Native SwiftUI | Core Audio / AVAudioEngine | **Phase 8D complete** |
+| Windows 11 | Same Qt 6 Widgets frontend as Linux | miniaudio → WASAPI | **Phase 9B.3 complete; Phase 9B.4 next** |
 
-## Phase 2 — Realtime audio, file loops and analysis — ACCEPTED / CAPTURE TEST DEFERRED
+Linux and Windows intentionally share the same Qt desktop frontend. macOS is a
+native SwiftUI product consuming the same platform-neutral FV-1 SDK boundary.
 
-- `fv1-runtime` host-rate ↔ virtual-FV-1 clock bridge;
-- SpeexDSP production SRC with fractional virtual-clock support;
-- miniaudio Linux device backend;
-- interchangeable Live Input, File Loop and Test Generator sources;
-- WAV import and repeatable looping;
-- background analysis worker, scope data, FFT, meters and correlation;
-- lock-free realtime telemetry;
-- `fv1-live` headless realtime host.
+## Completed foundation — Phases 1 through 6C
 
-Generator/file-loop playback, production SpeexDSP clock bridging, analyzer telemetry and real
-miniaudio playback were accepted on Cortana. External capture/duplex-interface validation remains
-a documented deferred acceptance test until suitable hardware is available.
+### Phase 1 — Emulator foundation — COMPLETE
 
-## Phase 3 — Qt standalone testbench — COMPLETE
+- platform-neutral C++20 virtual FV-1 engine;
+- 128-word / 512-byte program loading;
+- SpinASM assembler/program loader;
+- fixed-point registers, accumulator state, Delay RAM and LFOs;
+- instruction stepping/snapshots;
+- resource analysis;
+- deterministic CLI/offline rendering;
+- regression-tested CMake build.
 
-- Qt 6 dashboard matching the approved layout;
-- LIVE / FILE LOOP / TEST source selection;
-- POT0/1/2 and virtual-clock controls;
+### Phase 2 — Realtime runtime and analysis — COMPLETE
+
+- independent host/FV-1 clock domains;
+- SpeexDSP production SRC with deterministic fallback;
+- live-input, WAV-loop and test-generator sources;
+- miniaudio host audio abstraction;
+- lock-free analyzer/runtime telemetry;
+- scope/spectrum/levels data paths;
+- `fv1-live` headless host.
+
+### Phase 3 — Qt FV-1 Lab desktop — COMPLETE
+
+- wide engineering dashboard;
+- program/source/POT/virtual-clock controls;
 - oscilloscope, spectrum, spectrogram and levels;
-- Delay RAM, Resource Usage and DSP Status panels;
-- large Console / Inspector side panel;
-- Dark, Light, Midnight, Amber CRT, Green Phosphor, Slate and High Contrast themes;
-- independent accent selection;
-- DAW-style Audio Settings dialog;
-- persistent `QSettings` preferences;
-- realtime **DSP/FX ON — PROCESSED / DSP/FX BYPASS — RAW** monitoring;
-- task-local right-click context menus.
+- Delay RAM, resource usage and DSP status;
+- Console + virtual-chip Inspector;
+- themes, accents, Audio Settings and persistent settings.
 
-The Phase-3/3.1 build is accepted on Cortana and documented with screenshots and a screencast.
+### Phase 4 — Testbench completion — COMPLETE
 
-## Phase 4 — Emulator / testbench completion — COMPLETE
+- simultaneous raw/processed analyzers;
+- scope trigger/zoom/freeze;
+- configurable spectrum/spectrogram;
+- WAV-loop transport and crossfade;
+- realtime-safe recording;
+- image/CSV export;
+- reusable debugger and full chip inspection.
 
-- simultaneous raw-input and processed-output analyzer overlays;
-- scope time zoom, gain, trigger source/level/slope/mode, freeze and single-shot;
-- spectrum log/linear axis, dB range, peak hold and interpolated dominant frequency;
-- spectrogram history and dynamic-range controls;
-- WAV-loop play/pause/stop/seek, loop region and boundary crossfade;
-- expanded test-generator controls;
-- realtime-safe raw/processed WAV recording;
-- plot image copy/save and CSV export;
-- reusable `fv1-debugger` plus offline virtual-chip inspector;
-- register/Delay-RAM inspection and expanded resource reporting;
-- permanent `© 2026 Roth Amplification LTD` footer.
+### Phase 5A/5B/5C — Validation + model hardening — COMPLETE
 
-Phase 4 passed 11/11 tests on Cortana and was committed as `Complete Phase 4 FV-1 emulator testbench`.
+- deterministic validation stimuli and packs;
+- reference/capture alignment and error metrics;
+- JSON/Markdown/CSV/residual-WAV reports;
+- hardware-validation workflow;
+- independent reference model and differential conformance harness;
+- randomized/deterministic model stress.
 
-## Phase 5A — Validation framework — COMPLETE
+**Physical FV-1 silicon closure remains intentionally deferred.** Agreement
+between the production and reference software models is not presented as proof
+of undocumented silicon behavior.
 
-Build the measurement framework before physical hardware is available so the same tools can be
-self-tested against synthetic captures and later used unchanged with real FV-1 recordings.
+### Phase 6A/6B/6C — FV1SDK extraction and ABI-v1 hardening — COMPLETE
 
-- reusable GUI-independent `fv1-validation` library;
-- deterministic validation stimulus WAV generation (multitone, sweep, sine, white/pink noise, impulse);
-- reference/capture WAV loader supporting common PCM/float formats;
-- automatic capture time alignment by normalized correlation;
-- capture latency in frames and milliseconds;
-- raw gain error plus optional gain matching **only for residual/SNR measurements**;
-- per-channel correlation, residual RMS/peak and SNR;
-- FFT-based magnitude-error and phase-error measurements on active reference bins;
-- configurable acceptance thresholds and PASS/FAIL output;
-- residual-audio generation;
-- JSON, Markdown and frequency-CSV report export;
-- `fv1-cli stimulus` and `fv1-cli validate` commands;
-- FV-1 Lab **VALIDATION** workspace using the same library;
-- regression tests using synthetic captures with deliberately known delay/gain/error;
-- four switchable FV-1 Emulator application icons plus Linux desktop metadata.
+- installable public C ABI;
+- C++ convenience wrapper;
+- native SpinASM compilation;
+- optional debugger/introspection API;
+- C/C++/Python/Swift/Rust/Objective-C proving hosts;
+- SDK-only builds;
+- portability, misuse, malformed-input, stress and installed-consumer gates;
+- public ABI separated from GUI/audio/platform implementation.
 
-Phase-5A exit test passed: identical reference/capture files produced zero delay, unity correlation
-and numerically silent residual; synthetic delayed/gain-scaled captures recovered their planted
-values; the software validation/report pipeline is accepted.
+## Phase 7 — Native Win32 proving frontend — COMPLETE / DIAGNOSTIC
 
-## Phase 5B — Hardware-validation workflow and UI polish — COMPLETE / SILICON LEG DEFERRED
+Phase 7 proved Windows could consume the public SDK with native Win32/WASAPI.
+It remains an opt-in diagnostic/reference harness.
 
-Phase 5B completed the software/UI preparation needed before physical captures:
+It is **not** the shipping Windows FV-1 Lab frontend. Phase 9 moved Windows to
+the same Qt 6 Widgets desktop frontend used by Linux.
 
-- deterministic multi-file hardware-validation packs plus machine-readable manifests;
-- `fv1-cli validation-pack` and matching GUI generation workflow;
-- File → **Paste SpinASM…** scratchpad through the same assembler/program-image path;
-- software-rendered startup splash with dedicated FV-1/waveform/DIP foreground and a
-  theme-tinted monochrome background-image hook (populated in Phase 6C by
-  `assets/splash/FV1LabSplashImagebase.png`);
-- Linux application identity/icon/menu polish;
-- Pop!_OS/Ubuntu 22.04+ bootstrap compatibility, including pinned miniaudio fallback handling.
+## Phase 8 — Native Apple FV-1 Lab — COMPLETE
 
-The physical-silicon leg remains intentionally deferred until an FV-1 board and capture interface are
-available. The generated deterministic packs remain the future hardware stimulus set.
+The Apple roadmap intentionally remains three broad phases.
 
-## Phase 5C — Model hardening and differential conformance — COMPLETE
+### Phase 8B — Mac Testbench Parity — COMPLETE
 
-Strengthen the machine model before copying it into Windows/macOS products. This phase is independent
-of physical hardware and follows the project's Hardware Emulation research methodology.
+- Scope;
+- Spectrum;
+- Spectrogram;
+- Levels;
+- raw + processed analyzer paths;
+- DSP bypass;
+- recording/export;
+- staged startup splash.
 
-Implemented and accepted on Rosie:
+### Phase 8C — Mac Workflow + Inspector Parity — COMPLETE
 
-- a written **Hardware Emulation Contract** with explicit observer, fidelity classes and oracle status;
-- independent `fv1-reference` Model A that does not link or reuse the `fv1-core` decoder/arithmetic;
-- reusable `fv1-conformance` differential harness;
-- one production instruction-step state machine shared by normal processing and debugger execution;
-- explicit virtual sample/instruction coordinates in snapshots and traces;
-- deterministic architectural and full delay-memory state digests;
-- instruction-by-instruction state comparison and first-divergence reporting;
-- opcode execution coverage accounting;
-- numeric/quantization/time/reset boundary regressions;
-- randomized differential program testing across both delay models;
-- conformance runs over all eight bundled Steal This DSP programs;
-- Clang/libFuzzer + ASan/UBSan differential fuzz target;
-- explicit documentation of `DOCUMENTED`, `SPEC-DERIVED`, `PROJECT ASSUMPTION` and
-  `SILICON-PENDING` behavior.
+- Audio File Loop;
+- Core Audio device settings;
+- persistent audio preferences;
+- full offline instruction/sample inspector;
+- complete register/LFO state;
+- physical circular Delay RAM viewer;
+- validation workflow;
+- selectable analyzer FFT sizes;
+- Linux-equivalent themes, accents and app icons;
+- native Open Program / Paste SpinASM workflows.
 
-Phase 5C must never turn reference/production agreement into a false silicon-equivalence claim.
-RMPA details, proprietary delay representation, LOG/EXP edge transfer, CHO/LFO internals, POT
-hysteresis and converter/analog behavior remain visible physical-validation targets.
+### Phase 8D — Mac Completion / Release — COMPLETE
 
-### Deferred physical FV-1 acceptance gate
+Completed at commit `c85e670`:
 
-When hardware becomes available, feed the **same deterministic stimuli** to the emulator and physical
-board and quantify:
+- shipped-program regression;
+- accelerated Apple realtime bridge soak;
+- Debug + Release build verification;
+- release-safe bundle checks;
+- DMG packaging;
+- optional Developer ID signing, notarization and stapling workflow;
+- final macOS release checklist.
 
-- ADC/DAC and board latency;
-- waveform residual and correlation;
-- magnitude/phase response;
-- delay-RAM timing and precision behavior;
-- SIN/RAMP LFO timing and CHO behavior;
-- POT quantization/hysteresis;
-- clipping/saturation boundaries;
-- LOG/EXP and instruction edge cases;
-- crystal-derived rates including 46.6084 kHz behavior.
+The macOS frontend remains native SwiftUI and does not alter the locked FV-1
+execution model or FV1SDK ABI.
 
-Measured discrepancies become minimal regression vectors and corrections to the machine model, never
-per-effect compatibility hacks.
+## Phase 9 — Windows Qt FV-1 Lab
 
-## Phase 6A — FV-1 SDK extraction — COMPLETE
+Windows uses the **same Qt 6 Widgets FV-1 Lab frontend as Linux**, built with
+MSVC and backed by miniaudio/WASAPI.
 
-Established the installable `FV1SDK::sdk` C ABI candidate, native SpinASM compiler, shared/static
-packaging, narrow exported-symbol boundary, external pure-C installed-consumer test, and Linux runtime
-dogfooding through the public engine boundary.
+### Phase 9A — Windows Qt Desktop Parity — COMPLETE
 
-## Phase 6B — Cross-language SDK review and stabilization — COMPLETE
+- native MSVC Qt build;
+- shared Linux/Windows GUI source;
+- WASAPI playback path;
+- Windows resources/version metadata;
+- Release packaging with `windeployqt`;
+- portable standalone ZIP;
+- Windows automated regression gate.
 
-Completed the pre-freeze consumer audit and cross-language surface:
+### Phase 9B — Windows Workflow + Platform Parity — CURRENT
 
-- `FV1_SDK_ONLY=ON` with no application/audio/UI dependency discovery;
-- self-contained shared/static package and narrow installed headers;
-- version/capability discovery, readback, processing and optional debug/introspection APIs;
-- C, C++, Python, Swift, Rust and Objective-C proving hosts;
-- fixed-width public scalar ABI, explicit Windows `cdecl`, layout fixture and exact symbol manifest;
-- Linux/macOS/Windows SDK portability workflow.
+#### Phase 9B.0 — Workflow/platform foundation — COMPLETE
 
-The Phase-6B commit intentionally left ABI major 1 as a candidate. Its first remote portability run
-proved five of six matrix combinations. The only failure was the Windows shared Python `ctypes` probe
-after the workflow accidentally selected MinGW under Git Bash/Ninja; the DLL itself and C/C++/ABI
-tests passed. Phase 6C changes the shipping Windows proof to native Visual Studio/MSVC.
+- persistent window/dock workspace;
+- persistent controls;
+- recent program/audio menus;
+- remembered file-dialog directories;
+- drag/drop;
+- command-line/Open-With handling;
+- keyboard shortcuts;
+- PerMonitorV2 and long-path manifests;
+- portable-package isolation checks.
 
-## Phase 6C — Linux 1.0.0-rc1 hardening / ABI-v1 ratification gate — CURRENT
+#### Phase 9B.2 — WASAPI hardware hardening — COMPLETE
 
-No product feature work belongs here. The objective is to make the existing SDK/application fail in
-controlled tests before committing to binary compatibility.
+- stable WASAPI endpoint IDs;
+- persistent playback/capture selections;
+- real capture → FV-1 → playback;
+- 44.1/48 kHz hardware tests;
+- 128/256/512/1024 requested-buffer testing;
+- negotiated asymmetric native periods;
+- endpoint refresh/loss recovery;
+- hardware telemetry and acceptance script.
 
-Implemented in the RC candidate:
+#### Phase 9B.3 — Unicode + Recording/Export Hardening — COMPLETE
 
-- `1.0.0-rc1` product/SDK implementation version metadata;
-- exact Phase-6B/0.9.0 public-header compatibility compile/link regression;
-- SDK misuse, bad-structure, bad-state, non-finite-input and zero-frame boundary tests;
-- malformed external file/source regressions;
-- deterministic multi-seed differential stress across all eight demo programs;
-- product staging/install smoke and installed CLI version check;
-- GCC and Clang warning-clean headless gates;
-- Clang ASan/UBSan gate;
-- conformance, SpinASM and public-SDK libFuzzer targets;
-- normal + HiDPI Qt smoke checks;
-- Linux release-hardening workflow and heavyweight `tools/run-release-gate.sh`;
-- Windows SDK CI switched to native MSVC for both static and shared package tests.
+Completed at commit `2052794`:
 
-**ABI v1 ratification sequence:**
+- Unicode-safe program/WAV workflows;
+- Windows extended-length paths beyond traditional `MAX_PATH`;
+- transactional `.partial-*` recording finalization;
+- transactional validation WAV/report output;
+- timestamped capture names;
+- remembered validation directories;
+- truthful GUI smoke-process exit-code checking;
+- automated Unicode and >260-character filesystem acceptance;
+- full Windows regression suite green.
 
-1. Rosie must build/test/run the exact Phase-6C overlay successfully.
-2. Commit/push the RC candidate.
-3. Linux CI, Release Hardening CI, and all six SDK Portability matrix jobs must be green.
-4. Reconfirm the exact exported-symbol manifest and 64-bit structure-layout fixture are unchanged from
-   the reviewed candidate.
-5. Only then change documentation/status from **ABI v1 freeze candidate** to **ABI v1 FROZEN**.
+#### Phase 9B.4 — DPI + Windows Desktop Polish — NEXT
 
-The freeze applies to the documented C ABI/semantics only. Private C++, Qt, host audio/SRC, reference
-models and future frontend implementations remain replaceable. Physical FV-1 silicon closure also
-remains a separate deferred fidelity gate.
+No emulator-model work belongs here.
 
-## Future dedicated FV-1 IDE — SEPARATE APPLICATION
+Targets:
 
-A future IDE should primarily consume the stable FV-1 SDK. Additional debugger/analysis/validation
-capabilities should be exposed through deliberate additive SDK modules rather than coupling the IDE
-to the Linux GUI's private C++ architecture. Source editors, source-mapped breakpoints, project
-management and EEPROM-bank authoring belong there rather than becoming the primary identity of this
-emulator/testbench.
+- 100%, 125%, 150% and 200% Windows display scaling;
+- PerMonitorV2 monitor transitions;
+- mixed-DPI monitor movement;
+- maximize/restore and persisted geometry;
+- dock/splitter restoration across scale changes;
+- dialog/menu/tool-tip layout;
+- splash/About scaling;
+- taskbar and Alt-Tab icon identity;
+- Windows keyboard/menu conventions;
+- visual regression across themes;
+- final native-desktop workflow polish.
 
-## Later platform frontend
+### Phase 9C — Windows Completion / Release — FINAL WINDOWS PHASE
 
-After the Windows milestone and SDK-v1 ratification gate are accepted, the next large platform
-frontend is a native macOS shell using SwiftUI + Metal/MetalKit + CoreAudio/AVAudioEngine. It should
-consume the same platform-neutral `FV1SDK::sdk` C ABI and own its platform UI/audio integration
-independently.
+9C is a release/regression phase, not a feature-creep phase.
 
-DAW/VST/AU/CLAP plugins are **not part of this standalone application project**. If desired later,
-they should be separate consumers of the emulator libraries.
+- all bundled SpinASM programs;
+- Test Generator, WAV Loop and Audio Interface;
+- Scope/Spectrum/Spectrogram/Levels;
+- recording/export;
+- debugger/Delay RAM/validation;
+- repeated Start/Stop and long-running audio torture;
+- endpoint loss/reconnect;
+- Unicode/long-path regression;
+- DPI regression;
+- Release packaging and portable execution;
+- clean-system package validation;
+- final documentation and release artifact checks.
 
-## Phase 7 — Native Windows frontend — CURRENT
+When Phase 9C closes, the standalone desktop line is considered feature-complete:
 
-The Windows work is intentionally consolidated into one milestone rather than split into 7A/7B/7C.
-It consumes only the public FV-1 SDK and owns all Win32/WASAPI integration independently.
+```text
+Linux     — Qt 6 FV-1 Lab           COMPLETE
+macOS     — Native SwiftUI FV-1 Lab COMPLETE
+Windows   — Qt 6 FV-1 Lab           COMPLETE
+```
 
-Delivered in the Phase-7 candidate:
+## Deferred physical FV-1 acceptance
 
-- native Unicode Win32 FV-1 Lab shell;
-- SpinASM/raw-program loading, POT/reset control and offline chip inspection;
-- event-driven full-duplex WASAPI at the virtual FV-1's 32.768 kHz stereo stream format;
-- Windows Audio Engine shared-mode conversion between endpoint format/rate and the virtual chip;
-- realtime output scope and stream/xrun/recovery telemetry;
-- default-device change and endpoint-invalidation recovery;
-- public-SDK-only realtime processing layer with deep snapshot/debug work kept off the audio thread;
-- MSVC shared/static product build, test, install and staging gates.
+Physical-chip validation remains an independent fidelity gate. When suitable
+hardware/capture infrastructure is available, use the existing deterministic
+validation packs and quantify converter/board latency, residual/correlation,
+magnitude/phase response, Delay RAM precision/timing, LFO/CHO behavior, POT
+quantization/hysteresis, clipping/saturation, LOG/EXP edges and crystal-derived
+clock-rate behavior.
 
-Phase 7 closes when the Native Windows Frontend and SDK Portability Windows jobs are green on the
-combined candidate. The next large milestone is the native macOS frontend, not another Windows
-subphase.
+Measured differences become minimal regression vectors and model corrections,
+not per-effect compatibility hacks.
+
+## After desktop completion
+
+The next major work should be **new emulator/testbench capability**, not another
+desktop port.
+
+A future dedicated FV-1 IDE remains a separate SDK consumer. Source editing,
+projects, source-mapped breakpoints and EEPROM-bank authoring belong there
+unless a small feature directly supports FV-1 Lab's emulator/testbench role.

@@ -1,12 +1,43 @@
 # Spin FV-1 Emulator
 
-Linux-first, open-source tools for emulating, measuring and inspecting the Spin Semiconductor FV-1 DSP.
+Open-source tools for emulating, measuring and inspecting the Spin Semiconductor
+FV-1 DSP.
 
-**Current milestone: Phase 6B — cross-language SDK stabilization (ABI candidate, not yet frozen).**
+**Current milestone: Windows Phase 9B.4 — DPI + Desktop Polish.** Linux is the
+feature-complete Qt desktop reference, macOS Phase 8D is complete, and Windows
+Phase 9B.3 (WASAPI + Unicode/long-path/recording/export hardening) is complete.
 
-The product is intentionally a polished virtual FV-1 and DSP lab instrument, not a full source-code IDE. Lightweight development/debug conveniences are welcome when they directly support emulation, while the underlying libraries remain reusable by a future dedicated IDE and other applications.
+The product is intentionally a polished standalone virtual FV-1 and DSP lab
+instrument, not a full source-code IDE. A future dedicated IDE can consume the
+public FV1SDK without turning this application into a source editor.
 
-The project is intentionally layered so the virtual FV-1 is not tied to a GUI toolkit, audio-device framework, or operating system. Linux is the only supported/tested host during the initial implementation. Windows and macOS front ends come later, after the core/runtime APIs are stable.
+The virtual FV-1 remains independent of GUI toolkit, audio-device framework and
+operating system. Linux and Windows share the same Qt 6 Widgets FV-1 Lab
+frontend; macOS uses a native SwiftUI frontend. Platform work must not
+destabilize the FV-1 execution model or public SDK ABI.
+
+## Current desktop status
+
+FV-1 Lab is now a cross-platform standalone FV-1 emulator/testbench.
+
+| Platform | Frontend | Status |
+|---|---|---|
+| Linux | Qt 6 Widgets | Feature-complete desktop reference |
+| macOS | Native SwiftUI | Phase 8D complete |
+| Windows 11 | Same Qt 6 Widgets frontend as Linux | Phase 9B.3 complete; 9B.4 next |
+
+Current roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md)
+
+Platform snapshot: [`docs/PLATFORM-STATUS.md`](docs/PLATFORM-STATUS.md)
+
+## FV-1 Lab on Linux, macOS and Windows
+
+| Linux | macOS | Windows |
+|---|---|---|
+| ![FV-1 Lab on Linux](docs/media/fv1-lab-linux-current.png) | ![FV-1 Lab on macOS](docs/media/fv1-lab-macos-current.png) | ![FV-1 Lab on Windows](docs/media/fv1-lab-windows-current.png) |
+
+Screenshot standards/provenance:
+[`docs/GUI-SCREENSHOTS.md`](docs/GUI-SCREENSHOTS.md)
 
 ## Phase 1 status
 

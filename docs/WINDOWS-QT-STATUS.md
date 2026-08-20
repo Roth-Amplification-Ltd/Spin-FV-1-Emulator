@@ -1,15 +1,26 @@
 # Windows Qt Frontend Status
 
-## Phase 9B — Windows Workflow + Platform Parity
+## Current state — Phase 9B.3 complete
 
-Phase 9A established the Windows product as the same Qt 6 Widgets FV-1 Lab
-frontend used by Linux and proved the MSVC/WASAPI build, 39/39 automated tests,
-Release packaging and standalone portable execution.
+Windows uses the **same Qt 6 Widgets FV-1 Lab frontend as Linux**, built
+natively with MSVC and backed by miniaudio/WASAPI.
 
-Phase 9B keeps that architecture intact and focuses on Windows product workflow,
-desktop integration and regression quality rather than reimplementing features.
+Completed checkpoints:
 
-## Architecture remains unchanged
+- **Phase 9A — Windows Qt Desktop Parity**
+- **Phase 9B.0 — Workflow/platform foundation**
+- **Phase 9B.2 — WASAPI hardware hardening**
+- **Phase 9B.3 — Unicode + Recording/Export Hardening**
+
+Next:
+
+- **Phase 9B.4 — DPI + Windows Desktop Polish**
+
+Final Windows phase:
+
+- **Phase 9C — Windows Completion / Release**
+
+## Architecture
 
 ```text
 Linux / Windows
@@ -17,9 +28,9 @@ Linux / Windows
        v
 same src/gui Qt 6 Widgets frontend
        |
-       +-- program / audio workflow
-       +-- analyzer/testbench
-       +-- debugger / Delay RAM / validation
+       +-- program/audio workflow
+       +-- analyzers/testbench
+       +-- debugger/Delay RAM/validation
        +-- persistent desktop workspace
        |
        v
@@ -32,76 +43,76 @@ shared runtime / analysis / validation / audio
 locked FV-1 engine / native SpinASM compiler
 ```
 
-The legacy `fv1-lab-win32` shell remains an opt-in diagnostic harness only.
+The legacy `fv1-lab-win32` shell remains an opt-in diagnostic/proving harness,
+not the shipping Windows UI.
 
-## Phase 9B workflow additions
+## Phase 9A — complete
 
-- persistent main-window geometry and dock layout;
-- View -> Reset Workspace Layout;
-- persistent source mode, generator selection/frequency and POT0/POT1/POT2;
-- Open Recent Program and Open Recent Audio Loop menus;
-- remembered native file-dialog directories;
-- drag-and-drop `.spn`, `.bin` and `.wav` files;
-- command-line/open-with handling for `.spn`, `.bin` and `.wav`;
-- common keyboard shortcuts for Open, Start, Stop and related workflow actions;
-- Windows-aware audio backend labeling (`WASAPI via miniaudio`);
-- audio-device refresh that preserves the currently selected endpoint when it
-  is still present;
-- Unicode-safe conversion in both directions between `QString` and
-  `std::filesystem::path`;
-- Windows PerMonitorV2 DPI-awareness manifest;
-- Windows long-path-aware manifest;
-- bootstrap-downloaded miniaudio ignored as local dependency material;
-- command-line program-open smoke coverage;
-- stronger portable verification that removes `QTDIR`, `QT_PLUGIN_PATH` and Qt
-  development-kit paths before launching the packaged executable.
+Native MSVC/Qt build, shared Linux/Windows GUI, Windows resources/version
+metadata, Release packaging, `windeployqt`, portable ZIP and automated Windows
+test gate.
+
+## Phase 9B.0 — complete
+
+Persistent workspace/controls, Recents, remembered dialogs, drag/drop,
+command-line/Open-With, shortcuts, PerMonitorV2/long-path manifests and portable
+package isolation.
+
+## Phase 9B.2 — complete
+
+Stable WASAPI endpoint IDs, persistent playback/capture selection, endpoint
+refresh/loss recovery, real capture → FV-1 → playback, 44.1/48 kHz hardware
+testing, 128/256/512/1024 requested buffers, negotiated asymmetric native
+periods and hardware telemetry.
+
+## Phase 9B.3 — complete
+
+Commit `2052794`:
+
+- Unicode-safe `.spn`, `.bin` and `.wav` workflows;
+- extended-length Windows paths beyond traditional `MAX_PATH`;
+- transactional `.partial-*` recording finalization;
+- transactional validation WAV/report output;
+- timestamped capture suggestions;
+- persistent validation directories;
+- truthful GUI smoke-process exit checking;
+- Unicode and >260-character GUI filesystem acceptance;
+- recorder/validation Unicode regression coverage.
+
+The completed Phase 9B.3 gate includes the normal **39/39 Windows suite** plus
+the dedicated filesystem acceptance test.
 
 ## Manual Start invariant
 
-Phase 9B does not change the audio-start contract.
+Opening a program by dialog, Recent, drag/drop, command line or Windows Open
+With loads/inspects it but does **not** start realtime audio. The user presses
+Start.
 
-Opening a program by dialog, recent-file menu, drag-and-drop, command line or
-Windows Open With loads/inspects the program but does **not** start realtime
-audio. The user must press Start.
-
-## Windows build/test
+## Build/test
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
-
 .\tools\test-windows.ps1 -QtDir "C:\Qt\6.11.1\msvc2022_64"
 ```
 
-Complete Phase 9B automated gate:
+WASAPI hardware acceptance:
 
 ```powershell
-.\tools\phase9b-windows-gate.ps1 -QtDir "C:\Qt\6.11.1\msvc2022_64"
+.\tools\windows-audio-acceptance.ps1
 ```
 
-## Portable verification
+Filesystem acceptance:
 
-`tools/package-windows.ps1` now builds the Release package and invokes
-`tools/check-windows-portable.ps1`.
+```powershell
+.\tools\windows-filesystem-acceptance.ps1 -QtDir "C:\Qt\6.11.1\msvc2022_64"
+```
 
-The verifier extracts the ZIP to a new temporary directory, removes Qt
-development environment variables, reduces PATH to Windows system directories,
-changes the working directory away from the repository, then verifies:
+## Next — Phase 9B.4
 
-- `FV1Lab.exe`;
-- `Qt6Core.dll`, `Qt6Gui.dll`, `Qt6Widgets.dll`;
-- `platforms\qwindows.dll`;
-- installed splash and icon assets;
-- application version metadata;
-- normal Qt smoke;
-- splash smoke;
-- About smoke;
-- command-line `.spn` loading.
+Phase 9B.4 is desktop polish, not emulator development: DPI scaling,
+PerMonitorV2 transitions, persisted geometry/docks under scale changes,
+menus/dialogs/tooltips, splash/About, taskbar/Alt-Tab identity, keyboard
+conventions and theme visual regression.
 
-This catches packages that appear portable only because a Qt SDK happens to be
-installed on the development machine.
-
-## Remaining acceptance
-
-Automated success is not the same as live audio acceptance. Complete
-`docs/WINDOWS-PHASE9B-CHECKLIST.md` before committing the phase-complete
-checkpoint.
+After 9B.4, Phase 9C performs final Windows regression, torture testing,
+packaging and release closure.
