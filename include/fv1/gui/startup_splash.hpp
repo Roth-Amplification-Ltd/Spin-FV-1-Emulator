@@ -31,6 +31,8 @@ protected:
     void paintEvent(QPaintEvent* event) override;
 
 private:
+    void fit_to_available_screen();
+
     int progress_{5};
     QString status_;
     QString accent_name_;

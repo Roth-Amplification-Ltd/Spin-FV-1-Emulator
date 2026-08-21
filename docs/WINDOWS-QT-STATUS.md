@@ -1,6 +1,6 @@
 # Windows Qt Frontend Status
 
-## Current state — Phase 9B.3 complete
+## Current state — Phase 9B.4 in progress
 
 Windows uses the **same Qt 6 Widgets FV-1 Lab frontend as Linux**, built
 natively with MSVC and backed by miniaudio/WASAPI.
@@ -12,7 +12,7 @@ Completed checkpoints:
 - **Phase 9B.2 — WASAPI hardware hardening**
 - **Phase 9B.3 — Unicode + Recording/Export Hardening**
 
-Next:
+Current:
 
 - **Phase 9B.4 — DPI + Windows Desktop Polish**
 
@@ -107,12 +107,29 @@ Filesystem acceptance:
 .\tools\windows-filesystem-acceptance.ps1 -QtDir "C:\Qt\6.11.1\msvc2022_64"
 ```
 
-## Next — Phase 9B.4
+## Phase 9B.4 — in progress
 
-Phase 9B.4 is desktop polish, not emulator development: DPI scaling,
-PerMonitorV2 transitions, persisted geometry/docks under scale changes,
-menus/dialogs/tooltips, splash/About, taskbar/Alt-Tab identity, keyboard
-conventions and theme visual regression.
+Phase 9B.4 is desktop polish, not emulator development.
+
+The current checkpoint adds:
+
+- fractional Qt scale-factor policy for 100/125/150/200%;
+- adaptive initial/restored main-window geometry;
+- off-screen workspace recovery;
+- display/DPI transition handling;
+- adaptive splash/About sizing;
+- adaptive major settings/editor dialogs;
+- desktop diagnostics copied from the Help menu;
+- four-scale CTest smoke coverage;
+- dedicated Windows DPI acceptance tooling.
+
+Run:
+
+```powershell
+.\tools\windows-dpi-acceptance.ps1 -QtDir "C:\Qt\6.11.1\msvc2022_64"
+```
+
+Then complete `WINDOWS-PHASE9B4-CHECKLIST.md` on real Windows desktop hardware.
 
 After 9B.4, Phase 9C performs final Windows regression, torture testing,
 packaging and release closure.

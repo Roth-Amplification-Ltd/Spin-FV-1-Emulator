@@ -779,6 +779,19 @@ if(FV1_BUILD_TESTS)
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=2")
 
+        foreach(_fv1_dpi_scale IN ITEMS 1.0 1.25 1.5 2.0)
+            string(REPLACE "." "-" _fv1_dpi_name "${_fv1_dpi_scale}")
+            add_test(
+                NAME fv1-lab-dpi-${_fv1_dpi_name}-smoke
+                COMMAND fv1-lab --smoke-desktop)
+            set_tests_properties(
+                fv1-lab-dpi-${_fv1_dpi_name}-smoke
+                PROPERTIES
+                    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                    ENVIRONMENT
+                        "QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=${_fv1_dpi_scale}")
+        endforeach()
+
         add_test(NAME fv1-lab-splash-background-smoke
             COMMAND fv1-lab --smoke-splash)
         set_tests_properties(fv1-lab-splash-background-smoke PROPERTIES

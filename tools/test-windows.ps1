@@ -53,7 +53,7 @@ $exe = Find-FV1BuiltExe -BuildDir $BuildDir -Config $Config
 
 Write-Host ""
 Write-Host "=== Direct Qt desktop smoke ==="
-foreach ($arg in @("--smoke", "--smoke-splash", "--smoke-about")) {
+foreach ($arg in @("--smoke", "--smoke-desktop", "--smoke-splash", "--smoke-about")) {
     Write-Host "  $arg"
     & $exe $arg
     if ($LASTEXITCODE -ne 0) {

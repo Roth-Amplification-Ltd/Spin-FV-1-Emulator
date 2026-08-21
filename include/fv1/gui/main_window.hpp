@@ -17,6 +17,7 @@ class QComboBox;
 class QDoubleSpinBox;
 class QDragEnterEvent;
 class QDropEvent;
+class QEvent;
 class QLabel;
 class QMenu;
 class QPlainTextEdit;
@@ -43,6 +44,7 @@ public:
     bool open_external_path(const QString& path);
 
 protected:
+    bool event(QEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dropEvent(QDropEvent* event) override;
@@ -70,6 +72,10 @@ private:
     void rebuild_recent_menus();
     QString dialog_directory(const QString& settings_key, const QString& fallback = {}) const;
     void remember_directory(const QString& settings_key, const QString& selected_path);
+    void apply_initial_window_geometry();
+    void ensure_window_visible();
+    void handle_display_change();
+    QString desktop_diagnostics() const;
     void restore_workspace_state();
     void save_workspace_state();
     void reset_workspace_layout();

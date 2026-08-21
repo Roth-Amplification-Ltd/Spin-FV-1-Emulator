@@ -10,8 +10,11 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QSettings>
+#include <QScreen>
 #include <QStringList>
+#include <QTextStream>
 #include <QTimer>
+#include <QWindow>
 
 #include <algorithm>
 
@@ -20,6 +23,9 @@
 #endif
 
 int main(int argc, char** argv) {
+    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+        Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("Roth Amplification Ltd"));
     QCoreApplication::setOrganizationDomain(QStringLiteral("roth-amplification.com"));
@@ -31,6 +37,7 @@ int main(int argc, char** argv) {
     const bool smoke = args.contains(QStringLiteral("--smoke"));
     const bool splash_smoke = args.contains(QStringLiteral("--smoke-splash"));
     const bool about_smoke = args.contains(QStringLiteral("--smoke-about"));
+    const bool desktop_smoke = args.contains(QStringLiteral("--smoke-desktop"));
     const bool no_splash = args.contains(QStringLiteral("--no-splash"));
     const int smoke_open_index = args.indexOf(QStringLiteral("--smoke-open"));
     QSettings settings;
@@ -42,6 +49,51 @@ int main(int argc, char** argv) {
         fv1::gui::MainWindow window;
         app.processEvents();
         if (!window.findChild<QAction*>(QStringLiteral("aboutFv1LabAction"))) return 4;
+        return 0;
+    }
+    if (desktop_smoke) {
+        fv1::gui::MainWindow window;
+        window.show();
+        app.processEvents();
+
+        QScreen* screen = window.screen();
+        if (!screen) {
+            QTextStream(stderr) << "FV1Lab desktop smoke: no screen available\n";
+            return 7;
+        }
+
+        const QRect available = screen->availableGeometry();
+        const QRect geometry = window.geometry();
+        if (geometry.isEmpty() || !available.intersects(geometry)) {
+            QTextStream(stderr)
+                << "FV1Lab desktop smoke: main window is not visible on its screen\n";
+            return 8;
+        }
+
+        fv1::gui::StartupSplash splash(accent);
+        if (splash.width() <= 0 || splash.height() <= 0) return 9;
+
+        const bool offscreen =
+            QGuiApplication::platformName().compare(
+                QStringLiteral("offscreen"),
+                Qt::CaseInsensitive) == 0;
+        if (!offscreen
+            && (splash.width() > available.width()
+                || splash.height() > available.height())) {
+            QTextStream(stderr)
+                << "FV1Lab desktop smoke: splash exceeds available screen geometry\n";
+            return 10;
+        }
+
+        QTextStream out(stdout);
+        out << "FV1LAB DESKTOP SMOKE PASSED\n"
+            << "platform=" << QGuiApplication::platformName() << '\n'
+            << "screen=" << screen->name() << '\n'
+            << "logical-dpi=" << screen->logicalDotsPerInch() << '\n'
+            << "device-pixel-ratio=" << screen->devicePixelRatio() << '\n'
+            << "available=" << available.width() << 'x' << available.height() << '\n'
+            << "window=" << geometry.width() << 'x' << geometry.height() << '\n'
+            << "splash=" << splash.width() << 'x' << splash.height() << '\n';
         return 0;
     }
     if (smoke_open_index >= 0) {

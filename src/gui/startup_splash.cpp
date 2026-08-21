@@ -21,6 +21,8 @@ namespace fv1::gui {
 namespace {
 
 constexpr auto kSplashBackgroundFile = "FV1LabSplashImagebase.png";
+constexpr qreal kSplashDesignWidth = 960.0;
+constexpr qreal kSplashDesignHeight = 540.0;
 
 QImage load_default_splash_background() {
     const QString file = QString::fromLatin1(kSplashBackgroundFile);
@@ -180,14 +182,51 @@ StartupSplash::StartupSplash(const QString& accent_name, QWidget* parent, Mode m
         setWindowModality(Qt::WindowModal);
         setWindowTitle(QStringLiteral("About FV-1 Lab"));
     }
-    setFixedSize(960, 540);
-    if (parent && mode_ == Mode::About) {
-        const QPoint center = parent->frameGeometry().center();
-        move(center - rect().center());
-    } else if (QScreen* screen = QApplication::primaryScreen()) {
-        const QRect area = screen->availableGeometry();
-        move(area.center() - rect().center());
+    fit_to_available_screen();
+}
+
+void StartupSplash::fit_to_available_screen() {
+    QScreen* screen = nullptr;
+
+    if (parentWidget())
+        screen = parentWidget()->screen();
+
+    if (!screen)
+        screen = QApplication::primaryScreen();
+
+    if (!screen) {
+        setFixedSize(
+            static_cast<int>(kSplashDesignWidth),
+            static_cast<int>(kSplashDesignHeight));
+        return;
     }
+
+    const QRect area = screen->availableGeometry();
+    const qreal width_scale =
+        static_cast<qreal>(area.width()) * 0.92
+        / kSplashDesignWidth;
+    const qreal height_scale =
+        static_cast<qreal>(area.height()) * 0.88
+        / kSplashDesignHeight;
+    const qreal scale = std::clamp(
+        std::min(width_scale, height_scale),
+        0.50,
+        1.0);
+
+    const QSize target(
+        std::max(
+            1,
+            static_cast<int>(
+                std::lround(kSplashDesignWidth * scale))),
+        std::max(
+            1,
+            static_cast<int>(
+                std::lround(kSplashDesignHeight * scale))));
+
+    setFixedSize(target);
+    move(
+        area.center()
+        - QPoint(target.width() / 2, target.height() / 2));
 }
 
 void StartupSplash::set_progress(int percent, const QString& status) {
@@ -219,8 +258,28 @@ void StartupSplash::paintEvent(QPaintEvent* event) {
     p.setRenderHint(QPainter::TextAntialiasing, true);
     p.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
+    const qreal scale = std::min(
+        static_cast<qreal>(width()) / kSplashDesignWidth,
+        static_cast<qreal>(height()) / kSplashDesignHeight);
+    const qreal x_offset =
+        (static_cast<qreal>(width())
+         - kSplashDesignWidth * scale)
+        * 0.5;
+    const qreal y_offset =
+        (static_cast<qreal>(height())
+         - kSplashDesignHeight * scale)
+        * 0.5;
+
+    p.save();
+    p.translate(x_offset, y_offset);
+    p.scale(scale, scale);
+
     const QColor accent = accent_color(accent_name_);
-    const QRectF panel(16.0, 16.0, width() - 32.0, height() - 32.0);
+    const QRectF panel(
+        16.0,
+        16.0,
+        kSplashDesignWidth - 32.0,
+        kSplashDesignHeight - 32.0);
 
     for (int i = 18; i >= 1; --i) {
         QColor shadow(0, 0, 0, std::max(1, 22 - i));
@@ -260,10 +319,10 @@ void StartupSplash::paintEvent(QPaintEvent* event) {
 
     // Subtle brushed/engineering texture remains software-drawn and works on
     // both the fallback gradient and the photographic background layer.
-    for (int y = 28; y < height() - 28; y += 3) {
+    for (int y = 28; y < static_cast<int>(kSplashDesignHeight) - 28; y += 3) {
         const int mod = (y * 37) % 23;
         p.setPen(QColor(255, 255, 255, 3 + mod / 6));
-        p.drawLine(QPointF(24, y), QPointF(width() - 24, y));
+        p.drawLine(QPointF(24, y), QPointF(kSplashDesignWidth - 24, y));
     }
     p.restore();
 
@@ -297,7 +356,7 @@ void StartupSplash::paintEvent(QPaintEvent* event) {
 
     if (mode_ == Mode::Startup) {
         // Progress UI reports actual startup milestones.
-        const QRectF track(66, 414, width() - 132.0, 12);
+        const QRectF track(66, 414, kSplashDesignWidth - 132.0, 12);
         p.setBrush(QColor(3, 7, 9, 210));
         p.setPen(QPen(QColor(75, 85, 92), 1.0));
         p.drawRoundedRect(track, 6, 6);
@@ -318,7 +377,7 @@ void StartupSplash::paintEvent(QPaintEvent* event) {
         pct.setWeight(QFont::Medium);
         p.setFont(pct);
         p.setPen(accent);
-        p.drawText(QRectF(width() - 150, 430, 84, 28), Qt::AlignRight | Qt::AlignVCenter,
+        p.drawText(QRectF(kSplashDesignWidth - 150, 430, 84, 28), Qt::AlignRight | Qt::AlignVCenter,
                    QStringLiteral("%1%").arg(progress_));
 
         draw_centered_text(p, QRectF(250, 462, 460, 22),
@@ -326,7 +385,7 @@ void StartupSplash::paintEvent(QPaintEvent* event) {
                            9.5, QColor(158, 166, 173), QFont::Medium);
         p.setPen(QPen(QColor(90, 100, 108), 0.8));
         p.drawLine(QPointF(55, 508), QPointF(285, 508));
-        p.drawLine(QPointF(675, 508), QPointF(width() - 55, 508));
+        p.drawLine(QPointF(675, 508), QPointF(kSplashDesignWidth - 55, 508));
         draw_centered_text(p, QRectF(285, 486, 390, 34),
                            QStringLiteral("© 2026 Roth Amplification LTD  •  MPL-2.0  •  %1").arg(app_version),
                            8.8, QColor(115, 124, 132), QFont::Normal);
@@ -347,11 +406,13 @@ void StartupSplash::paintEvent(QPaintEvent* event) {
                            8.8, QColor(132, 141, 149), QFont::Normal);
         p.setPen(QPen(QColor(90, 100, 108), 0.8));
         p.drawLine(QPointF(55, 510), QPointF(330, 510));
-        p.drawLine(QPointF(630, 510), QPointF(width() - 55, 510));
+        p.drawLine(QPointF(630, 510), QPointF(kSplashDesignWidth - 55, 510));
         draw_centered_text(p, QRectF(330, 497, 300, 26),
                            QStringLiteral("© 2026 Roth Amplification LTD"),
                            8.8, QColor(110, 119, 127), QFont::Normal);
     }
+
+    p.restore();
 }
 
 } // namespace fv1::gui

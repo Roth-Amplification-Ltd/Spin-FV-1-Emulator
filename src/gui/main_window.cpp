@@ -21,7 +21,9 @@
 #include <QComboBox>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QEvent>
 #include <QCoreApplication>
+#include <QGuiApplication>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDateTime>
@@ -49,6 +51,7 @@
 #include <QPixmap>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScreen>
 #include <QSettings>
 #include <QSlider>
 #include <QSignalBlocker>
@@ -64,6 +67,7 @@
 #include <QToolBar>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QWindow>
 
 #include <algorithm>
 #include <cmath>
@@ -80,6 +84,75 @@ constexpr int kDevicePersistentIdRole = Qt::UserRole + 1;
 bool smoke_open_mode() {
     return qApp
         && qApp->property("fv1SmokeOpen").toBool();
+}
+
+QScreen* screen_for_widget(const QWidget* widget) {
+    if (widget) {
+        if (QWindow* handle = widget->windowHandle()) {
+            if (QScreen* screen = handle->screen())
+                return screen;
+        }
+
+        if (QScreen* screen =
+                QGuiApplication::screenAt(widget->frameGeometry().center()))
+            return screen;
+    }
+
+    return QGuiApplication::primaryScreen();
+}
+
+QSize constrained_size(
+    const QSize& preferred,
+    const QRect& available,
+    double width_fraction,
+    double height_fraction
+) {
+    if (!available.isValid())
+        return preferred;
+
+    const int max_width = std::max(
+        1,
+        static_cast<int>(
+            std::floor(
+                static_cast<double>(available.width())
+                * width_fraction)));
+    const int max_height = std::max(
+        1,
+        static_cast<int>(
+            std::floor(
+                static_cast<double>(available.height())
+                * height_fraction)));
+
+    return QSize(
+        std::min(preferred.width(), max_width),
+        std::min(preferred.height(), max_height));
+}
+
+void fit_dialog_to_screen(
+    QDialog& dialog,
+    QWidget* anchor,
+    const QSize& preferred
+) {
+    QScreen* screen = screen_for_widget(anchor);
+    if (!screen) {
+        dialog.resize(preferred);
+        return;
+    }
+
+    dialog.resize(
+        constrained_size(
+            preferred,
+            screen->availableGeometry(),
+            0.90,
+            0.86));
+}
+
+QString rect_string(const QRect& rect) {
+    return QStringLiteral("%1,%2 %3x%4")
+        .arg(rect.x())
+        .arg(rect.y())
+        .arg(rect.width())
+        .arg(rect.height());
 }
 
 QString device_tooltip(const fv1::AudioDeviceInfo& device) {
@@ -443,7 +516,7 @@ MainWindow::MainWindow(QWidget* parent, std::function<void(int, const QString&)>
       session_(std::make_unique<SessionController>()),
       debugger_(std::make_unique<fv1::Debugger>()) {
     setWindowTitle(QStringLiteral("Spin FV-1 Emulator — FV-1 Lab"));
-    resize(1680, 980);
+    apply_initial_window_geometry();
     setAcceptDrops(true);
     setDockOptions(QMainWindow::AnimatedDocks | QMainWindow::AllowNestedDocks |
                    QMainWindow::AllowTabbedDocks | QMainWindow::GroupedDragging);
@@ -489,6 +562,7 @@ MainWindow::MainWindow(QWidget* parent, std::function<void(int, const QString&)>
 
     default_window_state_ = saveState(1);
     restore_workspace_state();
+    ensure_window_visible();
 
     source_combo_->setCurrentText(
         settings.value(QStringLiteral("session/sourceMode"), QStringLiteral("Test Generator")).toString());
@@ -663,6 +737,22 @@ void MainWindow::build_menus() {
     connect(reset_workspace, &QAction::triggered, this, [this]{ reset_workspace_layout(); });
 
     auto* help = menuBar()->addMenu(QStringLiteral("&Help"));
+    auto* copy_diagnostics =
+        help->addAction(QStringLiteral("Copy Desktop Diagnostics"));
+    connect(
+        copy_diagnostics,
+        &QAction::triggered,
+        this,
+        [this] {
+            const QString diagnostics = desktop_diagnostics();
+            QApplication::clipboard()->setText(diagnostics);
+            log(QStringLiteral("Desktop diagnostics copied to clipboard."));
+            statusBar()->showMessage(
+                QStringLiteral("Desktop diagnostics copied"),
+                2500);
+        });
+
+    help->addSeparator();
     auto* about = help->addAction(QStringLiteral("About FV-1 Lab…"));
     about->setObjectName(QStringLiteral("aboutFv1LabAction"));
     connect(about, &QAction::triggered, this, [this]{ show_about(); });
@@ -1382,7 +1472,7 @@ void MainWindow::refresh_audio_devices() {
 void MainWindow::show_audio_settings() {
     QDialog dialog(this);
     dialog.setWindowTitle(QStringLiteral("Audio Settings"));
-    dialog.setMinimumWidth(560);
+    fit_dialog_to_screen(dialog, this, QSize(640, 520));
 
     auto* outer = new QVBoxLayout(&dialog);
     auto* note = new QLabel(
@@ -1533,7 +1623,7 @@ void MainWindow::show_audio_settings() {
 void MainWindow::show_generator_settings() {
     QDialog dialog(this);
     dialog.setWindowTitle(QStringLiteral("Test Generator Settings"));
-    dialog.setMinimumWidth(480);
+    fit_dialog_to_screen(dialog, this, QSize(520, 430));
     auto* outer = new QVBoxLayout(&dialog);
     auto* note = new QLabel(QStringLiteral(
         "Configure deterministic lab stimuli. The frequency field in the main panel remains the sine/sweep start frequency."), &dialog);
@@ -1600,7 +1690,7 @@ void MainWindow::show_loop_region_settings() {
 
     QDialog dialog(this);
     dialog.setWindowTitle(QStringLiteral("Audio Loop Region"));
-    dialog.setMinimumWidth(480);
+    fit_dialog_to_screen(dialog, this, QSize(520, 430));
     auto* outer = new QVBoxLayout(&dialog);
     auto* file = new QLabel(QFileInfo(audio_file_path_).fileName(), &dialog);
     file->setWordWrap(true);
@@ -1710,7 +1800,7 @@ bool MainWindow::install_program_image(const QByteArray& bytes, const QString& d
 void MainWindow::paste_spinasm() {
     QDialog dialog(this);
     dialog.setWindowTitle(QStringLiteral("Paste SpinASM Program"));
-    dialog.resize(900, 650);
+    fit_dialog_to_screen(dialog, this, QSize(900, 650));
 
     auto* outer = new QVBoxLayout(&dialog);
     auto* intro = new QLabel(QStringLiteral(
@@ -1970,6 +2060,130 @@ void MainWindow::rebuild_recent_menus() {
         false);
 }
 
+void MainWindow::apply_initial_window_geometry() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    if (!screen) {
+        resize(1680, 980);
+        return;
+    }
+
+    const QRect available = screen->availableGeometry();
+    const QSize target = constrained_size(
+        QSize(1680, 980),
+        available,
+        0.96,
+        0.92);
+
+    resize(target);
+    move(
+        available.center()
+        - QPoint(target.width() / 2, target.height() / 2));
+}
+
+void MainWindow::ensure_window_visible() {
+    if (isFullScreen() || isMaximized())
+        return;
+
+    QScreen* screen = screen_for_widget(this);
+    if (!screen)
+        return;
+
+    const QRect available = screen->availableGeometry();
+    if (!available.isValid())
+        return;
+
+    QSize fitted(
+        std::min(width(), available.width()),
+        std::min(height(), available.height()));
+    fitted.setWidth(std::max(1, fitted.width()));
+    fitted.setHeight(std::max(1, fitted.height()));
+
+    if (fitted != size())
+        resize(fitted);
+
+    const QRect current = geometry();
+    const int max_x = std::max(
+        available.left(),
+        available.right() - current.width() + 1);
+    const int max_y = std::max(
+        available.top(),
+        available.bottom() - current.height() + 1);
+
+    const int x = std::clamp(
+        current.x(),
+        available.left(),
+        max_x);
+    const int y = std::clamp(
+        current.y(),
+        available.top(),
+        max_y);
+
+    if (x != current.x() || y != current.y())
+        move(x, y);
+}
+
+void MainWindow::handle_display_change() {
+    ensure_window_visible();
+
+    if (layout())
+        layout()->activate();
+
+    const QString diagnostics = desktop_diagnostics();
+    if (console_)
+        log(
+            QStringLiteral("Display/DPI transition: ")
+            + diagnostics.section(QLatin1Char('\n'), 1, 1));
+
+    update();
+}
+
+QString MainWindow::desktop_diagnostics() const {
+    QString text;
+    QTextStream out(&text);
+
+    out << "FV-1 Lab desktop diagnostics\n";
+    out << "Qt: " << QString::fromLatin1(qVersion()) << '\n';
+    out << "Platform: " << QGuiApplication::platformName() << '\n';
+
+    QScreen* current = screen_for_widget(this);
+    if (current) {
+        out << "Current screen: " << current->name() << '\n';
+        out << "Logical DPI: "
+            << current->logicalDotsPerInch() << '\n';
+        out << "Device pixel ratio: "
+            << current->devicePixelRatio() << '\n';
+        out << "Available logical geometry: "
+            << rect_string(current->availableGeometry()) << '\n';
+    } else {
+        out << "Current screen: unavailable\n";
+    }
+
+    out << "Window logical geometry: "
+        << rect_string(geometry()) << '\n';
+    out << "Window state: "
+        << (isFullScreen()
+                ? QStringLiteral("fullscreen")
+                : isMaximized()
+                    ? QStringLiteral("maximized")
+                    : QStringLiteral("normal"))
+        << '\n';
+
+    const auto screens = QGuiApplication::screens();
+    out << "Screen count: " << screens.size() << '\n';
+    for (qsizetype i = 0; i < screens.size(); ++i) {
+        QScreen* screen = screens.at(i);
+        out << "  [" << i << "] "
+            << screen->name()
+            << " dpi=" << screen->logicalDotsPerInch()
+            << " dpr=" << screen->devicePixelRatio()
+            << " available="
+            << rect_string(screen->availableGeometry())
+            << '\n';
+    }
+
+    return text.trimmed();
+}
+
 void MainWindow::restore_workspace_state() {
     QSettings settings;
     const QByteArray geometry =
@@ -1977,26 +2191,70 @@ void MainWindow::restore_workspace_state() {
     const QByteArray state =
         settings.value(QStringLiteral("ui/mainWindowStateV1")).toByteArray();
 
-    if (!geometry.isEmpty()) restoreGeometry(geometry);
-    if (!state.isEmpty()) restoreState(state, 1);
+    if (!geometry.isEmpty())
+        restoreGeometry(geometry);
+    if (!state.isEmpty())
+        restoreState(state, 1);
+
+    ensure_window_visible();
 }
 
 void MainWindow::save_workspace_state() {
     QSettings settings;
     settings.setValue(QStringLiteral("ui/mainGeometry"), saveGeometry());
     settings.setValue(QStringLiteral("ui/mainWindowStateV1"), saveState(1));
+
+    if (QScreen* screen = screen_for_widget(this)) {
+        settings.setValue(
+            QStringLiteral("ui/mainScreenName"),
+            screen->name());
+        settings.setValue(
+            QStringLiteral("ui/mainLogicalDpi"),
+            screen->logicalDotsPerInch());
+        settings.setValue(
+            QStringLiteral("ui/mainDevicePixelRatio"),
+            screen->devicePixelRatio());
+    }
 }
 
 void MainWindow::reset_workspace_layout() {
     QSettings settings;
     settings.remove(QStringLiteral("ui/mainGeometry"));
     settings.remove(QStringLiteral("ui/mainWindowStateV1"));
+    settings.remove(QStringLiteral("ui/mainScreenName"));
+    settings.remove(QStringLiteral("ui/mainLogicalDpi"));
+    settings.remove(QStringLiteral("ui/mainDevicePixelRatio"));
 
     if (!default_window_state_.isEmpty())
         restoreState(default_window_state_, 1);
 
-    resize(1680, 980);
+    apply_initial_window_geometry();
+    ensure_window_visible();
     statusBar()->showMessage(QStringLiteral("Workspace layout reset"), 3000);
+}
+
+bool MainWindow::event(QEvent* event) {
+    const bool display_change =
+        event
+        && (
+            event->type() == QEvent::ScreenChangeInternal
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+            || event->type() == QEvent::DevicePixelRatioChange
+#endif
+        );
+
+    const bool handled = QMainWindow::event(event);
+
+    if (display_change) {
+        QTimer::singleShot(
+            0,
+            this,
+            [this] {
+                handle_display_change();
+            });
+    }
+
+    return handled;
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
