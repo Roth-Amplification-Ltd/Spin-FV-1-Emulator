@@ -83,19 +83,41 @@ try {
     Write-Host ""
     Write-Host "=== Neutral-environment portable smoke ==="
 
+    function Invoke-PortableGuiSmoke {
+        param(
+            [Parameter(Mandatory=$true)]
+            [string[]]$Arguments
+        )
+
+        $QuotedArguments = foreach ($Argument in $Arguments) {
+            if ($Argument -match '[\s"]') {
+                '"' + ($Argument -replace '"', '\"') + '"'
+            } else {
+                $Argument
+            }
+        }
+
+        $Process = Start-Process `
+            -FilePath $Exe `
+            -ArgumentList ($QuotedArguments -join " ") `
+            -WorkingDirectory ($env:SystemDrive + "\") `
+            -Wait `
+            -PassThru
+
+        if ($Process.ExitCode -ne 0) {
+            throw "Portable FV1Lab.exe $($Arguments -join ' ') failed with exit code $($Process.ExitCode)"
+        }
+
+        Write-Host "    exit: $($Process.ExitCode)"
+    }
+
     foreach ($arg in @("--smoke", "--smoke-splash", "--smoke-about")) {
         Write-Host "  $arg"
-        & $Exe $arg
-        if ($LASTEXITCODE -ne 0) {
-            throw "Portable FV1Lab.exe $arg failed with exit code $LASTEXITCODE"
-        }
+        Invoke-PortableGuiSmoke -Arguments @($arg)
     }
 
     Write-Host "  --smoke-open $ProgramPath"
-    & $Exe --smoke-open $ProgramPath
-    if ($LASTEXITCODE -ne 0) {
-        throw "Portable FV1Lab.exe command-line program-open smoke failed with exit code $LASTEXITCODE"
-    }
+    Invoke-PortableGuiSmoke -Arguments @("--smoke-open", $ProgramPath)
 
     $Version = (Get-Item $Exe).VersionInfo
     if ($Version.ProductName -ne "FV-1 Lab") {

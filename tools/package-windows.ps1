@@ -111,18 +111,38 @@ Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -Compression
 
 Write-Host ""
 Write-Host "=== Verify truly portable package ==="
+$global:LASTEXITCODE = 0
 & (Join-Path $PSScriptRoot "check-windows-portable.ps1") `
     -ZipPath $zip `
     -ProgramPath (Join-Path $Root "examples\simple_passthrough.spn")
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
+if (-not $?) {
+    throw "Portable package verification failed."
 }
 
 $hash = Get-FileHash -Algorithm SHA256 $zip
-Set-Content -Path "$zip.sha256" -Value "$($hash.Hash.ToLower())  $([IO.Path]::GetFileName($zip))"
+$shaPath = "$zip.sha256"
+Set-Content -Path $shaPath -Value "$($hash.Hash.ToLower())  $([IO.Path]::GetFileName($zip))"
+
+$releaseManifestPath = "$zip.manifest.json"
+$releaseManifest = [ordered]@{
+    schema = "fv1lab-windows-release-v1"
+    product = "FV-1 Lab"
+    version = $version
+    commit = $commit
+    qt = $qtVersion
+    architecture = "x86_64"
+    compiler = "MSVC 2022"
+    frontend = "Qt 6 Widgets"
+    audio = "miniaudio / WASAPI"
+    zip = [IO.Path]::GetFileName($zip)
+    sha256 = $hash.Hash.ToLower()
+}
+$releaseManifest | ConvertTo-Json -Depth 4 |
+    Set-Content -Path $releaseManifestPath -Encoding UTF8
 
 Write-Host ""
 Write-Host "WINDOWS PORTABLE PACKAGE COMPLETE"
-Write-Host "Stage: $stage"
-Write-Host "ZIP:   $zip"
-Write-Host "SHA:   $zip.sha256"
+Write-Host "Stage:    $stage"
+Write-Host "ZIP:      $zip"
+Write-Host "SHA:      $shaPath"
+Write-Host "Manifest: $releaseManifestPath"
