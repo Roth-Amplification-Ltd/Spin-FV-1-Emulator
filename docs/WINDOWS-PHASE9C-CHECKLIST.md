@@ -75,3 +75,27 @@ checkpoint after this release candidate passes.
 
 Commit this 9C release-gate checkpoint after the automated gate passes.
 Do final documentation/version/tag/release closure as a separate commit.
+
+
+## Phase 9C.1 RC torture tooling
+
+After the automated Release gate checkpoint is committed, run:
+
+```powershell
+.\tools\windows-phase9c-rc-torture.ps1 -Quick
+.\tools\windows-phase9c-rc-torture.ps1
+```
+
+Then perform clean-machine artifact verification with:
+
+```text
+tools\windows-phase9c-clean-machine.ps1
+```
+
+Detailed procedure:
+
+```text
+docs\WINDOWS-PHASE9C1-RC-ACCEPTANCE.md
+```
+
+Keep final `1.0.0` version promotion separate from the RC torture checkpoint.
