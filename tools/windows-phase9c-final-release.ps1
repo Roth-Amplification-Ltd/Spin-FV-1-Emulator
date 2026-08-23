@@ -132,7 +132,7 @@ if ($OriginMain -and $OriginMain -ne $Head) {
     throw "HEAD $Head does not match origin/main $OriginMain. Push the promotion commit first."
 }
 
-$ExistingTag = (& git.exe -C $Root tag --list $ExpectedTag).Trim()
+$ExistingTag = @(& git.exe -C $Root tag --list $ExpectedTag)
 if ($ExistingTag) {
     throw "Tag $ExpectedTag already exists. Refusing to manufacture a second final release."
 }
