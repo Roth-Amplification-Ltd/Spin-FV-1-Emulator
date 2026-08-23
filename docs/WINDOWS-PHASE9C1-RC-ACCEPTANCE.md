@@ -32,7 +32,7 @@ Default coverage:
 - 1800-second continuous realtime soak;
 - zero output underruns;
 - zero analyzer drops;
-- zero unexpected device stops;
+- `device-lost=no` (normal timed shutdown may increment backend device-stop telemetry);
 - timestamped evidence report under `build-phase9c-windows`.
 
 Optional real capture:
@@ -98,6 +98,6 @@ Commit this checkpoint after:
 2. full torture passes;
 3. clean-machine verifier passes.
 
-Do not promote `1.0.0-rc1` yet.
+This checkpoint was accepted while the product still reported `1.0.0-rc1`.
 
-Final version promotion and release tagging remain a separate final commit.
+Final version promotion and release tagging are handled by Phase 9C.2.

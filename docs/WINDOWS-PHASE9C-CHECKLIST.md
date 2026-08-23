@@ -3,99 +3,76 @@
 Phase 9C is the final Windows regression/release phase. It adds no emulator
 features and does not change FV1SDK ABI.
 
-## Automated release gate
+## Phase 9C.0 — automated release gate — complete
+
+Accepted coverage includes clean Release regression, Unicode/long-path
+filesystem acceptance, DPI acceptance, packaging, SHA-256/manifest generation,
+portable isolation, packaged GUI smoke and all bundled SpinASM programs.
+
+## Phase 9C.1 — RC torture + clean-package acceptance — complete
+
+Accepted evidence:
+
+- every bundled `.spn` through realtime;
+- 100 host/runtime construction/start/stop/destruction cycles;
+- 1800-second continuous realtime soak;
+- zero output underruns;
+- zero analyzer drops;
+- `device-lost=no`;
+- independent portable package verification and human extracted-app smoke.
+
+Normal timed shutdown can increment backend `device stops`; unexpected loss is
+represented by `device-lost=yes` and is the failure condition.
+
+## Phase 9C.2 — final 1.0.0 promotion
+
+Preflight the uncommitted final-version change:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\tools\phase9c-windows-release-gate.ps1 -QtDir "C:\Qt\6.11.1\msvc2022_64"
+.\tools\windows-phase9c-final-release.ps1 `
+  -QtDir "C:\Qt\6.11.1\msvc2022_64" `
+  -PreflightOnly
+```
+
+Review and commit/push the promotion only after the preflight passes.
+
+Then run the final release gate from clean pushed `main`:
+
+```powershell
+.\tools\windows-phase9c-final-release.ps1 `
+  -QtDir "C:\Qt\6.11.1\msvc2022_64"
 ```
 
 Expected:
 
 ```text
-=== PHASE 9C AUTOMATED WINDOWS RELEASE GATE PASSED ===
+=== PHASE 9C.2 WINDOWS 1.0.0 FINAL RELEASE GATE PASSED ===
 ```
 
-Optional real playback hardware: add `-RunHardware`.
-
-Optional capture → FV-1 → playback: add `-RunLiveInput`. Avoid acoustic
-feedback during live-input testing.
-
-## Manual closure
-
-Verify:
-
-- Open Program / Recent / drag-drop / command line / Paste SpinASM all preserve
-  the manual Start invariant.
-- Every bundled `.spn` loads and runs.
-- Test Generator, WAV Loop and Audio Interface.
-- Oscilloscope, Spectrum, Spectrogram and Levels.
-- Raw / Processed / Raw+Processed overlay.
-- DSP bypass, FFT choices, Delay RAM, resource view, offline Inspector.
-- Validation and all report outputs.
-- Processed, Raw and Raw+Processed recording/export.
-- No `.partial-*` debris after successful finalization.
-- At least 30 minutes of representative realtime audio.
-- At least 100 Start/Stop cycles.
-- Endpoint unplug/disable/reconnect recovery.
-- Unicode and >260-character path regression.
-- 100/125/150/200% DPI regression.
-- Mixed-DPI monitor movement where hardware permits.
-- Splash/About/dialog/menu/taskbar/Alt-Tab visual identity.
-
-## Release artifacts
-
-The gate must produce:
+## Final artifact contract
 
 ```text
-dist\windows\FV1Lab-<version>-windows-x64.zip
-dist\windows\FV1Lab-<version>-windows-x64.zip.sha256
-dist\windows\FV1Lab-<version>-windows-x64.zip.manifest.json
+dist\windows\FV1Lab-1.0.0-windows-x64.zip
+dist\windows\FV1Lab-1.0.0-windows-x64.zip.sha256
+dist\windows\FV1Lab-1.0.0-windows-x64.zip.manifest.json
 ```
 
-The manifest records product, version, exact commit, Qt version, compiler,
-architecture, audio backend, ZIP filename and SHA-256.
+The final gate requires clean `main`, pushed commit identity, exact `1.0.0`
+agreement across binaries/BUILD-INFO/manifest, SHA-256 agreement, no build
+debris, packaged GUI smokes, all bundled `.spn` package coverage and local
+clean-machine verification.
 
-## Clean-machine test
+## Final human closure
 
-Copy only the ZIP to a Windows 11 machine without the Qt SDK/repository.
-Extract and launch `bin\FV1Lab.exe`.
+Before tagging, launch the freshly generated extracted package and verify splash
+and About identify 1.0.0, program loading remains STOPPED, Start/Stop works,
+analyzers work, Audio Settings opens, and quit/relaunch is clean.
 
-Verify splash, GUI, program loading, Test Generator, WAV Loop, Audio Settings,
-analyzers, About and clean exit. Test real hardware if available.
-
-## Version policy
-
-The project currently defaults to `1.0.0-rc1`.
-
-Do not silently remove `rc1`. Final version promotion is a separate explicit
-checkpoint after this release candidate passes.
-
-## Commit rule
-
-Commit this 9C release-gate checkpoint after the automated gate passes.
-Do final documentation/version/tag/release closure as a separate commit.
-
-
-## Phase 9C.1 RC torture tooling
-
-After the automated Release gate checkpoint is committed, run:
+Then:
 
 ```powershell
-.\tools\windows-phase9c-rc-torture.ps1 -Quick
-.\tools\windows-phase9c-rc-torture.ps1
+git tag -a v1.0.0 -m "FV-1 Lab 1.0.0"
+git push origin v1.0.0
 ```
 
-Then perform clean-machine artifact verification with:
-
-```text
-tools\windows-phase9c-clean-machine.ps1
-```
-
-Detailed procedure:
-
-```text
-docs\WINDOWS-PHASE9C1-RC-ACCEPTANCE.md
-```
-
-Keep final `1.0.0` version promotion separate from the RC torture checkpoint.
+Release notes: `docs/RELEASE-1.0.0.md`.

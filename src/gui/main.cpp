@@ -19,7 +19,7 @@
 #include <algorithm>
 
 #ifndef FV1_PRODUCT_VERSION_STRING
-#define FV1_PRODUCT_VERSION_STRING "1.0.0-rc1"
+#define FV1_PRODUCT_VERSION_STRING "1.0.0"
 #endif
 
 int main(int argc, char** argv) {

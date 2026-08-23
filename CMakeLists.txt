@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(SpinFV1Emulator VERSION 1.0.0 LANGUAGES C CXX)
 
-set(FV1_RELEASE_CHANNEL "rc1" CACHE STRING "Release channel suffix (for example rc1; empty for final)")
+set(FV1_RELEASE_CHANNEL "" CACHE STRING "Release channel suffix (for example rc1; empty for final)")
 if(FV1_RELEASE_CHANNEL STREQUAL "")
     set(FV1_RELEASE_STRING "${PROJECT_VERSION}")
 else()

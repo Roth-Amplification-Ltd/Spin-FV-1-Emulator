@@ -137,10 +137,19 @@ try {
     if (-not $BuildInfo.Contains("Commit: $Head")) {
         throw "BUILD-INFO.txt does not match current HEAD"
     }
+    if (-not $BuildInfo.Contains("Version: $($Manifest.version)")) {
+        throw "BUILD-INFO.txt version does not match release manifest"
+    }
 
     $Version = (Get-Item $Exe).VersionInfo
     if ($Version.ProductName -ne "FV-1 Lab") {
         throw "Unexpected ProductName: $($Version.ProductName)"
+    }
+    if ([string]$Version.ProductVersion -ne [string]$Manifest.version) {
+        throw "ProductVersion $($Version.ProductVersion) does not match manifest $($Manifest.version)"
+    }
+    if ([string]$Version.FileVersion -ne [string]$Manifest.version) {
+        throw "FileVersion $($Version.FileVersion) does not match manifest $($Manifest.version)"
     }
 
     $env:PATH = @(

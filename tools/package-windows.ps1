@@ -40,13 +40,17 @@ if ($LASTEXITCODE -ne 0) {
 
 $release = Find-FV1BuiltExe -BuildDir $BuildDir -Config "Release"
 
-$version = "1.0.0-rc1"
+$version = ""
 try {
     $versionOut = & (Join-Path $BuildDir "Release\fv1-cli.exe") --version 2>$null
     if ($versionOut -match '([0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9._-]+)?)') {
         $version = $Matches[1]
     }
 } catch {
+    throw "Unable to query fv1-cli release version: $($_.Exception.Message)"
+}
+if ([string]::IsNullOrWhiteSpace($version)) {
+    throw "Unable to determine release version from Release\fv1-cli.exe --version"
 }
 
 $stage = Join-Path $DistDir "FV1Lab-$version"

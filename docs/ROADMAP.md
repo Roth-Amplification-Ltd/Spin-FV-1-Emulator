@@ -1,6 +1,6 @@
 # Spin FV-1 Emulator Roadmap
 
-> **Status snapshot: August 20, 2026**
+> **Status snapshot: August 22, 2026**
 >
 > The FV-1 execution model and public FV1SDK ABI are treated as locked platform
 > boundaries. Current work is finishing the standalone FV-1 Lab desktop
@@ -26,7 +26,7 @@ DAW/VST/AU/CLAP plugins are **not part of this standalone application project**.
 |---|---|---|---|
 | Linux | Qt 6 Widgets | miniaudio + system backend | **Feature-complete reference desktop** |
 | macOS | Native SwiftUI | Core Audio / AVAudioEngine | **Phase 8D complete** |
-| Windows 11 | Same Qt 6 Widgets frontend as Linux | miniaudio → WASAPI | **Phase 9B.3 complete; Phase 9B.4 next** |
+| Windows 11 | Same Qt 6 Widgets frontend as Linux | miniaudio → WASAPI | **Phase 9C final release / 1.0.0** |
 
 Linux and Windows intentionally share the same Qt desktop frontend. macOS is a
 native SwiftUI product consuming the same platform-neutral FV-1 SDK boundary.
@@ -163,7 +163,7 @@ MSVC and backed by miniaudio/WASAPI.
 - portable standalone ZIP;
 - Windows automated regression gate.
 
-### Phase 9B — Windows Workflow + Platform Parity — CURRENT
+### Phase 9B — Windows Workflow + Platform Parity — COMPLETE
 
 #### Phase 9B.0 — Workflow/platform foundation — COMPLETE
 
@@ -202,7 +202,7 @@ Completed at commit `2052794`:
 - automated Unicode and >260-character filesystem acceptance;
 - full Windows regression suite green.
 
-#### Phase 9B.4 — DPI + Windows Desktop Polish — NEXT
+#### Phase 9B.4 — DPI + Windows Desktop Polish — COMPLETE
 
 No emulator-model work belongs here.
 
@@ -223,6 +223,27 @@ Targets:
 ### Phase 9C — Windows Completion / Release — FINAL WINDOWS PHASE
 
 9C is a release/regression phase, not a feature-creep phase.
+
+#### Phase 9C.0 — Automated release gate — COMPLETE
+
+Completed at commit `0b94d4c`: clean Release regression, Unicode/long-path and
+DPI gates, portable packaging, SHA-256/manifest generation, packaged GUI smoke
+and bundled-program artifact verification.
+
+#### Phase 9C.1 — RC torture + clean-package acceptance — COMPLETE
+
+Completed at commit `b4b8776`: all bundled SpinASM programs through realtime,
+100 host/runtime lifecycle cycles, a 1800-second continuous realtime soak with
+zero underruns/analyzer drops and `device-lost=no`, plus independent portable
+package acceptance.
+
+#### Phase 9C.2 — Final 1.0.0 Promotion
+
+The final checkpoint removes the `rc1` release-channel suffix, requires exact
+binary/manifest/version agreement, reruns the complete Release gate from a clean
+pushed `main`, verifies the final portable ZIP in a Qt-neutral environment and
+then creates tag `v1.0.0`.
+
 
 - all bundled SpinASM programs;
 - Test Generator, WAV Loop and Audio Interface;

@@ -3,9 +3,11 @@
 Open-source tools for emulating, measuring and inspecting the Spin Semiconductor
 FV-1 DSP.
 
-**Current milestone: Windows Phase 9B.4 — DPI + Desktop Polish.** Linux is the
-feature-complete Qt desktop reference, macOS Phase 8D is complete, and Windows
-Phase 9B.3 (WASAPI + Unicode/long-path/recording/export hardening) is complete.
+**Current release line: FV-1 Lab 1.0.0.** Linux is the feature-complete Qt
+desktop reference, macOS Phase 8D is complete, and Windows has completed Phase
+9C release hardening through RC torture and clean-package acceptance. The final
+1.0.0 promotion removes the `rc1` suffix without changing the FV-1 execution
+model or public FV1SDK ABI.
 
 The product is intentionally a polished standalone virtual FV-1 and DSP lab
 instrument, not a full source-code IDE. A future dedicated IDE can consume the
@@ -24,7 +26,7 @@ FV-1 Lab is now a cross-platform standalone FV-1 emulator/testbench.
 |---|---|---|
 | Linux | Qt 6 Widgets | Feature-complete desktop reference |
 | macOS | Native SwiftUI | Phase 8D complete |
-| Windows 11 | Same Qt 6 Widgets frontend as Linux | Phase 9B.3 complete; 9B.4 next |
+| Windows 11 | Same Qt 6 Widgets frontend as Linux | Phase 9C final release / 1.0.0 |
 
 Current roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md)
 

@@ -1,6 +1,6 @@
 # Windows Qt Frontend Status
 
-## Current state — Phase 9B.4 in progress
+## Current state — Phase 9C final release / 1.0.0
 
 Windows uses the **same Qt 6 Widgets FV-1 Lab frontend as Linux**, built
 natively with MSVC and backed by miniaudio/WASAPI.
@@ -11,14 +11,13 @@ Completed checkpoints:
 - **Phase 9B.0 — Workflow/platform foundation**
 - **Phase 9B.2 — WASAPI hardware hardening**
 - **Phase 9B.3 — Unicode + Recording/Export Hardening**
-
-Current:
-
 - **Phase 9B.4 — DPI + Windows Desktop Polish**
+- **Phase 9C.0 — automated completion/release gate**
+- **Phase 9C.1 — RC torture + clean-package acceptance**
 
-Final Windows phase:
+Final checkpoint:
 
-- **Phase 9C — Windows Completion / Release**
+- **Phase 9C.2 — final 1.0.0 promotion and tag-ready artifact verification**
 
 ## Architecture
 
@@ -46,90 +45,46 @@ locked FV-1 engine / native SpinASM compiler
 The legacy `fv1-lab-win32` shell remains an opt-in diagnostic/proving harness,
 not the shipping Windows UI.
 
-## Phase 9A — complete
+## Accepted Windows evidence
 
-Native MSVC/Qt build, shared Linux/Windows GUI, Windows resources/version
-metadata, Release packaging, `windeployqt`, portable ZIP and automated Windows
-test gate.
+- native MSVC 2022 / Qt 6 build and expanded regression suite;
+- portable `windeployqt` deployment independent of the Qt SDK;
+- manual-Start invariant across dialog/Recent/drag-drop/command-line workflows;
+- stable WASAPI endpoint IDs and real capture → FV-1 → playback;
+- 44.1/48 kHz and 128/256/512/1024 requested-buffer coverage;
+- Unicode and >260-character `.spn`/`.wav` filesystem paths;
+- transactional recording and validation/report output;
+- 100/125/150/200% DPI smokes and PerMonitorV2 desktop handling;
+- all bundled SpinASM programs through packaged and realtime paths;
+- 100 repeated host/runtime lifecycle cycles;
+- 1800-second continuous realtime soak with zero output underruns,
+  zero analyzer drops and `device-lost=no`;
+- exact portable ZIP SHA-256/manifest/commit verification.
 
-## Phase 9B.0 — complete
+## Final 1.0.0 procedure
 
-Persistent workspace/controls, Recents, remembered dialogs, drag/drop,
-command-line/Open-With, shortcuts, PerMonitorV2/long-path manifests and portable
-package isolation.
-
-## Phase 9B.2 — complete
-
-Stable WASAPI endpoint IDs, persistent playback/capture selection, endpoint
-refresh/loss recovery, real capture → FV-1 → playback, 44.1/48 kHz hardware
-testing, 128/256/512/1024 requested buffers, negotiated asymmetric native
-periods and hardware telemetry.
-
-## Phase 9B.3 — complete
-
-Commit `2052794`:
-
-- Unicode-safe `.spn`, `.bin` and `.wav` workflows;
-- extended-length Windows paths beyond traditional `MAX_PATH`;
-- transactional `.partial-*` recording finalization;
-- transactional validation WAV/report output;
-- timestamped capture suggestions;
-- persistent validation directories;
-- truthful GUI smoke-process exit checking;
-- Unicode and >260-character GUI filesystem acceptance;
-- recorder/validation Unicode regression coverage.
-
-The completed Phase 9B.3 gate includes the normal **39/39 Windows suite** plus
-the dedicated filesystem acceptance test.
-
-## Manual Start invariant
-
-Opening a program by dialog, Recent, drag/drop, command line or Windows Open
-With loads/inspects it but does **not** start realtime audio. The user presses
-Start.
-
-## Build/test
+Preflight the proposed promotion before commit:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\tools\test-windows.ps1 -QtDir "C:\Qt\6.11.1\msvc2022_64"
+.\tools\windows-phase9c-final-release.ps1 `
+  -QtDir "C:\Qt\6.11.1\msvc2022_64" `
+  -PreflightOnly
 ```
 
-WASAPI hardware acceptance:
+After the promotion commit is reviewed, committed and pushed:
 
 ```powershell
-.\tools\windows-audio-acceptance.ps1
+.\tools\windows-phase9c-final-release.ps1 `
+  -QtDir "C:\Qt\6.11.1\msvc2022_64"
 ```
 
-Filesystem acceptance:
+The successful final artifacts are:
 
-```powershell
-.\tools\windows-filesystem-acceptance.ps1 -QtDir "C:\Qt\6.11.1\msvc2022_64"
+```text
+dist\windows\FV1Lab-1.0.0-windows-x64.zip
+dist\windows\FV1Lab-1.0.0-windows-x64.zip.sha256
+dist\windows\FV1Lab-1.0.0-windows-x64.zip.manifest.json
 ```
 
-## Phase 9B.4 — in progress
-
-Phase 9B.4 is desktop polish, not emulator development.
-
-The current checkpoint adds:
-
-- fractional Qt scale-factor policy for 100/125/150/200%;
-- adaptive initial/restored main-window geometry;
-- off-screen workspace recovery;
-- display/DPI transition handling;
-- adaptive splash/About sizing;
-- adaptive major settings/editor dialogs;
-- desktop diagnostics copied from the Help menu;
-- four-scale CTest smoke coverage;
-- dedicated Windows DPI acceptance tooling.
-
-Run:
-
-```powershell
-.\tools\windows-dpi-acceptance.ps1 -QtDir "C:\Qt\6.11.1\msvc2022_64"
-```
-
-Then complete `WINDOWS-PHASE9B4-CHECKLIST.md` on real Windows desktop hardware.
-
-After 9B.4, Phase 9C performs final Windows regression, torture testing,
-packaging and release closure.
+Only after the final gate and human packaged-app check pass should the release
+commit receive annotated tag `v1.0.0`.
