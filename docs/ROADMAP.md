@@ -1,10 +1,11 @@
 # Spin FV-1 Emulator Roadmap
 
-> **Status snapshot: August 22, 2026**
+> **Status snapshot: August 24, 2026**
 >
-> The FV-1 execution model and public FV1SDK ABI are treated as locked platform
-> boundaries. Current work is finishing the standalone FV-1 Lab desktop
-> products, not redesigning the virtual chip.
+> The FV-1 execution model and public FV1SDK ABI are locked platform boundaries.
+> FV-1 Lab 1.0.0 is tagged at `v1.0.0`; Linux, macOS and Windows standalone
+> desktop products are complete. Post-1.0 work is maintenance, validation and
+> new testbench capability that preserves those contracts.
 
 ## Product definition
 
@@ -24,9 +25,9 @@ DAW/VST/AU/CLAP plugins are **not part of this standalone application project**.
 
 | Platform | Frontend | Audio | Status |
 |---|---|---|---|
-| Linux | Qt 6 Widgets | miniaudio + system backend | **Feature-complete reference desktop** |
-| macOS | Native SwiftUI | Core Audio / AVAudioEngine | **Phase 8D complete** |
-| Windows 11 | Same Qt 6 Widgets frontend as Linux | miniaudio → WASAPI | **Phase 9C final release / 1.0.0** |
+| Linux | Qt 6 Widgets | miniaudio + system backend | **1.0 desktop complete; reference** |
+| macOS | Native SwiftUI | Core Audio / AVAudioEngine | **1.0 desktop complete; Phase 8D** |
+| Windows 11 | Same Qt 6 Widgets frontend as Linux | miniaudio → WASAPI | **1.0.0 released; Phase 9C complete** |
 
 Linux and Windows intentionally share the same Qt desktop frontend. macOS is a
 native SwiftUI product consuming the same platform-neutral FV-1 SDK boundary.
@@ -148,7 +149,7 @@ Completed at commit `c85e670`:
 The macOS frontend remains native SwiftUI and does not alter the locked FV-1
 execution model or FV1SDK ABI.
 
-## Phase 9 — Windows Qt FV-1 Lab
+## Phase 9 — Windows Qt FV-1 Lab — COMPLETE
 
 Windows uses the **same Qt 6 Widgets FV-1 Lab frontend as Linux**, built with
 MSVC and backed by miniaudio/WASAPI.
@@ -220,7 +221,7 @@ Targets:
 - visual regression across themes;
 - final native-desktop workflow polish.
 
-### Phase 9C — Windows Completion / Release — FINAL WINDOWS PHASE
+### Phase 9C — Windows Completion / Release — COMPLETE
 
 9C is a release/regression phase, not a feature-creep phase.
 
@@ -237,12 +238,13 @@ Completed at commit `b4b8776`: all bundled SpinASM programs through realtime,
 zero underruns/analyzer drops and `device-lost=no`, plus independent portable
 package acceptance.
 
-#### Phase 9C.2 — Final 1.0.0 Promotion
+#### Phase 9C.2 — Final 1.0.0 Promotion — COMPLETE
 
-The final checkpoint removes the `rc1` release-channel suffix, requires exact
-binary/manifest/version agreement, reruns the complete Release gate from a clean
-pushed `main`, verifies the final portable ZIP in a Qt-neutral environment and
-then creates tag `v1.0.0`.
+Completed at release commit `6bcab5966d71520a7321178f116352b3ad347fef`.
+The final gate removed the `rc1` suffix, required exact binary/manifest/version
+agreement, reran the complete Release gate from clean pushed `main`, verified
+the portable ZIP in a Qt-neutral clean-machine environment and then created and
+pushed annotated tag `v1.0.0`.
 
 
 - all bundled SpinASM programs;
@@ -278,10 +280,13 @@ clock-rate behavior.
 Measured differences become minimal regression vectors and model corrections,
 not per-effect compatibility hacks.
 
-## After desktop completion
+## Post-1.0 direction
 
-The next major work should be **new emulator/testbench capability**, not another
-desktop port.
+Desktop porting is closed. The next work is governed by
+[`POST-1.0-ROADMAP.md`](POST-1.0-ROADMAP.md): maintenance and OS/toolchain
+compatibility, physical-silicon validation when hardware is available, and new
+emulator/testbench capability that preserves the 1.0 execution-model and ABI
+contracts.
 
 A future dedicated FV-1 IDE remains a separate SDK consumer. Source editing,
 projects, source-mapped breakpoints and EEPROM-bank authoring belong there

@@ -3,6 +3,13 @@
 This page keeps README/platform screenshots tied to **actual running
 applications**, not generated mockups.
 
+## FV-1 Lab 1.0 documentation baseline
+
+The canonical Linux, macOS and Windows captures below are the documentation
+baseline for the completed `v1.0.0` desktop line. They are real running-app
+captures and remain the README comparison set until a later release replaces
+them intentionally.
+
 ## Canonical files
 
 ```text

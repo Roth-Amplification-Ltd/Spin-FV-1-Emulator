@@ -3,11 +3,10 @@
 Open-source tools for emulating, measuring and inspecting the Spin Semiconductor
 FV-1 DSP.
 
-**Current release line: FV-1 Lab 1.0.0.** Linux is the feature-complete Qt
-desktop reference, macOS Phase 8D is complete, and Windows has completed Phase
-9C release hardening through RC torture and clean-package acceptance. The final
-1.0.0 promotion removes the `rc1` suffix without changing the FV-1 execution
-model or public FV1SDK ABI.
+**Current release: FV-1 Lab 1.0.0 (`v1.0.0`).** The standalone desktop line
+is complete on Linux, macOS and Windows. The immutable release tag points to
+commit `6bcab5966d71520a7321178f116352b3ad347fef`. The release closes desktop
+porting without changing the locked FV-1 execution model or public FV1SDK ABI.
 
 The product is intentionally a polished standalone virtual FV-1 and DSP lab
 instrument, not a full source-code IDE. A future dedicated IDE can consume the
@@ -24,13 +23,17 @@ FV-1 Lab is now a cross-platform standalone FV-1 emulator/testbench.
 
 | Platform | Frontend | Status |
 |---|---|---|
-| Linux | Qt 6 Widgets | Feature-complete desktop reference |
-| macOS | Native SwiftUI | Phase 8D complete |
-| Windows 11 | Same Qt 6 Widgets frontend as Linux | Phase 9C final release / 1.0.0 |
+| Linux | Qt 6 Widgets | **1.0 desktop line complete; reference implementation** |
+| macOS | Native SwiftUI | **1.0 desktop line complete; Phase 8D** |
+| Windows 11 | Same Qt 6 Widgets frontend as Linux | **1.0.0 released; Phase 9C complete** |
 
 Current roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md)
 
 Platform snapshot: [`docs/PLATFORM-STATUS.md`](docs/PLATFORM-STATUS.md)
+
+1.0 release record: [`docs/RELEASE-STATUS-1.0.0.md`](docs/RELEASE-STATUS-1.0.0.md)
+
+Post-1.0 roadmap: [`docs/POST-1.0-ROADMAP.md`](docs/POST-1.0-ROADMAP.md)
 
 ## FV-1 Lab on Linux, macOS and Windows
 
@@ -94,7 +97,7 @@ Implemented in the current Linux bring-up:
 - automated 48 kHz host -> 32.768 kHz virtual FV-1 clock-domain regression
 - fractional virtual-clock preservation for crystal-derived rates such as 46.6084 kHz
 
-The audio-device backend is Linux-first. Generator and file-loop playback, production SpeexDSP clock bridging, analyzer telemetry, and real miniaudio playback have been accepted on Cortana. External capture/duplex-interface validation remains explicitly deferred until suitable hardware is available. Windows and native macOS application work remains intentionally deferred until the Linux runtime and GUI APIs are stable.
+The audio-device backend began Linux-first. Generator/file-loop playback, production SpeexDSP clock bridging, analyzer telemetry and real miniaudio playback were accepted there before the native Apple and Windows products were built. The 1.0 desktop line now carries the same virtual-chip/runtime contracts through Linux, native macOS and Windows frontends; physical FV-1 silicon validation remains the separate deferred fidelity gate.
 
 ## Easy Linux build, launch and packages
 

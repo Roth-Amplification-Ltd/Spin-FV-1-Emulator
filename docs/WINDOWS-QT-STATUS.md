@@ -1,9 +1,18 @@
 # Windows Qt Frontend Status
 
-## Current state — Phase 9C final release / 1.0.0
+## Current state — `v1.0.0` RELEASED / PHASE 9C COMPLETE
 
 Windows uses the **same Qt 6 Widgets FV-1 Lab frontend as Linux**, built
 natively with MSVC and backed by miniaudio/WASAPI.
+
+Release identity:
+
+```text
+Tag:     v1.0.0
+Commit:  6bcab5966d71520a7321178f116352b3ad347fef
+Version: 1.0.0
+Qt:      6.11.1
+```
 
 Completed checkpoints:
 
@@ -14,10 +23,7 @@ Completed checkpoints:
 - **Phase 9B.4 — DPI + Windows Desktop Polish**
 - **Phase 9C.0 — automated completion/release gate**
 - **Phase 9C.1 — RC torture + clean-package acceptance**
-
-Final checkpoint:
-
-- **Phase 9C.2 — final 1.0.0 promotion and tag-ready artifact verification**
+- **Phase 9C.2 — final 1.0.0 promotion and artifact verification**
 
 ## Architecture
 
@@ -59,32 +65,24 @@ not the shipping Windows UI.
 - 100 repeated host/runtime lifecycle cycles;
 - 1800-second continuous realtime soak with zero output underruns,
   zero analyzer drops and `device-lost=no`;
-- exact portable ZIP SHA-256/manifest/commit verification.
+- exact portable ZIP SHA-256/manifest/commit verification;
+- independent clean-machine package verification;
+- final human extracted-package launch/visual acceptance.
 
-## Final 1.0.0 procedure
-
-Preflight the proposed promotion before commit:
-
-```powershell
-.\tools\windows-phase9c-final-release.ps1 `
-  -QtDir "C:\Qt\6.11.1\msvc2022_64" `
-  -PreflightOnly
-```
-
-After the promotion commit is reviewed, committed and pushed:
-
-```powershell
-.\tools\windows-phase9c-final-release.ps1 `
-  -QtDir "C:\Qt\6.11.1\msvc2022_64"
-```
-
-The successful final artifacts are:
+## Final artifact
 
 ```text
 dist\windows\FV1Lab-1.0.0-windows-x64.zip
-dist\windows\FV1Lab-1.0.0-windows-x64.zip.sha256
-dist\windows\FV1Lab-1.0.0-windows-x64.zip.manifest.json
+SHA-256: 26a8f2be228afdd46195e1d5f10df5870ca7eab9523d6d68c647b64583d24f26
 ```
 
-Only after the final gate and human packaged-app check pass should the release
-commit receive annotated tag `v1.0.0`.
+The `.sha256` and `.manifest.json` sidecars are part of the release evidence.
+The manifest records the exact release commit above.
+
+## Maintenance state
+
+Windows desktop feature development is closed for the 1.0 line. Future 1.0.x
+work is bug-fix, compatibility, packaging and documentation maintenance unless
+a separately approved backward-compatible feature belongs to the shared
+emulator/testbench product. No maintenance patch may silently change FV-1
+execution semantics or the FV1SDK ABI v1 contract.

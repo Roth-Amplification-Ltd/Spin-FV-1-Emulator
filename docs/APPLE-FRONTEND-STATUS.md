@@ -1,5 +1,13 @@
 # Native Apple Frontend Status
 
+## 1.0 release-line status
+
+The completed native macOS frontend is part of the `v1.0.0` cross-platform
+source release at commit `6bcab5966d71520a7321178f116352b3ad347fef`. Phase
+8D remains the accepted macOS completion checkpoint. DMG signing/notarization
+and GitHub binary publication are release operations; they do not reopen Phase
+8 feature development or alter the locked FV-1/FV1SDK contracts.
+
 ## macOS Phase 8D — COMPLETE
 
 The native FV-1 Lab macOS frontend completed all three approved Apple desktop
