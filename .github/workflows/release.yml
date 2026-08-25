@@ -1,0 +1,332 @@
+name: Build and Publish Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build (for example v1.0.0)"
+        required: true
+        default: "v1.0.0"
+        type: string
+      publish:
+        description: "Create/update the GitHub Release after all platform packages pass"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  QT_VERSION: "6.11.1"
+
+jobs:
+  resolve:
+    name: Resolve immutable release tag
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      sha: ${{ steps.meta.outputs.sha }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      publish: ${{ steps.meta.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Resolve and validate tag
+        id: meta
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_PUBLISH: ${{ inputs.publish }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            TAG="${INPUT_TAG}"
+            PUBLISH="${INPUT_PUBLISH}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+            PUBLISH="true"
+          fi
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "error: invalid release tag: ${TAG}" >&2
+            exit 1
+          fi
+          git fetch --force --tags origin
+          SHA="$(git rev-list -n 1 "${TAG}")"
+          [[ -n "${SHA}" ]] || { echo "error: tag does not exist: ${TAG}" >&2; exit 1; }
+          VERSION="${TAG#v}"
+          [[ "${VERSION}" == *-* ]] && PRERELEASE=true || PRERELEASE=false
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "sha=${SHA}" >> "${GITHUB_OUTPUT}"
+          echo "prerelease=${PRERELEASE}" >> "${GITHUB_OUTPUT}"
+          echo "publish=${PUBLISH}" >> "${GITHUB_OUTPUT}"
+          printf 'Release tag: %s\nVersion: %s\nCommit: %s\n' "$TAG" "$VERSION" "$SHA"
+
+  windows:
+    name: Windows x64 package
+    needs: resolve
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          fetch-depth: 0
+      - name: Verify exact tagged commit
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          $expected = "${{ needs.resolve.outputs.sha }}"
+          if ($actual -ne $expected) { throw "checkout mismatch: $actual != $expected" }
+      - name: Install Qt
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check --no-input aqtinstall
+          aqt install-qt windows desktop $env:QT_VERSION win64_msvc2022_64 -O C:\Qt
+          $qtDir = "C:\Qt\$env:QT_VERSION\msvc2022_64"
+          if (-not (Test-Path (Join-Path $qtDir "bin\windeployqt.exe"))) { throw "Qt deployment kit missing: $qtDir" }
+          "FV1_QT_DIR=$qtDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Bootstrap Windows dependencies
+        shell: pwsh
+        run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:VCPKG_INSTALLATION_ROOT)) {
+              $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+              & .\tools\bootstrap-windows.ps1 -QtDir $env:FV1_QT_DIR -VcpkgRoot $vcpkgRoot
+          } else {
+              & .\tools\bootstrap-windows.ps1 -QtDir $env:FV1_QT_DIR
+              $vcpkgRoot = Join-Path $env:LOCALAPPDATA "FV1Lab\vcpkg"
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "FV1_VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Build, deploy and verify portable Windows package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$PWD\release-out\windows" | Out-Null
+          & .\tools\package-windows.ps1 `
+              -QtDir $env:FV1_QT_DIR `
+              -VcpkgRoot $env:FV1_VCPKG_ROOT `
+              -BuildDir "$PWD\build-release-windows" `
+              -DistDir "$PWD\release-out\windows"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify Windows provenance
+        shell: pwsh
+        run: |
+          $version = "${{ needs.resolve.outputs.version }}"
+          $expectedCommit = "${{ needs.resolve.outputs.sha }}"
+          $zip = Join-Path $PWD "release-out\windows\FV1Lab-$version-windows-x64.zip"
+          $manifestPath = "$zip.manifest.json"
+          foreach ($path in @($zip, "$zip.sha256", $manifestPath)) { if (-not (Test-Path $path)) { throw "release asset missing: $path" } }
+          $manifest = Get-Content -Raw $manifestPath | ConvertFrom-Json
+          if ($manifest.version -ne $version) { throw "Windows manifest version mismatch" }
+          if ($manifest.commit -ne $expectedCommit) { throw "Windows manifest commit mismatch" }
+          $actualHash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+          if ($manifest.sha256 -ne $actualHash) { throw "Windows manifest SHA-256 mismatch" }
+          Write-Host "WINDOWS RELEASE PROVENANCE VERIFIED"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-x64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            release-out/windows/FV1Lab-*-windows-x64.zip
+            release-out/windows/FV1Lab-*-windows-x64.zip.sha256
+            release-out/windows/FV1Lab-*-windows-x64.zip.manifest.json
+
+  linux:
+    name: Linux x86_64 package
+    needs: resolve
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          fetch-depth: 0
+      - name: Verify exact tagged commit
+        shell: bash
+        run: '[[ "$(git rev-parse HEAD)" == "${{ needs.resolve.outputs.sha }}" ]]'
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build python3 pkg-config libspeexdsp-dev libminiaudio-dev qt6-base-dev qt6-base-dev-tools
+      - name: Configure, build and test Linux release
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          set -Eeuo pipefail
+          cmake -S . -B build-release-linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DFV1_BUILD_GUI=ON -DFV1_ENABLE_LIVE_AUDIO=ON -DFV1_BUILD_TESTS=ON -DFV1_SDK_BUILD_SHARED=ON
+          cmake --build build-release-linux --parallel 2
+          ctest --test-dir build-release-linux --output-on-failure
+      - name: Package Linux release tree
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          RELEASE_SHA: ${{ needs.resolve.outputs.sha }}
+        run: |
+          set -Eeuo pipefail
+          OUT="$PWD/release-out/linux"
+          STAGE="$PWD/release-stage/FV1Lab-${VERSION}"
+          mkdir -p "$OUT" "$STAGE"
+          cmake --install build-release-linux --prefix "$STAGE"
+          cp LICENSE "$STAGE/LICENSE.txt"
+          cp README.md "$STAGE/README.md"
+          cat > "$STAGE/BUILD-INFO.txt" <<EOF
+          FV-1 Lab Linux package
+          Version: ${VERSION}
+          Commit: ${RELEASE_SHA}
+          Architecture: x86_64
+          Distribution baseline: Ubuntu 24.04
+          Frontend: Qt 6 Widgets
+          Audio: miniaudio / system backend
+          EOF
+          TAR_NAME="FV1Lab-${VERSION}-linux-x86_64-ubuntu24.04.tar.gz"
+          tar -C "$(dirname "$STAGE")" -czf "$OUT/$TAR_NAME" "$(basename "$STAGE")"
+          (cd "$OUT" && sha256sum "$TAR_NAME" > "$TAR_NAME.sha256")
+          python3 - <<'PY2'
+          import hashlib, json, os, pathlib
+          out = pathlib.Path('release-out/linux')
+          version = os.environ['VERSION']; commit = os.environ['RELEASE_SHA']
+          tar = out / f'FV1Lab-{version}-linux-x86_64-ubuntu24.04.tar.gz'
+          sha = hashlib.sha256(tar.read_bytes()).hexdigest()
+          manifest = {'schema':'fv1lab-linux-release-v1','product':'FV-1 Lab','version':version,'commit':commit,'architecture':'x86_64','distribution':'Ubuntu 24.04 compatible','frontend':'Qt 6 Widgets','audio':'miniaudio / system backend','archive':tar.name,'sha256':sha}
+          (out / f'{tar.name}.manifest.json').write_text(json.dumps(manifest, indent=2)+'\n', encoding='utf-8')
+          PY2
+          echo "LINUX RELEASE PACKAGE COMPLETE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-x86_64
+          if-no-files-found: error
+          retention-days: 14
+          path: release-out/linux/*
+
+  macos:
+    name: macOS package
+    needs: resolve
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          fetch-depth: 0
+      - name: Verify exact tagged commit
+        shell: bash
+        run: |
+          [[ "$(git rev-parse HEAD)" == "${{ needs.resolve.outputs.sha }}" ]]
+          xcodebuild -version
+      - name: Package ad-hoc signed macOS DMG
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash tools/package-macos.sh adhoc
+          bash tools/verify-macos-bundle.sh "dist/macos/volume/FV-1 Lab.app"
+      - name: Verify macOS provenance
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          RELEASE_SHA: ${{ needs.resolve.outputs.sha }}
+        run: |
+          set -Eeuo pipefail
+          DMG="dist/macos/FV1-Lab-${VERSION}-macOS.dmg"
+          [[ -f "$DMG" ]]
+          ACTUAL_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "dist/macos/volume/FV-1 Lab.app/Contents/Info.plist")"
+          [[ "$ACTUAL_VERSION" == "$VERSION" ]]
+          (cd dist/macos && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
+          SHA256="$(shasum -a 256 "$DMG" | awk '{print $1}')"
+          cat > "$DMG.manifest.json" <<EOF
+          {"schema":"fv1lab-macos-release-v1","product":"FV-1 Lab","version":"${VERSION}","commit":"${RELEASE_SHA}","runner_architecture":"$(uname -m)","frontend":"native SwiftUI","signing":"ad-hoc","dmg":"$(basename "$DMG")","sha256":"${SHA256}"}
+          EOF
+          echo "MACOS RELEASE PROVENANCE VERIFIED"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            dist/macos/FV1-Lab-*-macOS.dmg
+            dist/macos/FV1-Lab-*-macOS.dmg.sha256
+            dist/macos/FV1-Lab-*-macOS.dmg.manifest.json
+
+  publish:
+    name: Publish GitHub Release
+    needs: [resolve, windows, linux, macos]
+    if: needs.resolve.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify downloaded release set
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+          test -f "release-assets/FV1Lab-${VERSION}-windows-x64.zip"
+          test -f "release-assets/FV1Lab-${VERSION}-windows-x64.zip.sha256"
+          test -f "release-assets/FV1Lab-${VERSION}-windows-x64.zip.manifest.json"
+          test -f "release-assets/FV1Lab-${VERSION}-linux-x86_64-ubuntu24.04.tar.gz"
+          test -f "release-assets/FV1Lab-${VERSION}-linux-x86_64-ubuntu24.04.tar.gz.sha256"
+          test -f "release-assets/FV1Lab-${VERSION}-linux-x86_64-ubuntu24.04.tar.gz.manifest.json"
+          test -f "release-assets/FV1-Lab-${VERSION}-macOS.dmg"
+          test -f "release-assets/FV1-Lab-${VERSION}-macOS.dmg.sha256"
+          test -f "release-assets/FV1-Lab-${VERSION}-macOS.dmg.manifest.json"
+          (cd release-assets && sha256sum "FV1Lab-${VERSION}-windows-x64.zip" "FV1Lab-${VERSION}-linux-x86_64-ubuntu24.04.tar.gz" "FV1-Lab-${VERSION}-macOS.dmg" > SHA256SUMS.txt)
+      - name: Prepare release notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+          NOTES=release-notes.md
+          if [[ -f "docs/RELEASE-${VERSION}.md" ]]; then
+            cp "docs/RELEASE-${VERSION}.md" "$NOTES"
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" -f tag_name="$TAG" --jq '.body' > "$NOTES"
+          fi
+          cat >> "$NOTES" <<'EOF'
+
+          ## Automated GitHub build artifacts
+
+          These binaries were built by GitHub Actions from the exact tagged commit.
+          `SHA256SUMS.txt` and per-platform provenance manifests are attached.
+
+          The macOS DMG produced by this workflow is ad-hoc signed. Developer ID
+          signing/notarization can be added after Apple credentials are configured
+          as encrypted repository secrets.
+          EOF
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          PRERELEASE: ${{ needs.resolve.outputs.prerelease }}
+        run: |
+          set -Eeuo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "FV-1 Lab ${VERSION}" --notes-file release-notes.md
+          elif [[ "$PRERELEASE" == "true" ]]; then
+            gh release create "$TAG" --verify-tag --title "FV-1 Lab ${VERSION}" --notes-file release-notes.md --prerelease
+          else
+            gh release create "$TAG" --verify-tag --title "FV-1 Lab ${VERSION}" --notes-file release-notes.md --latest
+          fi
+          gh release upload "$TAG" release-assets/* --clobber
+          echo "GITHUB RELEASE PUBLISHED"
+          gh release view "$TAG" --json url,tagName,name,isDraft,isPrerelease
