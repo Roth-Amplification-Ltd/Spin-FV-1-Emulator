@@ -1,4 +1,4 @@
-name: Build and Publish Release
+﻿name: Build and Publish Release
 
 on:
   push:
@@ -25,7 +25,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  QT_VERSION: "6.11.1"
+  QT_VERSION: "6.11.2"
 
 jobs:
   resolve:
@@ -330,3 +330,4 @@ jobs:
           gh release upload "$TAG" release-assets/* --clobber
           echo "GITHUB RELEASE PUBLISHED"
           gh release view "$TAG" --json url,tagName,name,isDraft,isPrerelease
+
