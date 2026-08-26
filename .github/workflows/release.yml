@@ -75,7 +75,7 @@ jobs:
   windows:
     name: Windows x64 package
     needs: resolve
-    runs-on: windows-2025
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
         with:
