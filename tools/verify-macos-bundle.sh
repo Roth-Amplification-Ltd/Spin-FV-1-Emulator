@@ -72,7 +72,16 @@ fi
 
 echo
 echo "Architecture:"
-lipo -info "$EXECUTABLE" || true
+ARCHS="$(lipo -archs "$EXECUTABLE")"
+echo "$ARCHS"
+
+if [[ "$ARCHS" != "arm64" ]]; then
+    echo "error: macOS release must contain exactly one ARM64 slice" >&2
+    echo "actual architectures: $ARCHS" >&2
+    exit 1
+fi
+
+echo "ARM64-ONLY ARCHITECTURE VERIFIED"
 
 echo
 echo "Code signature:"

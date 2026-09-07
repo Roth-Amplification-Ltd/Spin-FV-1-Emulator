@@ -25,6 +25,8 @@ build_macos() {
     -configuration "$CONFIG" \
     -destination 'platform=macOS' \
     CODE_SIGNING_ALLOWED=NO \
+    ARCHS=arm64 \
+    ONLY_ACTIVE_ARCH=YES \
     build
 }
 

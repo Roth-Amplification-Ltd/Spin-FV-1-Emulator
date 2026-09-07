@@ -124,7 +124,7 @@ case "$MODE" in
         ;;
 esac
 
-DMG="$DIST/FV1-Lab-${VERSION}-macOS.dmg"
+DMG="$DIST/FV1-Lab-${VERSION}-macOS-arm64.dmg"
 
 hdiutil create \
   -volname "FV-1 Lab" \

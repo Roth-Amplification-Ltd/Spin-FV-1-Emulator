@@ -11,12 +11,25 @@ from __future__ import annotations
 
 from hashlib import sha1
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 APPLE = ROOT / "apple"
 PROJECT = APPLE / "FV1Lab.xcodeproj"
 PBX = PROJECT / "project.pbxproj"
 SCHEMES = PROJECT / "xcshareddata" / "xcschemes"
+
+cmake_text = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+version_match = re.search(
+    r"project\(SpinFV1Emulator VERSION ([0-9]+\.[0-9]+\.[0-9]+) LANGUAGES",
+    cmake_text,
+)
+if not version_match:
+    raise SystemExit(
+        "unable to resolve FV-1 Lab product version from CMakeLists.txt"
+    )
+
+PRODUCT_VERSION = version_match.group(1)
 
 
 def uid(label: str) -> str:
@@ -127,7 +140,7 @@ def build_settings(platform: str, debug: bool) -> str:
         "ENABLE_PREVIEWS": "YES",
         "GCC_PREPROCESSOR_DEFINITIONS": '("$(inherited)", "FV1_SDK_BUILDING=1", "FV1_SDK_VERSION_MAJOR_VALUE=1", "FV1_SDK_VERSION_MINOR_VALUE=0", "FV1_SDK_VERSION_PATCH_VALUE=0")',
         "HEADER_SEARCH_PATHS": '("$(inherited)", "$(SRCROOT)/../include", "$(SRCROOT)/../src/apple")',
-        "MARKETING_VERSION": "1.0.0",
+        "MARKETING_VERSION": PRODUCT_VERSION,
         "PRODUCT_NAME": '"FV-1 Lab"',
         "SWIFT_OBJC_BRIDGING_HEADER": '"FV1Lab/Support/FV1Lab-Bridging-Header.h"',
         "SWIFT_VERSION": "6.0",
@@ -138,6 +151,8 @@ def build_settings(platform: str, debug: bool) -> str:
         common.update({"DEBUG_INFORMATION_FORMAT": '"dwarf-with-dsym"', "SWIFT_COMPILATION_MODE": "wholemodule", "SWIFT_OPTIMIZATION_LEVEL": '"-O"'})
     if platform == "mac":
         common.update({
+            "ARCHS": "arm64",
+            "ONLY_ACTIVE_ARCH": "YES",
             "CODE_SIGN_ENTITLEMENTS": '"FV1Lab/Resources/macOS.entitlements"',
             "ENABLE_HARDENED_RUNTIME": "YES",
             "GENERATE_INFOPLIST_FILE": "NO",

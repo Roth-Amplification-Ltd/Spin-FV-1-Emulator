@@ -9,7 +9,7 @@ on:
       tag:
         description: "Existing release tag to build (for example v1.0.0)"
         required: true
-        default: "v1.0.0"
+        default: "v1.0.1"
         type: string
       publish:
         description: "Create/update the GitHub Release after all platform packages pass"
@@ -307,7 +307,7 @@ jobs:
           path: release-out/linux/*
 
   macos:
-    name: macOS package
+    name: macOS ARM64 package
     needs: resolve
     runs-on: macos-15
     steps:
@@ -315,43 +315,182 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.tag }}
           fetch-depth: 0
-      - name: Verify exact tagged commit
-        shell: bash
-        run: |
-          [[ "$(git rev-parse HEAD)" == "${{ needs.resolve.outputs.sha }}" ]]
-          xcodebuild -version
-      - name: Package ad-hoc signed macOS DMG
+
+      - name: Verify exact tagged commit and Apple Silicon runner
         shell: bash
         run: |
           set -Eeuo pipefail
+
+          [[ "$(git rev-parse HEAD)" == "${{ needs.resolve.outputs.sha }}" ]]
+
+          xcodebuild -version
+
+          [[ "$(uname -m)" == "arm64" ]] || {
+            echo "ERROR: macOS release requires an ARM64 GitHub runner"
+            uname -a
+            exit 1
+          }
+
+      - name: Normalize tagged Apple metadata and enforce ARM64
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+
+          # v1.0.1 is already immutable and contains the old literal plist
+          # version. Normalize the checkout only; the tag itself is untouched.
+          for plist in \
+            "apple/FV1Lab/Resources/macOS-Info.plist" \
+            "apple/FV1Lab/Resources/iPadOS-Info.plist"
+          do
+            /usr/libexec/PlistBuddy \
+              -c "Set :CFBundleShortVersionString ${VERSION}" \
+              "$plist"
+
+            ACTUAL="$(
+              /usr/libexec/PlistBuddy \
+                -c 'Print :CFBundleShortVersionString' \
+                "$plist"
+            )"
+
+            [[ "$ACTUAL" == "$VERSION" ]] || {
+              echo "ERROR: Apple version normalization failed: $plist"
+              exit 1
+            }
+          done
+
+          # Compatibility shim for immutable tags created before the
+          # ARM64-only build policy was committed.
+          python3 <<'PYARM'
+          from pathlib import Path
+
+          build = Path("tools/build-apple.sh")
+          lines = build.read_text(encoding="utf-8").splitlines()
+
+          if not any("ARCHS=arm64" in line for line in lines):
+              inserted = False
+
+              for i, line in enumerate(lines):
+                  if (
+                      line.strip() == "CODE_SIGNING_ALLOWED=NO \"
+                      and i + 1 < len(lines)
+                      and lines[i + 1].strip() == "build"
+                  ):
+                      indent = line[:len(line) - len(line.lstrip())]
+                      lines.insert(i + 1, indent + "ARCHS=arm64 \")
+                      lines.insert(i + 2, indent + "ONLY_ACTIVE_ARCH=YES \")
+                      inserted = True
+                      break
+
+              if not inserted:
+                  raise SystemExit(
+                      "ERROR: unable to force ARM64 in tagged Apple build"
+                  )
+
+              build.write_text(
+                  "
+".join(lines) + "
+",
+                  encoding="utf-8",
+              )
+
+          package = Path("tools/package-macos.sh")
+          text = package.read_text(encoding="utf-8")
+
+          old = 'DMG="$DIST/FV1-Lab-${VERSION}-macOS-arm64.dmg"'
+          new = 'DMG="$DIST/FV1-Lab-${VERSION}-macOS-arm64.dmg"'
+
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit(
+                  "ERROR: unable to normalize tagged macOS DMG name"
+              )
+
+          package.write_text(text, encoding="utf-8")
+          PYARM
+
+          echo "Apple metadata normalized to ${VERSION}"
+          echo "macOS release architecture forced to ARM64"
+
+      - name: Package ad-hoc signed macOS ARM64 DMG
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
           bash tools/package-macos.sh adhoc
-          bash tools/verify-macos-bundle.sh "dist/macos/volume/FV-1 Lab.app"
-      - name: Verify macOS provenance
+          bash tools/verify-macos-bundle.sh \
+            "dist/macos/volume/FV-1 Lab.app"
+
+          EXEC="dist/macos/volume/FV-1 Lab.app/Contents/MacOS/FV-1 Lab"
+          ARCHS="$(lipo -archs "$EXEC")"
+
+          echo "Packaged Mach-O architectures: $ARCHS"
+
+          [[ "$ARCHS" == "arm64" ]] || {
+            echo "ERROR: release contains non-ARM64 Mach-O slices"
+            exit 1
+          }
+
+      - name: Verify macOS ARM64 provenance
         shell: bash
         env:
           VERSION: ${{ needs.resolve.outputs.version }}
           RELEASE_SHA: ${{ needs.resolve.outputs.sha }}
         run: |
           set -Eeuo pipefail
-          DMG="dist/macos/FV1-Lab-${VERSION}-macOS.dmg"
+
+          DMG="dist/macos/FV1-Lab-${VERSION}-macOS-arm64.dmg"
+          APP="dist/macos/volume/FV-1 Lab.app"
+          EXEC="$APP/Contents/MacOS/FV-1 Lab"
+
           [[ -f "$DMG" ]]
-          ACTUAL_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "dist/macos/volume/FV-1 Lab.app/Contents/Info.plist")"
+
+          ACTUAL_VERSION="$(
+            /usr/libexec/PlistBuddy \
+              -c 'Print :CFBundleShortVersionString' \
+              "$APP/Contents/Info.plist"
+          )"
+
           [[ "$ACTUAL_VERSION" == "$VERSION" ]]
-          (cd dist/macos && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
-          SHA256="$(shasum -a 256 "$DMG" | awk '{print $1}')"
+
+          ARCHS="$(lipo -archs "$EXEC")"
+
+          [[ "$ARCHS" == "arm64" ]] || {
+            echo "ERROR: expected ARM64-only Mach-O, got: $ARCHS"
+            exit 1
+          }
+
+          [[ "$(uname -m)" == "arm64" ]]
+
+          (
+            cd dist/macos
+            shasum -a 256 \
+              "$(basename "$DMG")" \
+              > "$(basename "$DMG").sha256"
+          )
+
+          SHA256="$(
+            shasum -a 256 "$DMG" |
+            awk '{print $1}'
+          )"
+
           cat > "$DMG.manifest.json" <<EOF
-          {"schema":"fv1lab-macos-release-v1","product":"FV-1 Lab","version":"${VERSION}","commit":"${RELEASE_SHA}","runner_architecture":"$(uname -m)","frontend":"native SwiftUI","signing":"ad-hoc","dmg":"$(basename "$DMG")","sha256":"${SHA256}"}
+          {"schema":"fv1lab-macos-release-v2","product":"FV-1 Lab","version":"${VERSION}","commit":"${RELEASE_SHA}","architecture":"arm64","runner_architecture":"$(uname -m)","frontend":"native SwiftUI","signing":"ad-hoc","dmg":"$(basename "$DMG")","sha256":"${SHA256}"}
           EOF
-          echo "MACOS RELEASE PROVENANCE VERIFIED"
+
+          echo "MACOS ARM64 RELEASE PROVENANCE VERIFIED"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: release-macos
+          name: release-macos-arm64
           if-no-files-found: error
           retention-days: 14
           path: |
-            dist/macos/FV1-Lab-*-macOS.dmg
-            dist/macos/FV1-Lab-*-macOS.dmg.sha256
-            dist/macos/FV1-Lab-*-macOS.dmg.manifest.json
+            dist/macos/FV1-Lab-*-macOS-arm64.dmg
+            dist/macos/FV1-Lab-*-macOS-arm64.dmg.sha256
+            dist/macos/FV1-Lab-*-macOS-arm64.dmg.manifest.json
 
   publish:
     name: Publish GitHub Release
@@ -406,9 +545,9 @@ jobs:
           test -f "release-assets/FV1Lab-${VERSION}-linux-packages.manifest.json"
 
           # macOS
-          test -f "release-assets/FV1-Lab-${VERSION}-macOS.dmg"
-          test -f "release-assets/FV1-Lab-${VERSION}-macOS.dmg.sha256"
-          test -f "release-assets/FV1-Lab-${VERSION}-macOS.dmg.manifest.json"
+          test -f "release-assets/FV1-Lab-${VERSION}-macOS-arm64.dmg"
+          test -f "release-assets/FV1-Lab-${VERSION}-macOS-arm64.dmg.sha256"
+          test -f "release-assets/FV1-Lab-${VERSION}-macOS-arm64.dmg.manifest.json"
 
           (
             cd release-assets
@@ -419,7 +558,7 @@ jobs:
               "FV1-Lab-${VERSION}-x86_64.AppImage" \
               "FV1-Lab-${VERSION}-x86_64.flatpak" \
               "FV1Lab-${VERSION}-linux-x86_64-ubuntu24.04.tar.gz" \
-              "FV1-Lab-${VERSION}-macOS.dmg" \
+              "FV1-Lab-${VERSION}-macOS-arm64.dmg" \
               > SHA256SUMS.txt
           )
 
@@ -447,9 +586,12 @@ jobs:
           Linux releases include Debian/Ubuntu `.deb`, AppImage, Flatpak,
           and the raw Ubuntu 24.04-compatible tarball.
 
-          The macOS DMG produced by this workflow is ad-hoc signed. Developer ID
-          signing/notarization can be added after Apple credentials are configured
-          as encrypted repository secrets.
+          The macOS release is Apple Silicon ARM64 only. Intel x86_64 and
+          universal macOS binaries are not release targets.
+
+          The macOS ARM64 DMG produced by this workflow is ad-hoc signed.
+          Developer ID signing/notarization can be added after Apple credentials
+          are configured as encrypted repository secrets.
           EOF
       - name: Create or update GitHub Release
         shell: bash

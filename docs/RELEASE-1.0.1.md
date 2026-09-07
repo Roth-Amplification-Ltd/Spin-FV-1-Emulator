@@ -44,3 +44,11 @@ normally while retaining native HiDPI rendering.
 
 The packaged Debian build was installed and tested on the reproduction system
 before release promotion.
+
+
+## macOS architecture
+
+- macOS release target: Apple Silicon ARM64.
+- Intel x86_64 builds are not distributed.
+- Universal ARM64/x86_64 binaries are not distributed.
+- The release pipeline rejects any macOS executable containing an x86_64 slice.

@@ -259,6 +259,7 @@
                 
             }; name = Release; };
 		8749A867C9A89DF54B6FEC66 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
 				CLANG_C_LANGUAGE_STANDARD = c11;
@@ -276,7 +277,8 @@
 				HEADER_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../include", "$(SRCROOT)/../src/apple");
 				INFOPLIST_FILE = "FV1Lab/Resources/macOS-Info.plist";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
+				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.rothamplification.fv1lab.macos;
 				PRODUCT_NAME = "FV-1 Lab";
 				SDKROOT = macosx;
@@ -286,6 +288,7 @@
 				SWIFT_VERSION = 6.0;
 			}; name = Debug; };
 		6A4996EA62483E9F87149300 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
 				CLANG_C_LANGUAGE_STANDARD = c11;
@@ -302,7 +305,8 @@
 				HEADER_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../include", "$(SRCROOT)/../src/apple");
 				INFOPLIST_FILE = "FV1Lab/Resources/macOS-Info.plist";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
+				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.rothamplification.fv1lab.macos;
 				PRODUCT_NAME = "FV-1 Lab";
 				SDKROOT = macosx;
@@ -328,7 +332,7 @@
 				HEADER_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../include", "$(SRCROOT)/../src/apple");
 				INFOPLIST_FILE = "FV1Lab/Resources/iPadOS-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.rothamplification.fv1lab.ipados;
 				PRODUCT_NAME = "FV-1 Lab";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -353,7 +357,7 @@
 				HEADER_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../include", "$(SRCROOT)/../src/apple");
 				INFOPLIST_FILE = "FV1Lab/Resources/iPadOS-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.rothamplification.fv1lab.ipados;
 				PRODUCT_NAME = "FV-1 Lab";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
