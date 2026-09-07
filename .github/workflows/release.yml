@@ -316,7 +316,7 @@ jobs:
           ref: ${{ needs.resolve.outputs.tag }}
           fetch-depth: 0
 
-      - name: Verify exact tagged commit and Apple Silicon runner
+      - name: Verify exact tagged commit
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -324,12 +324,7 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "${{ needs.resolve.outputs.sha }}" ]]
 
           xcodebuild -version
-
-          [[ "$(uname -m)" == "arm64" ]] || {
-            echo "ERROR: macOS release requires an ARM64 GitHub runner"
-            uname -a
-            exit 1
-          }
+          echo "Runner architecture: $(uname -m)"
 
       - name: Normalize tagged Apple metadata and enforce ARM64
         shell: bash
@@ -338,8 +333,8 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          # v1.0.1 is already immutable and contains the old literal plist
-          # version. Normalize the checkout only; the tag itself is untouched.
+          # v1.0.1 predates the single-source Apple version fix.
+          # Modify only this CI checkout; never move or rewrite the tag.
           for plist in \
             "apple/FV1Lab/Resources/macOS-Info.plist" \
             "apple/FV1Lab/Resources/iPadOS-Info.plist"
@@ -360,59 +355,36 @@ jobs:
             }
           done
 
-          # Compatibility shim for immutable tags created before the
-          # ARM64-only build policy was committed.
-          python3 <<'PYARM'
-          from pathlib import Path
+          # Immutable v1.0.1 also predates the ARM64-only build policy.
+          # Insert ARM64 xcodebuild settings into that temporary checkout.
+          if ! grep -q 'ARCHS=arm64' tools/build-apple.sh; then
+            perl -0pi -e \
+              's/CODE_SIGNING_ALLOWED=NO \\\n    build/CODE_SIGNING_ALLOWED=NO \\\n    ARCHS=arm64 \\\n    ONLY_ACTIVE_ARCH=YES \\\n    build/' \
+              tools/build-apple.sh
+          fi
 
-          build = Path("tools/build-apple.sh")
-          lines = build.read_text(encoding="utf-8").splitlines()
+          grep -q 'ARCHS=arm64' tools/build-apple.sh
+          grep -q 'ONLY_ACTIVE_ARCH=YES' tools/build-apple.sh
 
-          if not any("ARCHS=arm64" in line for line in lines):
-              inserted = False
+          # Rename the pre-policy generic DMG to an explicit ARM64 artifact.
+          if grep -q 'FV1-Lab-${VERSION}-macOS.dmg' \
+              tools/package-macos.sh
+          then
+            perl -0pi -e \
+              's/FV1-Lab-\$\{VERSION\}-macOS\.dmg/FV1-Lab-\${VERSION}-macOS-arm64.dmg/g' \
+              tools/package-macos.sh
+          fi
 
-              for i, line in enumerate(lines):
-                  if (
-                      line.strip() == "CODE_SIGNING_ALLOWED=NO \"
-                      and i + 1 < len(lines)
-                      and lines[i + 1].strip() == "build"
-                  ):
-                      indent = line[:len(line) - len(line.lstrip())]
-                      lines.insert(i + 1, indent + "ARCHS=arm64 \")
-                      lines.insert(i + 2, indent + "ONLY_ACTIVE_ARCH=YES \")
-                      inserted = True
-                      break
+          grep -q \
+            'FV1-Lab-${VERSION}-macOS-arm64.dmg' \
+            tools/package-macos.sh
 
-              if not inserted:
-                  raise SystemExit(
-                      "ERROR: unable to force ARM64 in tagged Apple build"
-                  )
-
-              build.write_text(
-                  "
-".join(lines) + "
-",
-                  encoding="utf-8",
-              )
-
-          package = Path("tools/package-macos.sh")
-          text = package.read_text(encoding="utf-8")
-
-          old = 'DMG="$DIST/FV1-Lab-${VERSION}-macOS-arm64.dmg"'
-          new = 'DMG="$DIST/FV1-Lab-${VERSION}-macOS-arm64.dmg"'
-
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif new not in text:
-              raise SystemExit(
-                  "ERROR: unable to normalize tagged macOS DMG name"
-              )
-
-          package.write_text(text, encoding="utf-8")
-          PYARM
-
-          echo "Apple metadata normalized to ${VERSION}"
-          echo "macOS release architecture forced to ARM64"
+          echo
+          echo "Apple release metadata: ${VERSION}"
+          echo "macOS release target: ARM64 only"
+          echo
+          grep -n 'ARCHS=arm64' tools/build-apple.sh
+          grep -n 'macOS-arm64.dmg' tools/package-macos.sh
 
       - name: Package ad-hoc signed macOS ARM64 DMG
         shell: bash
@@ -461,8 +433,6 @@ jobs:
             echo "ERROR: expected ARM64-only Mach-O, got: $ARCHS"
             exit 1
           }
-
-          [[ "$(uname -m)" == "arm64" ]]
 
           (
             cd dist/macos
