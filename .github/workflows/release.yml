@@ -286,8 +286,7 @@ jobs:
               }
 
           (out / f"FV1Lab-{version}-linux-packages.manifest.json").write_text(
-              json.dumps(manifest, indent=2) + "
-",
+              json.dumps(manifest, indent=2) + "\n",
               encoding="utf-8",
           )
           PY2
