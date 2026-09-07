@@ -3,7 +3,7 @@
 Open-source tools for emulating, measuring and inspecting the Spin Semiconductor
 FV-1 DSP.
 
-**Current release: FV-1 Lab 1.0.0 (`v1.0.0`).** The standalone desktop line
+**Current release: FV-1 Lab 1.0.1 (`v1.0.1`).** The standalone desktop line
 is complete on Linux, macOS and Windows. The immutable release tag points to
 commit `6bcab5966d71520a7321178f116352b3ad347fef`. The release closes desktop
 porting without changing the locked FV-1 execution model or public FV1SDK ABI.
