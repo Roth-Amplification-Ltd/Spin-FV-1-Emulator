@@ -1,4 +1,4 @@
-﻿name: Build and Publish Release
+name: Build and Publish Release
 
 on:
   push:
@@ -142,7 +142,7 @@ jobs:
             release-out/windows/FV1Lab-*-windows-x64.zip.manifest.json
 
   linux:
-    name: Linux x86_64 package
+    name: Linux x86_64 packages
     needs: resolve
     runs-on: ubuntu-24.04
     steps:
@@ -150,34 +150,76 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.tag }}
           fetch-depth: 0
+
       - name: Verify exact tagged commit
         shell: bash
         run: '[[ "$(git rev-parse HEAD)" == "${{ needs.resolve.outputs.sha }}" ]]'
-      - name: Install Linux build dependencies
+
+      - name: Install Linux build and packaging dependencies
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build python3 pkg-config libspeexdsp-dev libminiaudio-dev qt6-base-dev qt6-base-dev-tools
+          set -Eeuo pipefail
+          ./linux.sh deps
+
       - name: Configure, build and test Linux release
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           set -Eeuo pipefail
-          cmake -S . -B build-release-linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DFV1_BUILD_GUI=ON -DFV1_ENABLE_LIVE_AUDIO=ON -DFV1_BUILD_TESTS=ON -DFV1_SDK_BUILD_SHARED=ON
+          cmake -S . -B build-release-linux -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFV1_BUILD_GUI=ON \
+            -DFV1_ENABLE_LIVE_AUDIO=ON \
+            -DFV1_BUILD_TESTS=ON \
+            -DFV1_SDK_BUILD_SHARED=ON
           cmake --build build-release-linux --parallel 2
           ctest --test-dir build-release-linux --output-on-failure
-      - name: Package Linux release tree
+
+      - name: Build Debian, AppImage and Flatpak packages
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          set -Eeuo pipefail
+          ./linux.sh package all
+
+      - name: Assemble and verify Linux release assets
         shell: bash
         env:
           VERSION: ${{ needs.resolve.outputs.version }}
           RELEASE_SHA: ${{ needs.resolve.outputs.sha }}
         run: |
           set -Eeuo pipefail
+          shopt -s nullglob
+
           OUT="$PWD/release-out/linux"
           STAGE="$PWD/release-stage/FV1Lab-${VERSION}"
           mkdir -p "$OUT" "$STAGE"
+
+          debs=(dist/fv1-lab_*_amd64.deb)
+          appimages=(dist/FV1-Lab-${VERSION}-x86_64.AppImage)
+          flatpaks=(dist/FV1-Lab-${VERSION}-x86_64.flatpak)
+
+          [[ ${#debs[@]} -eq 1 ]] || {
+            echo "ERROR: expected exactly one .deb"
+            exit 1
+          }
+          [[ ${#appimages[@]} -eq 1 ]] || {
+            echo "ERROR: expected exactly one AppImage"
+            exit 1
+          }
+          [[ ${#flatpaks[@]} -eq 1 ]] || {
+            echo "ERROR: expected exactly one Flatpak"
+            exit 1
+          }
+
+          cp "${debs[0]}" "${appimages[0]}" "${flatpaks[0]}" "$OUT/"
+
+          # Preserve the raw Ubuntu-compatible package as a fallback.
           cmake --install build-release-linux --prefix "$STAGE"
           cp LICENSE "$STAGE/LICENSE.txt"
           cp README.md "$STAGE/README.md"
+
           cat > "$STAGE/BUILD-INFO.txt" <<EOF
           FV-1 Lab Linux package
           Version: ${VERSION}
@@ -187,19 +229,77 @@ jobs:
           Frontend: Qt 6 Widgets
           Audio: miniaudio / system backend
           EOF
+
           TAR_NAME="FV1Lab-${VERSION}-linux-x86_64-ubuntu24.04.tar.gz"
-          tar -C "$(dirname "$STAGE")" -czf "$OUT/$TAR_NAME" "$(basename "$STAGE")"
-          (cd "$OUT" && sha256sum "$TAR_NAME" > "$TAR_NAME.sha256")
+          tar -C "$(dirname "$STAGE")" \
+              -czf "$OUT/$TAR_NAME" \
+              "$(basename "$STAGE")"
+
+          for asset in \
+              "$OUT"/*.deb \
+              "$OUT"/*.AppImage \
+              "$OUT"/*.flatpak \
+              "$OUT/$TAR_NAME"
+          do
+              sha256sum "$asset" > "$asset.sha256"
+          done
+
+          DEB_NAME="$(basename "${debs[0]}")"
+          APPIMAGE_NAME="$(basename "${appimages[0]}")"
+          FLATPAK_NAME="$(basename "${flatpaks[0]}")"
+          export DEB_NAME APPIMAGE_NAME FLATPAK_NAME TAR_NAME
+
           python3 - <<'PY2'
-          import hashlib, json, os, pathlib
-          out = pathlib.Path('release-out/linux')
-          version = os.environ['VERSION']; commit = os.environ['RELEASE_SHA']
-          tar = out / f'FV1Lab-{version}-linux-x86_64-ubuntu24.04.tar.gz'
-          sha = hashlib.sha256(tar.read_bytes()).hexdigest()
-          manifest = {'schema':'fv1lab-linux-release-v1','product':'FV-1 Lab','version':version,'commit':commit,'architecture':'x86_64','distribution':'Ubuntu 24.04 compatible','frontend':'Qt 6 Widgets','audio':'miniaudio / system backend','archive':tar.name,'sha256':sha}
-          (out / f'{tar.name}.manifest.json').write_text(json.dumps(manifest, indent=2)+'\n', encoding='utf-8')
+          import hashlib
+          import json
+          import os
+          import pathlib
+
+          out = pathlib.Path("release-out/linux")
+          version = os.environ["VERSION"]
+          commit = os.environ["RELEASE_SHA"]
+
+          names = {
+              "deb": os.environ["DEB_NAME"],
+              "appimage": os.environ["APPIMAGE_NAME"],
+              "flatpak": os.environ["FLATPAK_NAME"],
+              "archive": os.environ["TAR_NAME"],
+          }
+
+          manifest = {
+              "schema": "fv1lab-linux-release-v2",
+              "product": "FV-1 Lab",
+              "version": version,
+              "commit": commit,
+              "architecture": "x86_64",
+              "distribution_baseline": "Ubuntu 24.04",
+              "frontend": "Qt 6 Widgets",
+              "audio": "miniaudio / system backend",
+              "assets": {},
+          }
+
+          for kind, name in names.items():
+              data = (out / name).read_bytes()
+              manifest["assets"][kind] = {
+                  "file": name,
+                  "sha256": hashlib.sha256(data).hexdigest(),
+              }
+
+          (out / f"FV1Lab-{version}-linux-packages.manifest.json").write_text(
+              json.dumps(manifest, indent=2) + "
+",
+              encoding="utf-8",
+          )
           PY2
-          echo "LINUX RELEASE PACKAGE COMPLETE"
+
+          test -s "$OUT/$(basename "${debs[0]}")"
+          test -s "$OUT/$(basename "${appimages[0]}")"
+          test -s "$OUT/$(basename "${flatpaks[0]}")"
+          test -s "$OUT/$TAR_NAME"
+          test -s "$OUT/FV1Lab-${VERSION}-linux-packages.manifest.json"
+
+          echo "LINUX RELEASE PACKAGES VERIFIED"
+
       - uses: actions/upload-artifact@v4
         with:
           name: release-linux-x86_64
@@ -276,16 +376,54 @@ jobs:
           VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -Eeuo pipefail
+          shopt -s nullglob
+
+          # Windows
           test -f "release-assets/FV1Lab-${VERSION}-windows-x64.zip"
           test -f "release-assets/FV1Lab-${VERSION}-windows-x64.zip.sha256"
           test -f "release-assets/FV1Lab-${VERSION}-windows-x64.zip.manifest.json"
+
+          # Linux
+          debs=(release-assets/fv1-lab_*_amd64.deb)
+          [[ ${#debs[@]} -eq 1 ]] || {
+            echo "ERROR: expected exactly one Debian release asset"
+            exit 1
+          }
+
+          DEB_NAME="$(basename "${debs[0]}")"
+
+          test -f "release-assets/$DEB_NAME"
+          test -f "release-assets/$DEB_NAME.sha256"
+
+          test -f "release-assets/FV1-Lab-${VERSION}-x86_64.AppImage"
+          test -f "release-assets/FV1-Lab-${VERSION}-x86_64.AppImage.sha256"
+
+          test -f "release-assets/FV1-Lab-${VERSION}-x86_64.flatpak"
+          test -f "release-assets/FV1-Lab-${VERSION}-x86_64.flatpak.sha256"
+
           test -f "release-assets/FV1Lab-${VERSION}-linux-x86_64-ubuntu24.04.tar.gz"
           test -f "release-assets/FV1Lab-${VERSION}-linux-x86_64-ubuntu24.04.tar.gz.sha256"
-          test -f "release-assets/FV1Lab-${VERSION}-linux-x86_64-ubuntu24.04.tar.gz.manifest.json"
+
+          test -f "release-assets/FV1Lab-${VERSION}-linux-packages.manifest.json"
+
+          # macOS
           test -f "release-assets/FV1-Lab-${VERSION}-macOS.dmg"
           test -f "release-assets/FV1-Lab-${VERSION}-macOS.dmg.sha256"
           test -f "release-assets/FV1-Lab-${VERSION}-macOS.dmg.manifest.json"
-          (cd release-assets && sha256sum "FV1Lab-${VERSION}-windows-x64.zip" "FV1Lab-${VERSION}-linux-x86_64-ubuntu24.04.tar.gz" "FV1-Lab-${VERSION}-macOS.dmg" > SHA256SUMS.txt)
+
+          (
+            cd release-assets
+
+            sha256sum \
+              "FV1Lab-${VERSION}-windows-x64.zip" \
+              "$DEB_NAME" \
+              "FV1-Lab-${VERSION}-x86_64.AppImage" \
+              "FV1-Lab-${VERSION}-x86_64.flatpak" \
+              "FV1Lab-${VERSION}-linux-x86_64-ubuntu24.04.tar.gz" \
+              "FV1-Lab-${VERSION}-macOS.dmg" \
+              > SHA256SUMS.txt
+          )
+
       - name: Prepare release notes
         shell: bash
         env:
@@ -306,6 +444,9 @@ jobs:
 
           These binaries were built by GitHub Actions from the exact tagged commit.
           `SHA256SUMS.txt` and per-platform provenance manifests are attached.
+
+          Linux releases include Debian/Ubuntu `.deb`, AppImage, Flatpak,
+          and the raw Ubuntu 24.04-compatible tarball.
 
           The macOS DMG produced by this workflow is ad-hoc signed. Developer ID
           signing/notarization can be added after Apple credentials are configured
