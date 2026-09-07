@@ -35,12 +35,15 @@
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QFormLayout>
+#include <QFrame>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QGridLayout>
 #include <QHeaderView>
 #include <QIcon>
 #include <QInputDialog>
 #include <QLabel>
+#include <QList>
 #include <QMenu>
 #include <QMenuBar>
 #include <QKeySequence>
@@ -52,9 +55,11 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScreen>
+#include <QScrollArea>
 #include <QSettings>
 #include <QSlider>
 #include <QSignalBlocker>
+#include <QSizePolicy>
 #include <QSpinBox>
 #include <QStringList>
 #include <QSplitter>
@@ -145,6 +150,157 @@ void fit_dialog_to_screen(
             screen->availableGeometry(),
             0.90,
             0.86));
+}
+
+int responsive_dock_width(
+    int workspace_width,
+    double fraction,
+    int minimum,
+    int maximum
+) {
+    return std::clamp(
+        static_cast<int>(
+            std::lround(
+                static_cast<double>(workspace_width) * fraction)),
+        minimum,
+        maximum);
+}
+
+void apply_responsive_dock_layout(QMainWindow& window) {
+    int available_width = std::max(1, window.width());
+
+    if (QScreen* screen = screen_for_widget(&window)) {
+        const QRect available = screen->availableGeometry();
+        if (available.isValid())
+            available_width = std::max(1, available.width());
+    }
+
+    const int window_width = std::max(1, window.width());
+    const int workspace_width = std::max(
+        480,
+        std::min(window_width, available_width));
+
+    const int left_minimum =
+        responsive_dock_width(
+            workspace_width, 0.13, 220, 280);
+
+    const int right_minimum =
+        responsive_dock_width(
+            workspace_width, 0.15, 240, 320);
+
+    const int left_target =
+        responsive_dock_width(
+            workspace_width, 0.16, 260, 320);
+
+    const int right_target =
+        responsive_dock_width(
+            workspace_width, 0.18, 280, 360);
+
+    auto* program_dock =
+        window.findChild<QDockWidget*>(
+            QStringLiteral("programDock"));
+
+    auto* debug_dock =
+        window.findChild<QDockWidget*>(
+            QStringLiteral("debugDock"));
+
+    if (program_dock)
+        program_dock->setMinimumWidth(left_minimum);
+
+    if (debug_dock)
+        debug_dock->setMinimumWidth(right_minimum);
+
+    if (program_dock && debug_dock) {
+        const QList<QDockWidget*> docks{
+            program_dock,
+            debug_dock
+        };
+        const QList<int> sizes{
+            left_target,
+            right_target
+        };
+
+        window.resizeDocks(
+            docks,
+            sizes,
+            Qt::Horizontal);
+    }
+}
+
+bool workspace_profile_matches(
+    const QSettings& settings,
+    QScreen* screen
+) {
+    if (!screen)
+        return true;
+
+    const QString width_key =
+        QStringLiteral("ui/mainAvailableWidth");
+    const QString height_key =
+        QStringLiteral("ui/mainAvailableHeight");
+    const QString dpi_key =
+        QStringLiteral("ui/mainLogicalDpi");
+    const QString dpr_key =
+        QStringLiteral("ui/mainDevicePixelRatio");
+
+    if (!settings.contains(width_key)
+        || !settings.contains(height_key)
+        || !settings.contains(dpi_key)
+        || !settings.contains(dpr_key)) {
+        return false;
+    }
+
+    const QRect available = screen->availableGeometry();
+    if (!available.isValid())
+        return false;
+
+    const double saved_width =
+        settings.value(width_key).toDouble();
+    const double saved_height =
+        settings.value(height_key).toDouble();
+    const double saved_dpi =
+        settings.value(dpi_key).toDouble();
+    const double saved_dpr =
+        settings.value(dpr_key).toDouble();
+
+    const double current_width =
+        static_cast<double>(available.width());
+    const double current_height =
+        static_cast<double>(available.height());
+    const double current_dpi =
+        screen->logicalDotsPerInch();
+    const double current_dpr =
+        screen->devicePixelRatio();
+
+    const auto close_ratio = [](
+        double a,
+        double b,
+        double tolerance
+    ) {
+        if (!(a > 0.0) || !(b > 0.0))
+            return false;
+
+        return std::abs(a - b)
+            / std::max(std::abs(a), std::abs(b))
+            <= tolerance;
+    };
+
+    return close_ratio(
+               saved_width,
+               current_width,
+               0.20)
+        && close_ratio(
+               saved_height,
+               current_height,
+               0.20)
+        && close_ratio(
+               saved_dpi,
+               current_dpi,
+               0.10)
+        && close_ratio(
+               saved_dpr,
+               current_dpr,
+               0.10);
 }
 
 QString rect_string(const QRect& rect) {
@@ -560,6 +716,7 @@ MainWindow::MainWindow(QWidget* parent, std::function<void(int, const QString&)>
     build_right_dock();
     build_status_footer();
 
+    apply_responsive_dock_layout(*this);
     default_window_state_ = saveState(1);
     restore_workspace_state();
     ensure_window_visible();
@@ -807,8 +964,15 @@ void MainWindow::build_toolbar() {
 void MainWindow::build_left_dock() {
     auto* dock = new QDockWidget(QStringLiteral("PROGRAM / SOURCE / CONTROLS"), this);
     dock->setObjectName(QStringLiteral("programDock"));
-    dock->setMinimumWidth(320);
-    auto* body = new QWidget(dock);
+
+    auto* scroll = new QScrollArea(dock);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(
+        Qt::ScrollBarAlwaysOff);
+    scroll->setVerticalScrollBarPolicy(
+        Qt::ScrollBarAsNeeded);
+
+    auto* body = new QWidget(scroll);
     auto* layout = new QVBoxLayout(body);
 
     auto* program = new QGroupBox(QStringLiteral("PROGRAM"), body);
@@ -1015,7 +1179,8 @@ void MainWindow::build_left_dock() {
     layout->addWidget(audio);
     layout->addStretch(1);
 
-    dock->setWidget(body);
+    scroll->setWidget(body);
+    dock->setWidget(scroll);
     addDockWidget(Qt::LeftDockWidgetArea, dock);
 }
 
@@ -1025,6 +1190,12 @@ void MainWindow::build_center() {
     main->setContentsMargins(4, 4, 4, 4);
 
     auto* tabs = new QTabWidget(center);
+    tabs->setObjectName(QStringLiteral("analysisTabs"));
+    tabs->setMinimumSize(0, 0);
+    tabs->setSizePolicy(
+        QSizePolicy::Expanding,
+        QSizePolicy::Expanding);
+
     scope_plot_ = new InstrumentPlot(PlotKind::Oscilloscope, tabs);
     spectrum_plot_ = new InstrumentPlot(PlotKind::Spectrum, tabs);
     spectrogram_plot_ = new InstrumentPlot(PlotKind::Spectrogram, tabs);
@@ -1036,9 +1207,35 @@ void MainWindow::build_center() {
     tabs->addTab(spectrum_plot_, QStringLiteral("SPECTRUM"));
     tabs->addTab(spectrogram_plot_, QStringLiteral("SPECTROGRAM"));
     tabs->addTab(levels_plot_, QStringLiteral("LEVELS"));
-    validation_panel_ = new ValidationPanel(tabs);
-    validation_panel_->set_log_callback([this](const QString& message){ log(message); });
-    tabs->addTab(validation_panel_, QStringLiteral("VALIDATION"));
+    auto* validation_scroll = new QScrollArea(tabs);
+    validation_scroll->setObjectName(
+        QStringLiteral("validationScroll"));
+    validation_scroll->setWidgetResizable(true);
+    validation_scroll->setFrameShape(QFrame::NoFrame);
+    validation_scroll->setSizeAdjustPolicy(
+        QAbstractScrollArea::AdjustIgnored);
+    validation_scroll->setHorizontalScrollBarPolicy(
+        Qt::ScrollBarAsNeeded);
+    validation_scroll->setVerticalScrollBarPolicy(
+        Qt::ScrollBarAsNeeded);
+    validation_scroll->setMinimumSize(0, 0);
+    validation_scroll->setSizePolicy(
+        QSizePolicy::Expanding,
+        QSizePolicy::Expanding);
+
+    validation_panel_ =
+        new ValidationPanel(validation_scroll);
+
+    validation_panel_->set_log_callback(
+        [this](const QString& message) {
+            log(message);
+        });
+
+    validation_scroll->setWidget(validation_panel_);
+
+    tabs->addTab(
+        validation_scroll,
+        QStringLiteral("VALIDATION"));
     install_plot_context_menu(scope_plot_);
     install_plot_context_menu(spectrum_plot_);
     install_plot_context_menu(spectrogram_plot_);
@@ -1046,7 +1243,11 @@ void MainWindow::build_center() {
     main->addWidget(tabs, 1);
 
     auto* bottom = new QSplitter(Qt::Horizontal, center);
-    bottom->setChildrenCollapsible(false);
+
+    // The analyzer is the primary workspace. The lower engineering
+    // strip must yield vertical space on short logical desktops.
+    bottom->setChildrenCollapsible(true);
+    bottom->setMinimumHeight(80);
 
     auto* delay_group = new QGroupBox(QStringLiteral("DELAY RAM VIEWER"), bottom);
     auto* delay_layout = new QVBoxLayout(delay_group);
@@ -1100,7 +1301,11 @@ void MainWindow::build_center() {
     runtime_status_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
     status_layout->addWidget(runtime_status_);
     bottom->addWidget(status);
+    bottom->setCollapsible(0, true);
+    bottom->setCollapsible(1, true);
+    bottom->setCollapsible(2, true);
     bottom->setSizes({360, 430, 310});
+
     main->addWidget(bottom, 0);
     setCentralWidget(center);
 }
@@ -1108,15 +1313,20 @@ void MainWindow::build_center() {
 void MainWindow::build_right_dock() {
     auto* dock = new QDockWidget(QStringLiteral("CONSOLE / CHIP INSPECTOR"), this);
     dock->setObjectName(QStringLiteral("debugDock"));
-    dock->setMinimumWidth(430);
     auto* split = new QSplitter(Qt::Vertical, dock);
-    split->setChildrenCollapsible(false);
+
+    // HiDPI laptop displays can have less than 1000 logical pixels of
+    // usable vertical space even when the physical panel is 1400p/4K.
+    // Do not let the three inspector sections impose their combined
+    // size hints as a hard minimum on the entire main window.
+    split->setChildrenCollapsible(true);
 
     auto* console_group = new QGroupBox(QStringLiteral("CONSOLE / LOG"), split);
     auto* console_layout = new QVBoxLayout(console_group);
     console_ = new QPlainTextEdit(console_group);
     console_->setReadOnly(true);
     console_->setMaximumBlockCount(4000);
+    console_->setMinimumHeight(64);
     console_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(console_, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
         std::unique_ptr<QMenu> menu(console_->createStandardContextMenu());
@@ -1153,7 +1363,7 @@ void MainWindow::build_right_dock() {
     input_form->addRow(QStringLiteral("Debug input R"), debug_input_right_);
     debug_layout->addLayout(input_form);
 
-    auto* controls = new QHBoxLayout;
+    auto* controls = new QGridLayout;
     auto* reset = new QPushButton(QStringLiteral("Reset"), debug_group);
     auto* step_instruction = new QPushButton(QStringLiteral("Step Instruction"), debug_group);
     auto* step_sample = new QPushButton(QStringLiteral("Step Sample"), debug_group);
@@ -1162,13 +1372,16 @@ void MainWindow::build_right_dock() {
     connect(step_instruction, &QPushButton::clicked, this, [this]{ debugger_step_instruction(); });
     connect(step_sample, &QPushButton::clicked, this, [this]{ debugger_step_sample(); });
     connect(cont, &QPushButton::clicked, this, [this]{ debugger_continue_sample(); });
-    controls->addWidget(reset);
-    controls->addWidget(step_instruction);
-    controls->addWidget(step_sample);
-    controls->addWidget(cont);
+    controls->addWidget(reset, 0, 0);
+    controls->addWidget(step_instruction, 0, 1);
+    controls->addWidget(step_sample, 1, 0);
+    controls->addWidget(cont, 1, 1);
+    controls->setColumnStretch(0, 1);
+    controls->setColumnStretch(1, 1);
     debug_layout->addLayout(controls);
 
     debugger_table_ = new QTableWidget(11, 2, debug_group);
+    debugger_table_->setMinimumHeight(110);
     debugger_table_->setHorizontalHeaderLabels({QStringLiteral("State"), QStringLiteral("Value")});
     debugger_table_->horizontalHeader()->setStretchLastSection(true);
     debugger_table_->verticalHeader()->setVisible(false);
@@ -1187,6 +1400,7 @@ void MainWindow::build_right_dock() {
     auto* registers = new QGroupBox(QStringLiteral("REGISTERS / MEMORY"), split);
     auto* register_layout = new QVBoxLayout(registers);
     register_table_ = new QTableWidget(32, 2, registers);
+    register_table_->setMinimumHeight(96);
     register_table_->setHorizontalHeaderLabels({QStringLiteral("Register"), QStringLiteral("Q1.23 / Hex")});
     register_table_->horizontalHeader()->setStretchLastSection(true);
     register_table_->verticalHeader()->setVisible(false);
@@ -1197,7 +1411,14 @@ void MainWindow::build_right_dock() {
     register_layout->addWidget(register_table_);
     split->addWidget(registers);
 
-    split->setSizes({390, 430, 260});
+    split->setCollapsible(0, true);
+    split->setCollapsible(1, true);
+    split->setCollapsible(2, true);
+
+    // These are preferences, not minimums. They will be proportionally
+    // compressed by QSplitter on shorter logical desktops.
+    split->setSizes({220, 430, 180});
+
     dock->setWidget(split);
     addDockWidget(Qt::RightDockWidgetArea, dock);
 }
@@ -2123,6 +2344,7 @@ void MainWindow::ensure_window_visible() {
 }
 
 void MainWindow::handle_display_change() {
+    apply_responsive_dock_layout(*this);
     ensure_window_visible();
 
     if (layout())
@@ -2160,6 +2382,83 @@ QString MainWindow::desktop_diagnostics() const {
 
     out << "Window logical geometry: "
         << rect_string(geometry()) << '\n';
+
+    out << "Window minimumSizeHint: "
+        << minimumSizeHint().width()
+        << 'x'
+        << minimumSizeHint().height()
+        << '\n';
+
+    out << "Window minimumSize: "
+        << minimumSize().width()
+        << 'x'
+        << minimumSize().height()
+        << '\n';
+
+    if (auto* analysis_tabs =
+            findChild<QTabWidget*>(
+                QStringLiteral("analysisTabs"))) {
+        out << "Analysis tabs logical size: "
+            << analysis_tabs->width()
+            << 'x'
+            << analysis_tabs->height()
+            << '\n';
+
+        out << "Analysis tabs minimumSizeHint: "
+            << analysis_tabs->minimumSizeHint().width()
+            << 'x'
+            << analysis_tabs->minimumSizeHint().height()
+            << '\n';
+    }
+
+    if (auto* validation_scroll =
+            findChild<QScrollArea*>(
+                QStringLiteral("validationScroll"))) {
+        out << "Validation scroll logical size: "
+            << validation_scroll->width()
+            << 'x'
+            << validation_scroll->height()
+            << '\n';
+
+        out << "Validation scroll minimumSizeHint: "
+            << validation_scroll->minimumSizeHint().width()
+            << 'x'
+            << validation_scroll->minimumSizeHint().height()
+            << '\n';
+    }
+
+    if (auto* program_dock =
+            findChild<QDockWidget*>(
+                QStringLiteral("programDock"))) {
+        out << "Program dock logical size: "
+            << program_dock->width()
+            << 'x'
+            << program_dock->height()
+            << '\n';
+
+        out << "Program dock minimumSizeHint: "
+            << program_dock->minimumSizeHint().width()
+            << 'x'
+            << program_dock->minimumSizeHint().height()
+            << '\n';
+    }
+
+    if (auto* debug_dock =
+            findChild<QDockWidget*>(
+                QStringLiteral("debugDock"))) {
+        out << "Debug dock logical size: "
+            << debug_dock->width()
+            << 'x'
+            << debug_dock->height()
+            << '\n';
+
+        out << "Debug dock minimumSizeHint: "
+            << debug_dock->minimumSizeHint().width()
+            << 'x'
+            << debug_dock->minimumSizeHint().height()
+            << '\n';
+    }
+
     out << "Window state: "
         << (isFullScreen()
                 ? QStringLiteral("fullscreen")
@@ -2191,10 +2490,28 @@ void MainWindow::restore_workspace_state() {
     const QByteArray state =
         settings.value(QStringLiteral("ui/mainWindowStateV1")).toByteArray();
 
-    if (!geometry.isEmpty())
+    const bool compatible =
+        !geometry.isEmpty()
+        && !state.isEmpty()
+        && workspace_profile_matches(
+            settings,
+            screen_for_widget(this));
+
+    if (compatible) {
         restoreGeometry(geometry);
-    if (!state.isEmpty())
         restoreState(state, 1);
+
+        // QMainWindow state includes historical dock widths.
+        // Normalize them against the current logical desktop so
+        // HiDPI/small-screen sessions do not restore unusably thin
+        // side panels.
+        apply_responsive_dock_layout(*this);
+    } else {
+        if (!default_window_state_.isEmpty())
+            restoreState(default_window_state_, 1);
+
+        apply_responsive_dock_layout(*this);
+    }
 
     ensure_window_visible();
 }
@@ -2214,6 +2531,16 @@ void MainWindow::save_workspace_state() {
         settings.setValue(
             QStringLiteral("ui/mainDevicePixelRatio"),
             screen->devicePixelRatio());
+
+        const QRect available =
+            screen->availableGeometry();
+
+        settings.setValue(
+            QStringLiteral("ui/mainAvailableWidth"),
+            available.width());
+        settings.setValue(
+            QStringLiteral("ui/mainAvailableHeight"),
+            available.height());
     }
 }
 
@@ -2224,11 +2551,14 @@ void MainWindow::reset_workspace_layout() {
     settings.remove(QStringLiteral("ui/mainScreenName"));
     settings.remove(QStringLiteral("ui/mainLogicalDpi"));
     settings.remove(QStringLiteral("ui/mainDevicePixelRatio"));
+    settings.remove(QStringLiteral("ui/mainAvailableWidth"));
+    settings.remove(QStringLiteral("ui/mainAvailableHeight"));
 
     if (!default_window_state_.isEmpty())
         restoreState(default_window_state_, 1);
 
     apply_initial_window_geometry();
+    apply_responsive_dock_layout(*this);
     ensure_window_visible();
     statusBar()->showMessage(QStringLiteral("Workspace layout reset"), 3000);
 }
