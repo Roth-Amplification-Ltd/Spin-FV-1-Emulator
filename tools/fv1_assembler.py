@@ -146,7 +146,8 @@ def fixed(value, ref: int, minimum: float, maximum: float, mask: int, name: str)
     f = float(value)
     if not minimum <= f <= maximum:
         raise AssemblyError(f"{name} real operand {f} outside {minimum}..{maximum}")
-    return int(round(f * ref)) & mask
+    # Official SpinAsm 1.1.31 truncates real fixed-point operands toward zero.
+    return int(f * ref) & mask
 
 
 def s1_9(v): return fixed(v, 512, -2.0, 1.998046875, M11, "S1.9")

@@ -114,3 +114,17 @@ Repeat `--source` to compare selected programs:
 The next expansion should add a dedicated syntax/opcode torture corpus so
 documented SpinAsm parser and encoding edge cases are tested independently of
 the product examples.
+
+## Official fixed-point quantization
+
+Differential testing against the real Spin Semiconductor SpinAsm 1.1.31
+compiler established that real-valued fixed-point operands are quantized by
+**truncation toward zero**, not round-to-nearest.
+
+This applies through the shared fixed-point conversion path used by S1.14,
+S1.9, S.10, S.15 and S.23 real operands. A mismatch here appears as exactly
+one quantization LSB in the corresponding encoded field (for example
+`0x00010000`, `0x00200000`, or `0x00000020` depending on field placement).
+
+The native C++ compiler and the Python diagnostic assembler must preserve this
+behavior. The official SpinAsm differential harness remains the authority.

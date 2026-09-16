@@ -409,7 +409,11 @@ std::uint32_t fixed(const Value& value, std::int64_t ref, double minimum, double
         os << "Line " << line << ": " << name << " real operand " << f << " outside " << minimum << ".." << maximum;
         throw CompileError(line, os.str());
     }
-    return static_cast<std::uint32_t>(round_even(f * static_cast<double>(ref))) & mask;
+    // Official SpinAsm 1.1.31 quantizes real fixed-point operands by
+    // truncating toward zero. Differential tests against the real compiler
+    // show one-LSB differences when round-to-nearest/even is used here.
+    const auto quantized = static_cast<std::int64_t>(std::trunc(f * static_cast<double>(ref)));
+    return static_cast<std::uint32_t>(quantized) & mask;
 }
 
 std::uint32_t s1_9(const Value& v, std::uint32_t line) { return fixed(v, 512, -2.0, 1.998046875, M11, "S1.9", line); }

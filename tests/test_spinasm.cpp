@@ -65,6 +65,28 @@ done:
         check(false, "forward zero-offset label should compile");
     }
 
+    // Official SpinAsm 1.1.31 truncates real fixed-point operands toward zero.
+    // These words are oracle values captured from the real compiler.
+    const auto quantized = fv1::spinasm::compile(
+        "SOF 0.075, 0.004\n"
+        "RDA 0, -0.22\n"
+        "SOF -1.0, 0.999\n");
+
+    const auto be_word = [&](std::size_t index) -> std::uint32_t {
+        const std::size_t i = index * 4u;
+        return (static_cast<std::uint32_t>(quantized.image[i]) << 24u) |
+               (static_cast<std::uint32_t>(quantized.image[i + 1u]) << 16u) |
+               (static_cast<std::uint32_t>(quantized.image[i + 2u]) << 8u) |
+               static_cast<std::uint32_t>(quantized.image[i + 3u]);
+    };
+
+    check(be_word(0) == 0x04CC008Du,
+          "SOF fixed-point literals must match official SpinAsm truncation");
+    check(be_word(1) == 0xF2000000u,
+          "negative S1.9 coefficient must truncate toward zero");
+    check(be_word(2) == 0xC0007FCDu,
+          "positive S.10 offset must truncate toward zero");
+
     if (failures == 0) std::cout << "fv1-spinasm native compiler tests passed\n";
     return failures == 0 ? 0 : 1;
 }
