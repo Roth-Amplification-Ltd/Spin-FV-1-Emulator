@@ -23,7 +23,7 @@ and real-program vectors. `Silicon` identifies areas that still need a real chip
 | AND / CLR | ✓ | ✓ | ✓ | direct 24-bit logical semantics | low risk |
 | OR | ✓ | ✓ | ✓ | direct 24-bit logical semantics | low risk |
 | XOR / NOT | ✓ | ✓ | ✓ | direct 24-bit logical semantics + explicit NOT test | low risk |
-| SKP / JMP / NOP | ✓ | ✓ | ✓ | conditions/forward skip + RUN tests | event-order corner confirmation |
+| SKP / NOP | ✓ | ✓ | ✓ | conditions/forward skip + RUN tests; zero-mask SKP is unconditional | event-order corner confirmation |
 | WLDS | ✓ | ✓ | ✓ | documented SIN generator setup | **yes: exact recurrence/update timing** |
 | WLDR | ✓ | ✓ | ✓ | documented RAMP generator setup | **yes: exact recurrence/update timing** |
 | JAM | ✓ | ✓ | ✓ | ramp reset semantics | exact phase/reset timing |

@@ -618,11 +618,10 @@ std::uint32_t encode_instruction(const ParsedInstruction& ins, const SymbolTable
     if (m == "OR")   { need(1); return (s_23(ex(0), ins.line) << 8) | 0x0Fu; }
     if (m == "XOR")  { need(1); return (s_23(ex(0), ins.line) << 8) | 0x10u; }
     if (m == "NOT")  { need(0); return (M24 << 8) | 0x10u; }
-    if (m == "SKP" || m == "JMP") {
-        std::uint32_t cond = 0;
-        std::string target_expr;
-        if (m == "SKP") { need(2); cond = static_cast<std::uint32_t>(as_int(ex(0))) & M5; target_expr = a[1]; }
-        else { need(1); target_expr = a[0]; }
+    if (m == "SKP") {
+        need(2);
+        const std::uint32_t cond = static_cast<std::uint32_t>(as_int(ex(0))) & M5;
+        const std::string target_expr = a[1];
         const std::string key = upper(trim(target_expr));
         std::int64_t offset = 0;
         static const std::regex label_name(R"(^[A-Z_][A-Z0-9_]*$)");

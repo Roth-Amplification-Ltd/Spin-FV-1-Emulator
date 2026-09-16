@@ -484,9 +484,8 @@ struct fv1_engine {
                 break;
             }
             case OP_SKP: {
-                // SpinASM encodes JMP as SKP with a zero condition mask.
-                // Therefore condition==0 is an unconditional forward skip;
-                // the canonical NOP is simply that same operation with count 0.
+                // A zero SKP condition mask is an unconditional forward skip.
+                // The canonical NOP is the same operation with a skip count of 0.
                 bool take = (d.skip_cond == 0);
                 if (d.skip_cond & SKP_RUN) take |= !first_run;
                 if (d.skip_cond & SKP_ZRO) take |= (acc == 0);

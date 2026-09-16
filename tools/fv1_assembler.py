@@ -300,11 +300,8 @@ def encode_instruction(ins: ParsedInstruction, symbols: Dict[str, int | float], 
         need(1); return (s_23(ex(0)) << 8) | 0x10
     if m == "NOT":
         need(0); return (M24 << 8) | 0x10
-    if m in {"SKP", "JMP"}:
-        if m == "SKP":
-            need(2); cond = int(ex(0)) & M5; target_expr = a[1]
-        else:
-            need(1); cond = 0; target_expr = a[0]
+    if m == "SKP":
+        need(2); cond = int(ex(0)) & M5; target_expr = a[1]
         target_key = target_expr.strip().upper()
         if re.fullmatch(r"[A-Z_][A-Z0-9_]*", target_key) and target_key in labels:
             offset = labels[target_key] - ins.address - 1

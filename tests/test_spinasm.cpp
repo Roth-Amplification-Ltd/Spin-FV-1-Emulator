@@ -51,6 +51,15 @@ done:
     }
 
     try {
+        (void)fv1::spinasm::compile("JMP done\ndone:\nNOP\n");
+        check(false, "non-official JMP mnemonic must throw");
+    } catch (const fv1::spinasm::CompileError& error) {
+        check(error.line() == 1, "JMP rejection must preserve line number");
+        check(std::string(error.what()).find("unsupported mnemonic JMP") != std::string::npos,
+              "JMP rejection should match official SpinAsm syntax");
+    }
+
+    try {
         (void)fv1::spinasm::compile("SKP RUN, backwards\nbackwards:\nNOP\n");
     } catch (...) {
         check(false, "forward zero-offset label should compile");

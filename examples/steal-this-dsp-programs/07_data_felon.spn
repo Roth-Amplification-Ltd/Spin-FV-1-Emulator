@@ -38,15 +38,15 @@ SOF 1.0, -0.25
 SKP GEZ, crush_16
 LDAX INPUT
 AND $FFFFF0
-JMP crush_done
+SKP 0, crush_done
 crush_16:
 LDAX INPUT
 AND $FFFF00
-JMP crush_done
+SKP 0, crush_done
 crush_12:
 LDAX INPUT
 AND $FFF000
-JMP crush_done
+SKP 0, crush_done
 crush_8:
 LDAX INPUT
 AND $FF0000

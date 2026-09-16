@@ -43,11 +43,11 @@ SOF 1.0, -0.34
 SKP GEZ, crush_mid
 LDAX DELAYED
 AND $FFFF00
-JMP crush_done
+SKP 0, crush_done
 crush_mid:
 LDAX DELAYED
 AND $FFF000
-JMP crush_done
+SKP 0, crush_done
 crush_hard:
 LDAX DELAYED
 AND $FF0000
