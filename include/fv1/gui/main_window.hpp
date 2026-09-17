@@ -153,6 +153,8 @@ private:
     QSlider* pot0_{};
     QSlider* pot1_{};
     QSlider* pot2_{};
+    QSlider* dry_wet_{};
+    QSlider* output_gain_{};
     QLabel* program_label_{};
     QLabel* file_label_{};
     QLabel* file_position_label_{};

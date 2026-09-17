@@ -1,6 +1,7 @@
 #include <fv1/audio_host.hpp>
 
 #include <cassert>
+#include <cmath>
 #include <iostream>
 
 int main() {
@@ -10,6 +11,22 @@ int main() {
     assert(!host.dsp_enabled());
     host.set_dsp_enabled(true);
     assert(host.dsp_enabled());
+
+    assert(std::fabs(host.wet_mix() - 1.0F) < 1.0e-6F);
+    host.set_wet_mix(0.25F);
+    assert(std::fabs(host.wet_mix() - 0.25F) < 1.0e-6F);
+    host.set_wet_mix(-1.0F);
+    assert(std::fabs(host.wet_mix() - 0.0F) < 1.0e-6F);
+    host.set_wet_mix(2.0F);
+    assert(std::fabs(host.wet_mix() - 1.0F) < 1.0e-6F);
+
+    assert(std::fabs(host.output_gain() - 0.8F) < 1.0e-6F);
+    host.set_output_gain(0.5F);
+    assert(std::fabs(host.output_gain() - 0.5F) < 1.0e-6F);
+    host.set_output_gain(-1.0F);
+    assert(std::fabs(host.output_gain() - 0.0F) < 1.0e-6F);
+    host.set_output_gain(2.0F);
+    assert(std::fabs(host.output_gain() - 1.0F) < 1.0e-6F);
 
     const std::string backend = fv1::AudioHost::backend_name();
     assert(!backend.empty());

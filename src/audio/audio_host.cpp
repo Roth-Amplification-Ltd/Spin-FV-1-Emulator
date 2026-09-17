@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -225,6 +226,8 @@ public:
     std::atomic<double> callback_cpu{0.0};
     std::atomic<bool> finished{false};
     std::atomic<bool> dsp_enabled{true};
+    std::atomic<float> wet_mix{1.0F};
+    std::atomic<float> output_gain{0.8F};
 
     std::atomic<std::uint32_t> min_callback_frames{
         std::numeric_limits<std::uint32_t>::max()};
@@ -371,11 +374,49 @@ public:
         if (self->raw_analyzer) self->raw_analyzer->push(self->source_buffer.data(), process_frames);
         if (auto* recorder = self->recorder.load(std::memory_order_acquire))
             recorder->push_raw(self->source_buffer.data(), process_frames);
-        if (self->dsp_enabled.load(std::memory_order_relaxed)) {
-            const bool ok = self->runtime->process_block(self->source_buffer.data(), out, process_frames);
-            if (!ok) std::fill_n(out, process_frames, StereoFrame{});
+        const bool dsp_enabled =
+            self->dsp_enabled.load(std::memory_order_relaxed);
+        if (dsp_enabled) {
+            const bool ok =
+                self->runtime->process_block(
+                    self->source_buffer.data(),
+                    out,
+                    process_frames);
+            if (!ok)
+                std::fill_n(out, process_frames, StereoFrame{});
+
+            // Keep the FV-1 running even at 0% wet so delay/LFO state and tails
+            // continue naturally while the user auditions the dry signal.
+            const float wet = std::clamp(
+                self->wet_mix.load(std::memory_order_relaxed),
+                0.0F,
+                1.0F);
+            const float dry = 1.0F - wet;
+            const float gain = std::clamp(
+                self->output_gain.load(std::memory_order_relaxed),
+                0.0F,
+                1.0F);
+            for (std::size_t i = 0; i < process_frames; ++i) {
+                out[i].left =
+                    gain * (dry * self->source_buffer[i].left
+                            + wet * out[i].left);
+                out[i].right =
+                    gain * (dry * self->source_buffer[i].right
+                            + wet * out[i].right);
+            }
         } else {
-            std::copy_n(self->source_buffer.data(), process_frames, out);
+            std::copy_n(
+                self->source_buffer.data(),
+                process_frames,
+                out);
+            const float gain = std::clamp(
+                self->output_gain.load(std::memory_order_relaxed),
+                0.0F,
+                1.0F);
+            for (std::size_t i = 0; i < process_frames; ++i) {
+                out[i].left *= gain;
+                out[i].right *= gain;
+            }
         }
         if (process_frames < frames)
             std::fill(out + static_cast<std::ptrdiff_t>(process_frames),
@@ -401,6 +442,8 @@ public:
 class AudioHost::Impl {
 public:
     std::atomic<bool> dsp_enabled{true};
+    std::atomic<float> wet_mix{1.0F};
+    std::atomic<float> output_gain{0.8F};
     std::atomic<AudioRecorder*> recorder{nullptr};
 };
 #endif
@@ -738,6 +781,30 @@ void AudioHost::set_dsp_enabled(bool enabled) noexcept {
 
 bool AudioHost::dsp_enabled() const noexcept {
     return impl_->dsp_enabled.load(std::memory_order_acquire);
+}
+
+void AudioHost::set_wet_mix(float wet_mix) noexcept {
+    if (!std::isfinite(wet_mix))
+        wet_mix = 1.0F;
+    impl_->wet_mix.store(
+        std::clamp(wet_mix, 0.0F, 1.0F),
+        std::memory_order_release);
+}
+
+float AudioHost::wet_mix() const noexcept {
+    return impl_->wet_mix.load(std::memory_order_acquire);
+}
+
+void AudioHost::set_output_gain(float gain) noexcept {
+    if (!std::isfinite(gain))
+        gain = 0.8F;
+    impl_->output_gain.store(
+        std::clamp(gain, 0.0F, 1.0F),
+        std::memory_order_release);
+}
+
+float AudioHost::output_gain() const noexcept {
+    return impl_->output_gain.load(std::memory_order_acquire);
 }
 
 void AudioHost::set_recorder(AudioRecorder* recorder) noexcept {

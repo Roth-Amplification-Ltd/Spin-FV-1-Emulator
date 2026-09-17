@@ -589,6 +589,8 @@ public:
     bool using_speex() const noexcept { return runtime_.using_speexdsp(); }
     void set_dsp_enabled(bool enabled) noexcept { host_.set_dsp_enabled(enabled); }
     bool dsp_enabled() const noexcept { return host_.dsp_enabled(); }
+    void set_wet_mix(float wet_mix) noexcept { host_.set_wet_mix(wet_mix); }
+    void set_output_gain(float gain) noexcept { host_.set_output_gain(gain); }
 
     bool file_active() const noexcept { return file_source_ != nullptr; }
     void file_play() noexcept { if (file_source_) file_source_->play(); }
@@ -730,6 +732,8 @@ MainWindow::MainWindow(QWidget* parent, std::function<void(int, const QString&)>
     pot0_->setValue(settings.value(QStringLiteral("session/pot0"), 600).toInt());
     pot1_->setValue(settings.value(QStringLiteral("session/pot1"), 500).toInt());
     pot2_->setValue(settings.value(QStringLiteral("session/pot2"), 700).toInt());
+    dry_wet_->setValue(settings.value(QStringLiteral("session/dryWet"), 1000).toInt());
+    output_gain_->setValue(settings.value(QStringLiteral("session/outputGain"), 800).toInt());
 
     startup(80, QStringLiteral("Enumerating audio devices…"));
     refresh_audio_devices();
@@ -933,6 +937,7 @@ void MainWindow::show_about() {
 
 void MainWindow::build_toolbar() {
     auto* bar = addToolBar(QStringLiteral("Transport"));
+    bar->setObjectName(QStringLiteral("transportToolBar"));
     bar->setMovable(false);
     auto* start = bar->addAction(QStringLiteral("▶ Start"));
     start->setShortcut(QKeySequence(QStringLiteral("F5")));
@@ -1095,11 +1100,17 @@ void MainWindow::build_left_dock() {
     pot0_ = make_parameter_slider(600, controls);
     pot1_ = make_parameter_slider(500, controls);
     pot2_ = make_parameter_slider(700, controls);
+    dry_wet_ = make_parameter_slider(1000, controls);
+    output_gain_ = make_parameter_slider(800, controls);
     form->addRow(QStringLiteral("POT0"), pot0_);
     form->addRow(QStringLiteral("POT1"), pot1_);
     form->addRow(QStringLiteral("POT2"), pot2_);
-    form->addRow(QStringLiteral("Dry / Wet"), make_parameter_slider(1000, controls));
-    form->addRow(QStringLiteral("Output"), make_parameter_slider(800, controls));
+    form->addRow(QStringLiteral("Dry / Wet"), dry_wet_);
+    form->addRow(QStringLiteral("Output"), output_gain_);
+    dry_wet_->setToolTip(
+        QStringLiteral("Host dry/wet mix: left = source only, right = FV-1 output only."));
+    output_gain_->setToolTip(
+        QStringLiteral("Final host output level after dry/wet mixing."));
     const auto pot_update = [this] {
         if (session_) session_->set_pots(static_cast<float>(pot0_->value()) / 1000.0f,
                                          static_cast<float>(pot1_->value()) / 1000.0f,
@@ -1112,6 +1123,16 @@ void MainWindow::build_left_dock() {
     connect(pot0_, &QSlider::valueChanged, this, [pot_update](int){ pot_update(); });
     connect(pot1_, &QSlider::valueChanged, this, [pot_update](int){ pot_update(); });
     connect(pot2_, &QSlider::valueChanged, this, [pot_update](int){ pot_update(); });
+    connect(dry_wet_, &QSlider::valueChanged, this, [this](int value) {
+        const float wet = static_cast<float>(value) / 1000.0F;
+        if (session_) session_->set_wet_mix(wet);
+        QSettings().setValue(QStringLiteral("session/dryWet"), value);
+    });
+    connect(output_gain_, &QSlider::valueChanged, this, [this](int value) {
+        const float gain = static_cast<float>(value) / 1000.0F;
+        if (session_) session_->set_output_gain(gain);
+        QSettings().setValue(QStringLiteral("session/outputGain"), value);
+    });
     layout->addWidget(controls);
 
     auto* audio = new QGroupBox(QStringLiteral("AUDIO / VIRTUAL CLOCK"), body);
@@ -2721,6 +2742,10 @@ void MainWindow::start_session() {
         statusBar()->showMessage(QStringLiteral("Session start failed"), 5000);
         return;
     }
+    session_->set_wet_mix(
+        static_cast<float>(dry_wet_->value()) / 1000.0F);
+    session_->set_output_gain(
+        static_cast<float>(output_gain_->value()) / 1000.0F);
     device_fault_reported_ = false;
     last_device_reroute_events_ = 0;
     telemetry_timer_->start();

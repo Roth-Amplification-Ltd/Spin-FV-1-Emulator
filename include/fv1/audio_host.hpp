@@ -117,6 +117,14 @@ public:
     void set_dsp_enabled(bool enabled) noexcept;
     bool dsp_enabled() const noexcept;
 
+    /* Host-side monitor controls. wet_mix is a linear dry/wet crossfade:
+       0 = source only, 1 = FV-1 output only. output_gain is the final linear
+       master gain. Both are atomic/realtime-safe and do not alter FV-1 state. */
+    void set_wet_mix(float wet_mix) noexcept;
+    float wet_mix() const noexcept;
+    void set_output_gain(float gain) noexcept;
+    float output_gain() const noexcept;
+
     /* Attach/detach a realtime-safe recorder without reopening the device.
        The recorder object must outlive its attachment. Passing nullptr detaches
        it immediately; all actual disk I/O remains on the recorder worker. */
