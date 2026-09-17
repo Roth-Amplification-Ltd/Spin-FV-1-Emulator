@@ -123,11 +123,11 @@ int main(void) {
                 % 5u);
 
         const float pot0 =
-            (float)((blocks % 101u) / 100.0);
+            (float)(blocks % 101u) / 100.0F;
         const float pot1 =
-            (float)(((blocks * 3u) % 101u) / 100.0);
+            (float)((blocks * 3u) % 101u) / 100.0F;
         const float pot2 =
-            (float)(((blocks * 7u) % 101u) / 100.0);
+            (float)((blocks * 7u) % 101u) / 100.0F;
 
         if ((blocks % 128u) == 0u) {
             if (fv1_apple_realtime_set_analyzer_fft_size(

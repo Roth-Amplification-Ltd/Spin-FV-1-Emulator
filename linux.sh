@@ -139,6 +139,7 @@ configure_native() {
     cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" -G Ninja \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DCMAKE_INSTALL_PREFIX=/usr \
+        -DFV1_WARNINGS_AS_ERRORS=ON \
         -DFV1_BUILD_GUI=ON \
         -DFV1_ENABLE_LIVE_AUDIO=ON \
         -DFV1_BUILD_TESTS=ON \
@@ -359,7 +360,9 @@ package_appimage() {
     (
         cd "${output_dir}"
         APPIMAGE_EXTRACT_AND_RUN=1 \
-        VERSION="${VERSION}" \
+        NO_STRIP=1 \
+        LDAI_NO_APPSTREAM=1 \
+        LINUXDEPLOY_OUTPUT_VERSION="${VERSION}" \
         QMAKE="$(command -v qmake6)" \
         "${linuxdeploy}" \
             --appdir "${appdir}" \

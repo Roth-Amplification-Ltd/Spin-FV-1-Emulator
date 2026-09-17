@@ -26,6 +26,17 @@ set(configure_command "${CMAKE_COMMAND}" -S "${SDK_HOST_SOURCE_DIR}" -B "${host_
 if(NOT SDK_BUILD_SHARED)
     list(APPEND configure_command -DFV1SDK_HOST_STATIC=ON)
 endif()
+
+# Keep the external consumer on the same compiler family as the SDK build.
+# This matters for sanitizer builds: a Clang-instrumented static SDK must be
+# linked by Clang++ so the matching ASan/UBSan runtimes are supplied.
+if(DEFINED SDK_C_COMPILER AND NOT SDK_C_COMPILER STREQUAL "")
+    list(APPEND configure_command "-DCMAKE_C_COMPILER=${SDK_C_COMPILER}")
+endif()
+if(DEFINED SDK_CXX_COMPILER AND NOT SDK_CXX_COMPILER STREQUAL "")
+    list(APPEND configure_command "-DCMAKE_CXX_COMPILER=${SDK_CXX_COMPILER}")
+endif()
+
 # An instrumented SDK requires the external smoke host to link the matching
 # sanitizer runtime. Normal builds pass empty flags, preserving the genuine
 # clean C-consumer test.

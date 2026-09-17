@@ -39,7 +39,8 @@ int main(int argc, char** argv) {
     const bool about_smoke = args.contains(QStringLiteral("--smoke-about"));
     const bool desktop_smoke = args.contains(QStringLiteral("--smoke-desktop"));
     const bool no_splash = args.contains(QStringLiteral("--no-splash"));
-    const int smoke_open_index = args.indexOf(QStringLiteral("--smoke-open"));
+    const qsizetype smoke_open_index =
+        args.indexOf(QStringLiteral("--smoke-open"));
     QSettings settings;
     const QString theme = settings.value(QStringLiteral("ui/theme"), QStringLiteral("Dark")).toString();
     const QString accent = settings.value(QStringLiteral("ui/accent"), QStringLiteral("Cyan")).toString();
@@ -124,7 +125,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     QString startup_path;
-    for (int i = 1; i < args.size(); ++i) {
+    for (qsizetype i = 1; i < args.size(); ++i) {
         const QString arg = args.at(i);
         if (arg.startsWith(QLatin1Char('-'))) continue;
         const QFileInfo info(arg);

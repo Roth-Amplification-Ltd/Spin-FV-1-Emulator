@@ -24,6 +24,7 @@ configure_build_test() {
     echo "=== $name: configure ==="
     CC="$cc" CXX="$cxx" cmake -S "$ROOT" -B "$dir" -G Ninja \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DFV1_WARNINGS_AS_ERRORS=ON \
         -DFV1_BUILD_GUI=OFF \
         -DFV1_ENABLE_LIVE_AUDIO=OFF \
         "$@"
@@ -41,18 +42,34 @@ configure_build_test sdk-shared gcc g++ \
 configure_build_test sdk-static gcc g++ \
     -DFV1_SDK_ONLY=ON -DFV1_SDK_BUILD_SHARED=OFF
 
-SAN_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+SAN_COMPILE_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+SAN_LINKER_FLAG=""
+if command -v ld.lld >/dev/null 2>&1; then
+    SAN_LINKER_FLAG="-fuse-ld=lld"
+elif command -v ld.bfd >/dev/null 2>&1; then
+    SAN_LINKER_FLAG="-fuse-ld=bfd"
+fi
+SAN_LINK_FLAGS="${SAN_COMPILE_FLAGS}"
+if [[ -n "${SAN_LINKER_FLAG}" ]]; then
+    SAN_LINK_FLAGS+=" ${SAN_LINKER_FLAG}"
+fi
 echo
 echo "=== clang-asan-ubsan: configure ==="
+if [[ -n "${SAN_LINKER_FLAG}" ]]; then
+    echo "Sanitizer linker override: ${SAN_LINKER_FLAG}"
+else
+    echo "Sanitizer linker override: unavailable; using compiler default"
+fi
 CC=clang CXX=clang++ cmake -S "$ROOT" -B "$WORK/clang-sanitize" -G Ninja \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DFV1_WARNINGS_AS_ERRORS=ON \
     -DFV1_BUILD_GUI=OFF \
     -DFV1_ENABLE_LIVE_AUDIO=OFF \
     -DFV1_SDK_BUILD_SHARED=OFF \
-    -DCMAKE_C_FLAGS="$SAN_FLAGS" \
-    -DCMAKE_CXX_FLAGS="$SAN_FLAGS" \
-    -DCMAKE_EXE_LINKER_FLAGS="$SAN_FLAGS" \
-    -DCMAKE_SHARED_LINKER_FLAGS="$SAN_FLAGS"
+    -DCMAKE_C_FLAGS="$SAN_COMPILE_FLAGS" \
+    -DCMAKE_CXX_FLAGS="$SAN_COMPILE_FLAGS" \
+    -DCMAKE_EXE_LINKER_FLAGS="$SAN_LINK_FLAGS" \
+    -DCMAKE_SHARED_LINKER_FLAGS="$SAN_LINK_FLAGS"
 cmake --build "$WORK/clang-sanitize" --parallel "$JOBS"
 ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
@@ -60,12 +77,23 @@ UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
 
 echo
 echo "=== clang libFuzzer targets ==="
+FUZZ_LINKER_FLAG=""
+if command -v ld.bfd >/dev/null 2>&1; then
+    FUZZ_LINKER_FLAG="-fuse-ld=bfd"
+fi
+if [[ -n "${FUZZ_LINKER_FLAG}" ]]; then
+    echo "Fuzzer linker override: ${FUZZ_LINKER_FLAG}"
+else
+    echo "Fuzzer linker override: compiler default"
+fi
 CC=clang CXX=clang++ cmake -S "$ROOT" -B "$WORK/fuzz" -G Ninja \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DFV1_WARNINGS_AS_ERRORS=ON \
     -DFV1_BUILD_GUI=OFF \
     -DFV1_ENABLE_LIVE_AUDIO=OFF \
     -DFV1_BUILD_TESTS=OFF \
-    -DFV1_BUILD_FUZZERS=ON
+    -DFV1_BUILD_FUZZERS=ON \
+    -DCMAKE_EXE_LINKER_FLAGS="${FUZZ_LINKER_FLAG}"
 cmake --build "$WORK/fuzz" --parallel "$JOBS" --target \
     fv1-conformance-fuzzer fv1-spinasm-fuzzer fv1-sdk-fuzzer
 

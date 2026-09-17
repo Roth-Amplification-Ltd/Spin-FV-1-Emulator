@@ -21,6 +21,9 @@ include(CMakePackageConfigHelpers)
 
 option(FV1_BUILD_TESTS "Build emulator tests" ON)
 option(FV1_ENABLE_WARNINGS "Enable strict compiler warnings" ON)
+option(FV1_WARNINGS_AS_ERRORS
+       "Treat FV-1 project compiler warnings as errors"
+       OFF)
 option(FV1_ENABLE_LIVE_AUDIO "Build the realtime audio host when miniaudio is available" ON)
 option(FV1_BUILD_GUI "Build the shared Qt 6 FV-1 Lab desktop application" ON)
 option(FV1_BUILD_WINDOWS_FRONTEND
@@ -85,8 +88,14 @@ function(fv1_strict_warnings target)
     endif()
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4)
+        if(FV1_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE /WX)
+        endif()
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+        if(FV1_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE -Werror)
+        endif()
     endif()
 endfunction()
 
@@ -257,6 +266,8 @@ function(fv1_add_sdk_tests)
             -DSDK_HOST_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/examples/sdk-host
             -DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/installed-sdk-consumer
             -DSDK_BUILD_SHARED=${FV1_SDK_BUILD_SHARED}
+            "-DSDK_C_COMPILER=${CMAKE_C_COMPILER}"
+            "-DSDK_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
             "-DSDK_C_FLAGS=${CMAKE_C_FLAGS}"
             "-DSDK_CXX_FLAGS=${CMAKE_CXX_FLAGS}"
             -DCMAKE_GENERATOR_NAME=${CMAKE_GENERATOR}
@@ -422,17 +433,21 @@ target_include_directories(fv1-audio PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 target_link_libraries(fv1-audio PUBLIC FV1::runtime FV1::analysis Threads::Threads ${CMAKE_DL_LIBS})
-if(FV1_ENABLE_LIVE_AUDIO AND MINIAUDIO_INCLUDE_DIR)
-    target_include_directories(fv1-audio PRIVATE ${MINIAUDIO_INCLUDE_DIR})
-    target_compile_definitions(fv1-audio PRIVATE FV1_HAVE_MINIAUDIO=1)
-    if(MSVC)
-        set_source_files_properties(src/audio/miniaudio_impl.c PROPERTIES COMPILE_OPTIONS "/w")
+if(FV1_ENABLE_LIVE_AUDIO)
+    if(MINIAUDIO_INCLUDE_DIR)
+        target_include_directories(fv1-audio PRIVATE ${MINIAUDIO_INCLUDE_DIR})
+        target_compile_definitions(fv1-audio PRIVATE FV1_HAVE_MINIAUDIO=1)
+        if(MSVC)
+            set_source_files_properties(src/audio/miniaudio_impl.c PROPERTIES COMPILE_OPTIONS "/w")
+        else()
+            set_source_files_properties(src/audio/miniaudio_impl.c PROPERTIES COMPILE_OPTIONS "-w")
+        endif()
+        message(STATUS "Phase 2 audio: miniaudio enabled from ${MINIAUDIO_INCLUDE_DIR}")
     else()
-        set_source_files_properties(src/audio/miniaudio_impl.c PROPERTIES COMPILE_OPTIONS "-w")
+        message(WARNING "miniaudio.h not found: fv1-live will build in no-device stub mode. Run bootstrap-dev.sh to fetch the pinned development header.")
     endif()
-    message(STATUS "Phase 2 audio: miniaudio enabled from ${MINIAUDIO_INCLUDE_DIR}")
 else()
-    message(WARNING "miniaudio.h not found: fv1-live will build in no-device stub mode. Run bootstrap-dev.sh to fetch the pinned development header.")
+    message(STATUS "Phase 2 audio: live audio deliberately disabled")
 endif()
 if(UNIX AND NOT APPLE)
     target_link_libraries(fv1-audio PRIVATE m)
@@ -912,6 +927,10 @@ if(UNIX AND NOT APPLE)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/roth-fv1-emulator.desktop")
         install(FILES packaging/linux/roth-fv1-emulator.desktop
                 DESTINATION share/applications)
+    endif()
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/linux/com.rothamplification.FV1Lab.metainfo.xml")
+        install(FILES packaging/linux/com.rothamplification.FV1Lab.metainfo.xml
+                DESTINATION share/metainfo)
     endif()
     install(DIRECTORY assets/icons/hicolor/
             DESTINATION share/icons/hicolor)
