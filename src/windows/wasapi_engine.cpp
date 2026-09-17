@@ -3,7 +3,6 @@
 #include "realtime_processor.hpp"
 
 #include <windows.h>
-#include <propkeydef.h>
 #include <propsys.h>
 #include <audioclient.h>
 #include <avrt.h>

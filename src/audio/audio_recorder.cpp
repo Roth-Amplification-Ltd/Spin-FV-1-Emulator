@@ -24,6 +24,11 @@
 namespace fv1 {
 namespace {
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4324) // Intentional cache-line padding from alignas(64).
+#endif
+
 class SpscFrameRing {
 public:
     void prepare(std::size_t requested) {
@@ -73,6 +78,10 @@ private:
     alignas(64) std::atomic<std::size_t> read_{0};
     alignas(64) std::atomic<std::size_t> write_{0};
 };
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 void write_u16(std::ostream& out, std::uint16_t value) {
     const std::array<char, 2> bytes{

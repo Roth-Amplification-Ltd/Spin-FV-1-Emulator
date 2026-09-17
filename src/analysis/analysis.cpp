@@ -19,6 +19,11 @@ constexpr double kPi = 3.14159265358979323846264338327950288;
 
 bool is_power_of_two(std::size_t n) noexcept { return n >= 2 && (n & (n - 1)) == 0; }
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4324) // Intentional cache-line padding from alignas(64).
+#endif
+
 class SpscFrameRing {
 public:
     void prepare(std::size_t requested) {
@@ -62,6 +67,10 @@ private:
     alignas(64) std::atomic<std::size_t> read_{0};
     alignas(64) std::atomic<std::size_t> write_{0};
 };
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 void fft_in_place(std::vector<std::complex<float>>& a) {
     const std::size_t n = a.size();
