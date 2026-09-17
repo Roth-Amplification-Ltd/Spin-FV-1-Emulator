@@ -18,6 +18,7 @@ jobs:
         run: >-
           cmake -S . -B build-win32
           -DFV1_BUILD_TESTS=ON
+          -DFV1_WARNINGS_AS_ERRORS=ON
           -DFV1_BUILD_GUI=OFF
           -DFV1_ENABLE_LIVE_AUDIO=OFF
           -DFV1_BUILD_WINDOWS_FRONTEND=ON
@@ -28,6 +29,8 @@ jobs:
           --target fv1-lab-win32
           fv1-native-frontend-session-tests
           fv1-native-frontend-realtime-tests
+          fv1-cli
+          fv1-live
       - name: Run Windows frontend acceptance tests
         shell: pwsh
         run: |
